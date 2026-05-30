@@ -30,16 +30,25 @@ interface Props {
 type SendState = 'idle' | 'sending' | 'done' | 'error';
 type ActiveView = 'connection' | 'templates' | 'dispatch' | 'config';
 
-// ── Lê/salva config local (sobrescreve as env vars na UI) ──────────────────────
+// Lê/salva config local — prioridade: localStorage > window runtime > vazio
 const LS_KEY = 'barber_evo_config';
 interface EvoConfig { url: string; instance: string; apikey: string; }
+
+function getWindowDefaults(): EvoConfig {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  return {
+    url:      (w.EVO_URL      || EVO_URL      || '').replace(/\/$/, ''),
+    instance: (w.EVO_INSTANCE || EVO_INSTANCE || 'barberflow'),
+    apikey:   (w.EVO_APIKEY   || EVO_APIKEY   || ''),
+  };
+}
 
 function loadConfig(): EvoConfig {
   try {
     const saved = localStorage.getItem(LS_KEY);
     if (saved) return JSON.parse(saved);
   } catch {}
-  return { url: EVO_URL, instance: EVO_INSTANCE, apikey: EVO_APIKEY };
+  return getWindowDefaults();
 }
 
 function saveConfig(cfg: EvoConfig) {
@@ -627,7 +636,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
                 className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-full transition shadow-sm text-sm">
                 Salvar e Verificar Conexão
               </button>
-              <button onClick={() => { setCfgDraft({ url:EVO_URL, instance:EVO_INSTANCE, apikey:EVO_APIKEY }); }}
+              <button onClick={() => { setCfgDraft(getWindowDefaults()); }}
                 className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold rounded-full transition text-sm border border-slate-200 text-xs">
                 Restaurar valores das variáveis de ambiente
               </button>

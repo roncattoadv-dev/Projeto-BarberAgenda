@@ -2,15 +2,30 @@
  * WhatsApp Service — Evolution Go (Evo Go)
  * Documentação: https://github.com/evolution-foundation/evolution-go
  *
- * Variáveis de ambiente (.env.local):
- *   VITE_EVO_URL      = https://evo.seudominio.com.br   ← URL do Evo Go no EasyPanel
- *   VITE_EVO_INSTANCE = barberflow                       ← nome da instância
- *   VITE_EVO_APIKEY   = SUA_GLOBAL_API_KEY              ← GLOBAL_API_KEY do .env do Evo Go
+ * Config em produção (EasyPanel): variáveis de ambiente do container
+ *   EVO_URL, EVO_INSTANCE, EVO_APIKEY
+ *   → injetadas em runtime via docker-entrypoint.sh → window.__BARBER_CONFIG__
+ *
+ * Config em desenvolvimento local (.env.local):
+ *   VITE_EVO_URL, VITE_EVO_INSTANCE, VITE_EVO_APIKEY
+ *   → lidas via import.meta.env (build-time, apenas local)
  */
 
-export const EVO_URL      = (import.meta.env.VITE_EVO_URL      || '').replace(/\/$/, '');
-export const EVO_INSTANCE = import.meta.env.VITE_EVO_INSTANCE  || 'barberflow';
-export const EVO_APIKEY   = import.meta.env.VITE_EVO_APIKEY    || '';
+// Lê do window em runtime (produção) ou do import.meta.env (dev local)
+function getRuntimeConfig() {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  return {
+    url:      (w.EVO_URL      || import.meta.env.VITE_EVO_URL      || '').replace(/\/$/, ''),
+    instance: (w.EVO_INSTANCE || import.meta.env.VITE_EVO_INSTANCE || 'barberflow'),
+    apikey:   (w.EVO_APIKEY   || import.meta.env.VITE_EVO_APIKEY   || ''),
+  };
+}
+
+// Exporta valores iniciais — o WhatsAppTab usa loadConfig() do localStorage
+// que tem prioridade sobre estes defaults
+export const EVO_URL      = getRuntimeConfig().url;
+export const EVO_INSTANCE = getRuntimeConfig().instance;
+export const EVO_APIKEY   = getRuntimeConfig().apikey;
 
 export const EVO_CONFIGURED = !!(EVO_URL && EVO_APIKEY);
 

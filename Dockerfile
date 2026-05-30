@@ -32,10 +32,17 @@ COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 # Copia build do React
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# Copia o config.js padrão (será sobrescrito em runtime pelo entrypoint)
+COPY public/config.js /usr/share/nginx/html/config.js
+
+# Entrypoint: injeta variáveis de ambiente em runtime antes de iniciar o Nginx
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 # Healthcheck nativo
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost/health || exit 1
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/docker-entrypoint.sh"]
