@@ -1,0 +1,132 @@
+###############################################################################
+# Kong declarative config — Supabase API Gateway
+# ${SUPABASE_ANON_KEY} e ${SUPABASE_SERVICE_ROLE_KEY} são substituídos
+# pelo kong-entrypoint.sh via sed antes do Kong ler este arquivo.
+###############################################################################
+_format_version: "1.1"
+
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: ${SUPABASE_ANON_KEY}
+    acls:
+      - group: anon
+
+  - username: service_role
+    keyauth_credentials:
+      - key: ${SUPABASE_SERVICE_ROLE_KEY}
+    acls:
+      - group: admin
+
+services:
+
+  ## ── Auth aberto: /auth/v1/verify (links de email do GoTrue) ─────────────────
+  ## BUG-FIX 6: strip_path true aqui remove /auth/v1/verify antes de chegar
+  ## no GoTrue, que espera apenas /verify. Correto.
+  - name: auth-v1-open
+    url: http://supabase-auth:9999/verify
+    routes:
+      - name: auth-v1-open-route
+        strip_path: true
+        paths:
+          - /auth/v1/verify
+    plugins:
+      - name: cors
+
+  ## ── Auth completo: /auth/v1/ ─────────────────────────────────────────────────
+  - name: auth-v1
+    url: http://supabase-auth:9999
+    routes:
+      - name: auth-v1-all-route
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - anon
+            - admin
+
+  ## ── REST (PostgREST): /rest/v1/ ─────────────────────────────────────────────
+  - name: rest-v1
+    url: http://supabase-rest:3000/
+    routes:
+      - name: rest-v1-all-route
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: true
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - anon
+            - admin
+
+  ## ── Realtime: /realtime/v1/ ─────────────────────────────────────────────────
+  - name: realtime-v1
+    url: http://supabase-realtime:4000/socket/
+    routes:
+      - name: realtime-v1-all-route
+        strip_path: true
+        paths:
+          - /realtime/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - anon
+            - admin
+
+  ## ── Storage: /storage/v1/ ───────────────────────────────────────────────────
+  - name: storage-v1
+    url: http://supabase-storage:5000/
+    routes:
+      - name: storage-v1-all-route
+        strip_path: true
+        paths:
+          - /storage/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - anon
+            - admin
+
+  ## ── pg-meta (Studio backend — apenas admin) ─────────────────────────────────
+  - name: meta
+    url: http://supabase-meta:8080/
+    routes:
+      - name: meta-all-route
+        strip_path: true
+        paths:
+          - /pg/
+    plugins:
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
