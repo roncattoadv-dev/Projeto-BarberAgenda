@@ -25,6 +25,12 @@ services:
   postgres:
     image: supabase/postgres:15.6.1.143
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - log_min_messages=fatal
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB:       postgres
@@ -33,11 +39,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/init-supabase-schemas.sql:/docker-entrypoint-initdb.d/00-supabase-schemas.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 40s
+      retries: 20
+      start_period: 120s
     networks:
       - barberflow
 
