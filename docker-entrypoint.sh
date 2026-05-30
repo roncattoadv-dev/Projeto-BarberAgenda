@@ -8,6 +8,7 @@ window.__BARBER_CONFIG__ = {
   EVO_APIKEY:       "${EVO_APIKEY:-}",
   SUPABASE_URL:     "${SUPABASE_URL:-}",
   SUPABASE_ANON_KEY:"${SUPABASE_ANON_KEY:-}",
+  API_URL:          "${API_URL:-}",
 };
 JSEOF
 

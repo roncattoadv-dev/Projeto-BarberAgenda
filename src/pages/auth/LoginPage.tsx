@@ -1,6 +1,6 @@
 // src/pages/auth/LoginPage.tsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function LoginPage() {
@@ -77,6 +77,9 @@ export default function LoginPage() {
 
         <p className="text-center text-xs text-slate-400 mt-6">
           Acesso restrito a administradores cadastrados.
+        </p>
+        <p className="text-center text-xs text-slate-400 mt-2">
+          Ainda não tem conta? <Link to="/cadastro" className="text-blue-600 hover:underline font-medium">Criar conta grátis</Link>
         </p>
       </div>
     </div>

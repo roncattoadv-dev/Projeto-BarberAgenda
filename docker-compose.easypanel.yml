@@ -8,10 +8,51 @@ services:
     expose:
       - "80"
     environment:
-      NODE_ENV: production
-      EVO_URL:      ${EVO_URL:-}
-      EVO_INSTANCE: ${EVO_INSTANCE:-barberflow}
-      EVO_APIKEY:   ${EVO_APIKEY:-}
+      NODE_ENV:          production
+      EVO_URL:           ${EVO_URL:-}
+      EVO_INSTANCE:      ${EVO_INSTANCE:-barberflow}
+      EVO_APIKEY:        ${EVO_APIKEY:-}
+      SUPABASE_URL:      ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      API_URL:           ${API_URL:-http://api:4000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ── Backend API (registro + webhook Asaas) ─────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    expose:
+      - "4000"
+    environment:
+      SERVER_PORT:           4000
+      NODE_ENV:              production
+      SUPABASE_URL:          ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_KEY:  ${SUPABASE_SERVICE_KEY:-}
+      ASAAS_API_KEY:         ${ASAAS_API_KEY:-}
+      ASAAS_SANDBOX:         ${ASAAS_SANDBOX:-true}
+      ASAAS_WEBHOOK_SECRET:  ${ASAAS_WEBHOOK_SECRET:-}
+      FRONTEND_URL:          ${FRONTEND_URL:-*}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     depends_on:
       postgres:
         condition: service_healthy

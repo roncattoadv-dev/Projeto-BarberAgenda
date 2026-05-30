@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { RouteGuard } from './components/guards/RouteGuard';
 import LoginPage       from './pages/auth/LoginPage';
+import RegisterPage    from './pages/auth/RegisterPage';
 import SuperAdminPage  from './pages/admin/SuperAdminPage';
 import TenantAdminPage from './pages/admin/TenantAdminPage';
 import BookingPage     from './pages/booking/BookingPage';
@@ -29,7 +30,8 @@ function AppRoutes() {
       <Route path="/" element={<HomeRedirect />} />
 
       {/* ── Auth ──────────────────────────────────── */}
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/login"    element={<LoginPage />} />
+      <Route path="/cadastro" element={<RegisterPage />} />
 
       {/* ── Super Admin ───────────────────────────── */}
       <Route path="/admin/super" element={
