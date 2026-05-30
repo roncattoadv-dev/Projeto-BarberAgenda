@@ -101,8 +101,10 @@ export default function CustomerBookingFlow({
 
   const selectedWeekdayKey = getWeekdayKeyFromDate(selectedDate);
 
-  // Use custom operational hours if configured for this day of week, otherwise fallback to standard or baseline presets
-  const HOURLY_SLOTS = (activeTenant.businessHoursByDay && activeTenant.businessHoursByDay[selectedWeekdayKey])
+  // Use custom operational hours if configured for this day of week, priority to selected professional, fallback to tenant
+  const HOURLY_SLOTS = (selectedProfessional?.businessHoursByDay && selectedProfessional.businessHoursByDay[selectedWeekdayKey])
+    ? selectedProfessional.businessHoursByDay[selectedWeekdayKey]
+    : (activeTenant.businessHoursByDay && activeTenant.businessHoursByDay[selectedWeekdayKey])
     ? activeTenant.businessHoursByDay[selectedWeekdayKey]
     : activeTenant.businessHours && activeTenant.businessHours.length > 0
     ? activeTenant.businessHours
@@ -509,7 +511,13 @@ export default function CustomerBookingFlow({
                         const dateObj = new Date(viewYear, viewMonth, day);
                         const dayOfWeek = dateObj.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
                         const WEEKDAYS_MAP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-                        const isClosed = activeTenant.businessDays && !activeTenant.businessDays.includes(WEEKDAYS_MAP[dayOfWeek]);
+                        let isClosed = false;
+                        
+                        if (selectedProfessional && selectedProfessional.businessDays && selectedProfessional.businessDays.length > 0) {
+                          isClosed = !selectedProfessional.businessDays.includes(WEEKDAYS_MAP[dayOfWeek]);
+                        } else if (activeTenant.businessDays && activeTenant.businessDays.length > 0) {
+                          isClosed = !activeTenant.businessDays.includes(WEEKDAYS_MAP[dayOfWeek]);
+                        }
 
                         if (isClosed) {
                           return (

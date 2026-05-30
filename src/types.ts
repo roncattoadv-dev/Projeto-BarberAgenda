@@ -50,6 +50,8 @@ export interface Professional {
   rating: number;
   services: string[]; // Service IDs
   commissionPercentage: number;
+  businessDays?: string[];
+  businessHoursByDay?: Record<string, string[]>;
 }
 
 export interface Product {

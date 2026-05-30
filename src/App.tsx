@@ -322,58 +322,31 @@ export default function App() {
             </div>
 
             {/* Central role toggler - representing standard SaaS workspace switchers */}
-            <nav className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1 overflow-x-auto max-w-full">
-              <button
-                id="btn-role-blueprints"
-                onClick={() => setActiveRole('blueprints')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shrink-0 ${
-                  activeRole === 'blueprints'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5 inline mr-1 text-xs" />
-                Especificações (10 Entregas)
-              </button>
-
-              <button
-                id="btn-role-superadmin"
-                onClick={() => setActiveRole('superadmin')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shrink-0 ${
-                  activeRole === 'superadmin'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 inline mr-1 text-xs" />
-                Super Admin
-              </button>
-
-              <button
-                id="btn-role-salonadmin"
-                onClick={() => setActiveRole('salonadmin')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shrink-0 ${
-                  activeRole === 'salonadmin'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
-                }`}
-              >
-                <Scissors className="w-3.5 h-3.5 inline mr-1 text-xs" />
-                Administrador Cliente
-              </button>
-
-              <button
-                id="btn-role-booking"
-                onClick={() => setActiveRole('booking')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shrink-0 ${
-                  activeRole === 'booking'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
-                }`}
-              >
-                <Smartphone className="w-3.5 h-3.5 inline mr-1 text-xs" />
-                Link de Agendamento Online
-              </button>
+            <nav className="bg-white/80 backdrop-blur-md px-2 py-2 border border-slate-200/60 rounded-full flex gap-2 overflow-x-auto max-w-full shadow-sm ring-1 ring-slate-900/5 no-scrollbar">
+              {[
+                { id: 'blueprints', label: 'Especificações (10 Entregas)', icon: Layers },
+                { id: 'superadmin', label: 'Super Admin', icon: ShieldCheck },
+                { id: 'salonadmin', label: 'Administrador Cliente', icon: Scissors },
+                { id: 'booking', label: 'Link de Agendamento Online', icon: Smartphone }
+              ].map(tab => {
+                const Icon = tab.icon;
+                const isActive = activeRole === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    id={`btn-role-${tab.id}`}
+                    onClick={() => setActiveRole(tab.id as 'blueprints' | 'superadmin' | 'salonadmin' | 'booking')}
+                    className={`flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-full transition-all duration-300 cursor-pointer whitespace-nowrap shrink-0 ${
+                      isActive 
+                        ? 'bg-blue-600 text-white shadow-md scale-100' 
+                        : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 scale-95 hover:scale-100'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-slate-100' : 'text-slate-400'}`} strokeWidth={isActive ? 2.5 : 2} />
+                    {tab.label}
+                  </button>
+                );
+              })}
             </nav>
 
             {/* Tenant Global Switcher Indicator */}

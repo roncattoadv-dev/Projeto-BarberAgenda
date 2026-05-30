@@ -5,7 +5,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
-import { Calendar, Users, ShoppingBag, DollarSign, Plus, Scissors, ShieldAlert, MessageSquare, ExternalLink, Trash, Check, X, RefreshCw, Smartphone } from 'lucide-react';
+import { Calendar, Users, ShoppingBag, DollarSign, Plus, Scissors, ShieldAlert, MessageSquare, ExternalLink, Trash, Check, X, RefreshCw, Smartphone, LayoutDashboard, Settings, CreditCard } from 'lucide-react';
 
 interface ClientAdminPanelProps {
   activeTenant: Tenant;
@@ -68,6 +68,18 @@ export default function ClientAdminPanel({
   const [profName, setProfName] = useState('');
   const [profRole, setProfRole] = useState('Barbeiro');
   const [profCommission, setProfCommission] = useState(40);
+  const [profSelectedHoursDay, setProfSelectedHoursDay] = useState<string>('seg');
+  const [profEditedDays, setProfEditedDays] = useState<string[]>(['seg', 'ter', 'qua', 'qui', 'sex', 'sab']);
+  const [profEditedHoursByDay, setProfEditedHoursByDay] = useState<Record<string, string[]>>({
+    seg: ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'],
+    ter: ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'],
+    qua: ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'],
+    qui: ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'],
+    sex: ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'],
+    sab: ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'],
+    dom: []
+  });
+  const [profNewHourInput, setProfNewHourInput] = useState('');
 
   // New Product states
   const [prodName, setProdName] = useState('');
@@ -249,7 +261,9 @@ export default function ClientAdminPanel({
       avatar: profAvatar,
       rating: 5.0,
       services: myServices.map(s => s.id),
-      commissionPercentage: profCommission
+      commissionPercentage: profCommission,
+      businessDays: profEditedDays,
+      businessHoursByDay: profEditedHoursByDay
     });
     setProfName('');
     setProfAvatar('https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80');
@@ -460,24 +474,31 @@ export default function ClientAdminPanel({
       </div>
 
       {/* Internal Navigation Menu - Premium Tabs */}
-      <div className="bg-white px-2 py-2 border border-slate-100 rounded-full flex flex-wrap gap-1 mb-10 w-fit shadow-sm">
+      <div className="bg-white/80 backdrop-blur-md px-2 py-2 border border-slate-200/60 rounded-full flex flex-wrap gap-2 mb-10 w-fit shadow-sm ring-1 ring-slate-900/5">
         {[
-          { id: 'dashboard', label: 'Painel' },
-          { id: 'agenda', label: 'Agenda' },
-          { id: 'financeiro', label: 'Financeiro' },
-          { id: 'whatsapp', label: 'WhatsApp' },
-          { id: 'configuracoes', label: 'Configurações' }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`px-6 py-2.5 text-sm font-semibold rounded-full transition-all duration-300 ${
-              activeTab === tab.id ? 'bg-slate-900 text-white shadow-md' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+          { id: 'dashboard', label: 'Painel', icon: LayoutDashboard },
+          { id: 'agenda', label: 'Agenda', icon: Calendar },
+          { id: 'financeiro', label: 'Financeiro', icon: CreditCard },
+          { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare },
+          { id: 'configuracoes', label: 'Configurações', icon: Settings }
+        ].map(tab => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-full transition-all duration-300 ${
+                isActive 
+                  ? 'bg-slate-900 text-white shadow-md scale-100' 
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 scale-95 hover:scale-100'
+              }`}
+            >
+              <Icon className={`w-4 h-4 ${isActive ? 'text-slate-300' : 'text-slate-400'}`} strokeWidth={isActive ? 2.5 : 2} />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Main Tab Panels */}
@@ -713,17 +734,17 @@ export default function ClientAdminPanel({
                     {/* Appointment list content */}
                 
                     <div>
-                      <span className="text-[9px] font-mono text-teal-400 uppercase tracking-widest font-bold">Inspeção Detalhada</span>
-                      <h4 className="text-xs font-extrabold text-slate-200 uppercase mt-0.5 font-sans">
+                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest block mb-1">Inspeção Detalhada</span>
+                      <h4 className="text-sm font-extrabold text-slate-800 uppercase mt-0.5 tracking-tight font-sans">
                       {formatFullPTDate(scheduleFilterDate)}
                       </h4>
                     </div>
-                    <span className="text-[10px] text-teal-400 font-mono bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 rounded-md font-bold shrink-0 self-start sm:self-center select-none">
+                    <span className="text-[11px] text-blue-600 font-mono bg-blue-50 border border-blue-100 px-3 py-1 rounded-full font-bold shrink-0 self-start sm:self-center select-none shadow-3xs">
                       {selectedDayAppointments.length} Serviços Mapeados
                     </span>
                     
                     {/* Appointments listing under the selected day */}
-                    <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
+                    <div className="space-y-4 max-h-[460px] overflow-y-auto pr-2 mt-4">
                       {selectedDayAppointments.length > 0 ? (
                         selectedDayAppointments.map(appt => {
                           const serviceObj = myServices.find(s => s.id === appt.serviceId);
@@ -733,70 +754,70 @@ export default function ClientAdminPanel({
                           return (
                             <div
                               key={appt.id}
-                              className={`p-3.5 rounded-xl border transition-all ${
+                              className={`p-5 rounded-2xl border transition-all shadow-sm ${
                                 appt.status === 'attended'
-                                  ? 'bg-emerald-500/5 border-emerald-500/20 text-slate-300'
+                                  ? 'bg-emerald-50 border-emerald-100/60 text-slate-700'
                                   : appt.status === 'confirmed'
-                                  ? 'bg-blue-500/5 border-blue-500/25 text-slate-300 shadow-sm'
-                                  : 'bg-amber-500/5 border-amber-500/20 text-slate-300'
+                                  ? 'bg-blue-50 border-blue-100/60 text-slate-700 shadow-md border-b-2 border-b-blue-200'
+                                  : 'bg-white border-slate-200 text-slate-800 hover:border-amber-200 hover:shadow-md'
                               }`}
                             >
                               
                               {/* Header metrics card */}
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="px-2.5 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs font-extrabold text-slate-100 font-mono whitespace-nowrap">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-4">
+                                  <span className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-sm font-extrabold text-white font-mono whitespace-nowrap shadow-sm tracking-tight text-center">
                                     {appt.time}
                                   </span>
                                   <div>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-extrabold text-slate-100 font-sans tracking-wide text-xs">{appt.customerName}</span>
-                                      <span className="text-[10px] text-slate-450 font-mono">({appt.customerPhone})</span>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-extrabold text-slate-900 font-sans tracking-tight text-[15px]">{appt.customerName}</span>
+                                      <span className="text-[11px] text-slate-500 font-mono font-medium">({appt.customerPhone})</span>
                                     </div>
-                                    <p className="text-[10.5px] text-slate-350 font-medium mt-0.5 flex items-center gap-1">
+                                    <p className="text-xs text-slate-500 font-medium mt-1 flex items-center gap-1.5">
                                       <span>✂️ {serviceObj?.name || 'Serviço Personalizado'}</span>
-                                      <span className="text-slate-500">•</span>
-                                      <span className="text-teal-400 font-semibold">{professionalObj?.name || 'Funcionário'}</span>
+                                      <span className="text-slate-300">•</span>
+                                      <span className="text-blue-600 font-bold">{professionalObj?.name || 'Funcionário'}</span>
                                     </p>
                                   </div>
                                 </div>
 
                                 <div className="text-right flex flex-col items-end shrink-0 select-none">
-                                  <span className="font-mono font-bold text-emerald-400 text-xs">R$ {(appt.price || 50).toFixed(2)}</span>
-                                  <span className="text-[10px] text-slate-500 font-mono mt-0.5">{(appt.durationMinutes || 30)} min</span>
+                                  <span className="font-mono font-extrabold text-emerald-600 text-[15px] tracking-tight">R$ {(appt.price || 50).toFixed(2)}</span>
+                                  <span className="text-[11px] text-slate-400 font-mono mt-0.5 font-semibold">{(appt.durationMinutes || 30)} min</span>
                                 </div>
                               </div>
 
                               {/* Customer notes */}
                               {appt.notes && (
-                                <div className="mt-2 text-[10px] bg-slate-900/60 p-2 rounded-lg text-slate-450 italic font-mono border border-slate-850/40">
+                                <div className="mt-3 text-[11px] bg-amber-50/70 p-3 rounded-xl text-amber-700 italic font-medium border border-amber-100/50 shadow-3xs leading-relaxed">
                                   🗣️ Obs: &ldquo;{appt.notes}&rdquo;
                                 </div>
                               )}
 
                               {/* ACTIONS COLLAPSIBLE & ACTIONS DISPATCH OPTIONS */}
-                              <div className="mt-3.5 pt-3 border-t border-slate-850/50 flex flex-wrap items-center justify-between gap-3">
+                              <div className="mt-4 pt-4 border-t border-slate-200/50 flex flex-wrap items-center justify-between gap-4">
                                 
                                 {/* Status indicators tag */}
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[9.5px] font-mono text-slate-500 uppercase tracking-tight">Status:</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status:</span>
                                   {appt.status === 'attended' ? (
-                                    <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 rounded font-bold font-mono text-[9px] uppercase tracking-wider">
+                                    <span className="px-2.5 py-1 bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-md font-bold font-mono text-[9px] uppercase tracking-widest">
                                       Atendido & Pago
                                     </span>
                                   ) : appt.status === 'confirmed' ? (
-                                    <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded font-bold font-mono text-[9px] uppercase tracking-wider">
+                                    <span className="px-2.5 py-1 bg-blue-100 border border-blue-200 text-blue-700 rounded-md font-bold font-mono text-[9px] uppercase tracking-widest">
                                       Confirmado
                                     </span>
                                   ) : (
-                                    <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded font-bold font-mono text-[9px] uppercase tracking-wider">
+                                    <span className="px-2.5 py-1 bg-amber-100 border border-amber-200 text-amber-700 rounded-md font-bold font-mono text-[9px] uppercase tracking-widest">
                                       Pendente
                                     </span>
                                   )}
                                 </div>
 
                                 {/* OPTIONS BUTTONS BAR */}
-                                <div className="flex flex-wrap items-center gap-1.5">
+                                <div className="flex flex-wrap items-center bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
                                   
                                   {/* Conclude & Pay Button */}
                                   {appt.status !== 'attended' && (
@@ -804,10 +825,10 @@ export default function ClientAdminPanel({
                                       id={`btn-agenda-complete-${appt.id}`}
                                       type="button"
                                       onClick={() => handleCompleteAppointment(appt)}
-                                      className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-lg font-sans transition hover:scale-101 flex items-center gap-1 cursor-pointer"
+                                      className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold border-r border-slate-100 transition flex items-center gap-1.5 cursor-pointer text-xs"
                                       title="Registrar conclusão do serviço e lançar pagamento correspondente no caixa"
                                     >
-                                      Concluir & Pag
+                                      <span className="text-sm">✅</span> Concluir & Pag
                                     </button>
                                   )}
 
@@ -815,14 +836,14 @@ export default function ClientAdminPanel({
                                   <button
                                     type="button"
                                     onClick={() => setExpandedApptId(isExpanded ? null : appt.id)}
-                                    className={`px-2 py-1 rounded-lg border text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    className={`px-4 py-2 border-r border-slate-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                                       isExpanded 
-                                        ? 'bg-teal-500/15 border-teal-500 text-teal-300' 
-                                        : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                                        ? 'bg-blue-600 text-white' 
+                                        : 'bg-white hover:bg-slate-50 text-slate-600'
                                     }`}
                                     title="Disparar lembretes WhatsApp e avisos"
                                   >
-                                    💬 Notificar
+                                    💬 Zap
                                   </button>
 
                                   {/* Cancel Option */}
@@ -834,7 +855,7 @@ export default function ClientAdminPanel({
                                         alert("Agendamento desmarcado com sucesso. Vaga online disponível!");
                                       }
                                     }}
-                                    className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition text-[10.5px]"
+                                    className="px-4 py-2 bg-white hover:bg-red-50 text-red-600 transition text-xs font-bold"
                                     title="Desmarcar horário da vaga e avisar"
                                   >
                                     Cancelar
@@ -845,33 +866,33 @@ export default function ClientAdminPanel({
 
                               {/* EXPANDABLE WHATSAPP NOTIFICATION DISPATCH PANEL */}
                               {isExpanded && (
-                                <div className="mt-3 p-3 bg-slate-900 border border-slate-800 rounded-lg animate-fade-in space-y-2.5">
-                                  <div className="flex items-center justify-between border-b border-slate-850 pb-1.5 select-none">
-                                    <span className="text-[10px] uppercase font-mono font-bold text-slate-400">Canal de Comunicação Whatsapp</span>
-                                    <span className="text-[9.5px] italic text-teal-400">Selecione o modelo abaixo para carregar:</span>
+                                <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl animate-fade-in space-y-3">
+                                  <div className="flex items-center justify-between border-b border-slate-200 pb-2 select-none">
+                                    <span className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Canal de Comunicação Whatsapp</span>
+                                    <span className="text-[10px] italic text-blue-600 font-semibold">Selecione o modelo abaixo para enviar:</span>
                                   </div>
                                   
-                                  <div className="grid grid-cols-2 gap-2">
+                                  <div className="grid grid-cols-2 gap-3">
                                     <button
                                       type="button"
                                       onClick={() => copyWhatsAppMsg(appt, 'confirmation')}
-                                      className="p-2 text-left bg-slate-950 hover:bg-slate-900 hover:border-slate-700 rounded-lg border border-slate-850 text-slate-300 transition flex flex-col gap-0.5 cursor-pointer"
+                                      className="p-3 text-left bg-white hover:bg-slate-50 rounded-xl border border-slate-200 text-slate-700 transition flex flex-col gap-1 cursor-pointer shadow-sm hover:-translate-y-0.5 active:translate-y-0"
                                     >
-                                      <span className="text-[10px] font-bold text-blue-400">✓ Confirmar Vaga</span>
-                                      <span className="text-[8.5px] text-slate-500 truncate leading-none">Notificar ao agendar</span>
+                                      <span className="text-[11px] font-extrabold text-blue-600">✓ Confirmar Vaga</span>
+                                      <span className="text-[9px] text-slate-500 truncate leading-none uppercase tracking-widest font-bold">Notificar agendamento</span>
                                     </button>
 
                                     <button
                                       type="button"
                                       onClick={() => copyWhatsAppMsg(appt, 'reminder')}
-                                      className="p-2 text-left bg-slate-950 hover:bg-slate-900 hover:border-slate-700 rounded-lg border border-slate-850 text-slate-300 transition flex flex-col gap-0.5 cursor-pointer"
+                                      className="p-3 text-left bg-white hover:bg-slate-50 rounded-xl border border-slate-200 text-slate-700 transition flex flex-col gap-1 cursor-pointer shadow-sm hover:-translate-y-0.5 active:translate-y-0"
                                     >
-                                      <span className="text-[10px] font-bold text-amber-500">⏰ Enviar Lembrete</span>
-                                      <span className="text-[8.5px] text-slate-500 truncate leading-none">Aviso preventivo</span>
+                                      <span className="text-[11px] font-extrabold text-amber-600">⏰ Enviar Lembrete</span>
+                                      <span className="text-[9px] text-slate-500 truncate leading-none uppercase tracking-widest font-bold">Aviso preventivo</span>
                                     </button>
                                   </div>
 
-                                  <p className="text-[9px] text-slate-500 italic leading-snug">
+                                  <p className="text-[10px] text-slate-500 font-medium leading-relaxed italic bg-blue-50/50 p-2.5 rounded-lg border border-blue-100">
                                     💡 Nota: O sistema copia o conteúdo customizado com as tags preenchidas diretamente para a Área de Transferência. Cole o texto no App do WhatsApp para enviar imediatamente.
                                   </p>
                                 </div>
@@ -881,11 +902,11 @@ export default function ClientAdminPanel({
                           );
                         })
                       ) : (
-                        <div className="text-center py-12 border border-dashed border-slate-850 bg-slate-900/10 rounded-2xl flex flex-col items-center justify-center p-6 space-y-3">
-                          <span className="text-3xl">☕</span>
+                        <div className="text-center py-16 border border-dashed border-slate-200 bg-slate-50/50 rounded-3xl flex flex-col items-center justify-center p-6 space-y-4">
+                          <span className="text-4xl filter grayscale opacity-60">☕</span>
                           <div>
-                            <p className="font-bold text-slate-300">Nenhum agendamento para este dia</p>
-                            <p className="text-[11px] text-slate-500 max-w-sm mx-auto mt-1">A grade está totalmente livre para atendimento. Você pode agendar novos clientes usando o painel rápido abaixo.</p>
+                            <p className="font-extrabold text-slate-700 text-lg tracking-tight">Nenhum agendamento para este dia</p>
+                            <p className="text-sm text-slate-500 max-w-sm mx-auto mt-2 leading-relaxed font-medium">A grade está totalmente livre para atendimento. Você pode agendar novos clientes usando o painel rápido abaixo.</p>
                           </div>
                         </div>
                       )}
@@ -899,24 +920,24 @@ export default function ClientAdminPanel({
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 
                 {/* 1. AGENDAMENTO MANUAL */}
-                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
-                  <div className="border-b border-slate-850 pb-2">
-                    <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
+                <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                  <div className="border-b border-slate-100 pb-3">
+                    <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                      <span className="w-2h-2 rounded-full bg-blue-600"></span>
                       Lançamento de Reserva Manual
                     </h4>
-                    <p className="text-[10.5px] text-slate-400 mt-1">Insira clientes vindos de balcão ou ligações diretamente na agenda.</p>
+                    <p className="text-[11.5px] text-slate-500 mt-2 font-medium">Insira clientes vindos de balcão ou ligações diretamente na agenda.</p>
                   </div>
 
                   <form onSubmit={handleManualAppointment} className="space-y-4 text-xs font-sans">
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       <div>
-                        <label className="text-[10px] font-mono text-slate-500 block mb-1">Passo 1: Selecionar Cliente</label>
+                        <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400 block mb-1">Passo 1: Selecionar Cliente</label>
                         <select
                           value={apptCustId}
                           onChange={(e) => setApptCustId(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-slate-300 outline-none text-xs focus:border-teal-500"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none text-sm focus:border-blue-500 transition shadow-sm"
                           required
                         >
                           <option value="">-- Escolher Cliente --</option>
@@ -928,11 +949,11 @@ export default function ClientAdminPanel({
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-[10px] font-mono text-slate-500 block mb-1">Passo 2: Serviço</label>
+                          <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400 block mb-1">Passo 2: Serviço</label>
                           <select
                             value={apptSrvId}
                             onChange={(e) => setApptSrvId(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-slate-300 outline-none text-xs focus:border-teal-500"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none text-sm focus:border-blue-500 transition shadow-sm"
                             required
                           >
                             <option value="">-- Escolher --</option>
@@ -943,11 +964,11 @@ export default function ClientAdminPanel({
                         </div>
 
                         <div>
-                          <label className="text-[10px] font-mono text-slate-500 block mb-1">Passo 3: Atendente</label>
+                          <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400 block mb-1">Passo 3: Atendente</label>
                           <select
                             value={apptProfId}
                             onChange={(e) => setApptProfId(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-slate-300 outline-none text-xs focus:border-teal-500"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none text-sm focus:border-blue-500 transition shadow-sm"
                             required
                           >
                             <option value="">-- Barbeiro --</option>
@@ -961,21 +982,21 @@ export default function ClientAdminPanel({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 font-mono">
                       <div>
-                        <label className="text-[10px] font-mono text-slate-500 block mb-1">Passe 4: Data de Atendimento</label>
+                        <label className="text-[10px] font-sans font-bold tracking-widest uppercase text-slate-400 block mb-1">Passe 4: Data de Atendimento</label>
                         <input
                           type="date"
                           value={apptDate}
                           onChange={(e) => setApptDate(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 outline-none"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none text-sm focus:border-blue-500 transition shadow-sm"
                           required
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono text-slate-500 block mb-1">Passo 5: Horário do Slot</label>
+                        <label className="text-[10px] font-sans font-bold tracking-widest uppercase text-slate-400 block mb-1">Passo 5: Horário do Slot</label>
                         <select
                           value={apptTime}
                           onChange={(e) => setApptTime(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 outline-none"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none text-sm focus:border-blue-500 transition shadow-sm"
                           required
                         >
                           <option value="">-- Escolher horário --</option>
@@ -987,18 +1008,18 @@ export default function ClientAdminPanel({
                     </div>
 
                     <div>
-                      <label className="text-[10px] font-mono text-slate-500 block mb-1">Notas Internas ou Preferências (Opcional)</label>
+                      <label className="text-[10px] font-sans font-bold tracking-widest uppercase text-slate-400 block mb-1">Notas Internas ou Preferências (Opcional)</label>
                       <textarea
                         placeholder="Ex: Cabelo lavado com água fria, aparador número 2 baixo..."
                         value={apptNotes}
                         onChange={(e) => setApptNotes(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-slate-300 h-16 resize-none outline-none focus:border-teal-500"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 h-20 resize-none outline-none text-sm focus:border-blue-500 transition shadow-sm"
                       />
                     </div>
 
                     <button
                       type="submit"
-                      className="w-full py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-extrabold rounded-xl shadow transition hover:scale-[1.005] active:scale-[0.99] cursor-pointer text-xs"
+                      className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-full shadow-md transition hover:-translate-y-0.5 active:translate-y-0 text-sm mt-2"
                       id="btn-confirm-reserve"
                     >
                       Gravar Agendamento na Agenda
@@ -1007,57 +1028,57 @@ export default function ClientAdminPanel({
                 </div>
 
                 {/* 2. CADASTRAR CLIENTE DE FORMA RÁPIDA NO BALCÃO */}
-                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between">
+                <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4 flex flex-col justify-between">
                   <div>
-                    <div className="border-b border-slate-850 pb-2">
-                      <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
+                    <div className="border-b border-slate-100 pb-3">
+                      <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
                         Painel de Clientes Rápidos (Balcão)
                       </h4>
-                      <p className="text-[10.5px] text-slate-400 mt-1">Crie clientes no banco de dados para poder selecioná-los no menu de agendamentos ou comandas de vendas.</p>
+                      <p className="text-[11.5px] text-slate-500 mt-2 font-medium">Crie clientes no banco de dados para poder selecioná-los no menu de agendamentos ou comandas de vendas.</p>
                     </div>
 
-                    <form onSubmit={handleAddManualCustomer} className="space-y-4 pt-3 font-sans">
+                    <form onSubmit={handleAddManualCustomer} className="space-y-4 pt-4 font-sans">
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-mono text-slate-500 block">Nome Completo do Cliente</label>
+                        <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400 block">Nome Completo do Cliente</label>
                         <input
                           type="text"
                           placeholder="Nome Completo do Cliente"
                           value={custName}
                           onChange={(e) => setCustName(e.target.value)}
                           required
-                          className="w-full bg-slate-900 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none text-sm focus:border-blue-500 transition shadow-sm"
                         />
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-mono text-slate-500 block">Número de Telefone</label>
+                          <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400 block">Número de Telefone</label>
                           <input
                             type="tel"
                             placeholder="Telefone (DDD + Número)"
                             value={custPhone}
                             onChange={(e) => setCustPhone(e.target.value)}
                             required
-                            className="w-full bg-slate-900 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none text-sm focus:border-blue-500 transition shadow-sm"
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-mono text-slate-500 block font-sans">Endereço de E-mail (Opcional)</label>
+                          <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400 block font-sans">Endereço de E-mail (Opcional)</label>
                           <input
                             type="email"
                             placeholder="cliente@exemplo.com"
                             value={custEmail}
                             onChange={(e) => setCustEmail(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 outline-none text-sm focus:border-blue-500 transition shadow-sm"
                           />
                         </div>
                       </div>
 
-                      <div className="pt-2">
+                      <div className="pt-4">
                         <button
                           type="submit"
-                          className="w-full py-2.5 bg-slate-900 hover:bg-slate-850 text-teal-400 font-bold text-xs rounded-xl border border-slate-800 hover:border-slate-705 transition cursor-pointer"
+                          className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-full border border-slate-300 transition cursor-pointer"
                         >
                           Adicionar Novo Registro de Cliente
                         </button>
@@ -1065,7 +1086,7 @@ export default function ClientAdminPanel({
                     </form>
                   </div>
 
-                  <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-850/60 text-[10px] text-slate-450 italic mt-4">
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/50 text-[11px] text-slate-500 font-medium leading-relaxed italic mt-4">
                     💡 Dica: Após adicionar o cliente aqui, ele ficará disponível imediatamente para seleção no menu "Lançamento de Reserva Manual" ao lado para que você agende horários nele.
                   </div>
                 </div>
@@ -1184,77 +1205,90 @@ export default function ClientAdminPanel({
               </div>
 
               {/* COMMISSIONS DYNAMIC SPLIT CALCULATOR */}
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
-                <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider border-b border-slate-850 pb-2">Repasse de Comissões Colaborativas</h3>
+              <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-blue-600" /> Repasse de Comissões Colaborativas
+                </h3>
+                <p className="text-sm text-slate-500 border-b border-slate-100 pb-4">Visão geral dos ganhos da equipe a serem repassados.</p>
                 
-                <div className="divide-y divide-slate-850 max-h-[220px] overflow-y-auto">
+                <div className="divide-y divide-slate-100 max-h-[220px] overflow-y-auto pr-2">
                   {calculatedCommissions.map(comm => (
-                    <div key={comm.id} className="py-2.5 flex items-center justify-between text-xs">
+                    <div key={comm.id} className="py-3 flex items-center justify-between text-xs">
                       <div>
-                        <p className="font-semibold text-slate-200">{comm.name}</p>
-                        <span className="text-[10px] text-slate-500 font-mono">
+                        <p className="font-semibold text-slate-800 text-sm">{comm.name}</p>
+                        <span className="text-[11px] text-slate-500 font-medium">
                           {comm.closedCount} cortes fechados • {comm.commissionPct}% quota
                         </span>
                       </div>
                       
                       <div className="text-right">
-                        <span className="text-emerald-400 font-bold font-mono text-[13px]">
+                        <span className="text-emerald-600 font-extrabold text-[15px] tracking-tight">
                           R$ {comm.dueCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </span>
-                        <p className="text-[9px] text-slate-500 font-mono">Lucro Salão: R$ {(comm.totalEarnedForSalon - comm.dueCommission).toFixed(2)}</p>
+                        <p className="text-[10px] text-slate-400 font-medium tracking-tight uppercase">Lucro Salão: R$ {(comm.totalEarnedForSalon - comm.dueCommission).toFixed(2)}</p>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <div className="text-[10px] text-slate-500 font-mono bg-slate-900 p-3 rounded mt-3 leading-relaxed border border-slate-850/60">
-                  ℹ️ <strong>Comitê de Repasse:</strong> Os valores de comissão sintonizam em Tempo Real assim que novos horários na Agenda são sinalizados como "Presença Confirmada (Concluir)".
+                <div className="text-[11px] text-slate-500 bg-blue-50/50 p-4 rounded-2xl mt-4 leading-relaxed border border-blue-100/50 flex gap-3 items-start">
+                  <span className="text-lg">ℹ️</span>
+                  <p><strong>Comitê de Repasse:</strong> Os valores de comissão sintonizam em Tempo Real assim que novos horários na Agenda são sinalizados como "Presença Confirmada (Concluir)".</p>
                 </div>
               </div>
 
             </div>
 
             {/* TRANSACTIONS HISTORIC LOG TABLE */}
-            <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-4">
-              <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Histórico de Fluxo de Caixa (Balancete de Entradas e Saídas)</h3>
+            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <RefreshCw className="w-5 h-5 text-blue-600" /> Histórico de Fluxo de Caixa
+              </h3>
+              <p className="text-sm text-slate-500 border-b border-slate-100 pb-4">Balancete consolidado de entradas, saídas e movimentações diárias.</p>
               
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-slate-350">
+                <table className="w-full text-left text-sm text-slate-500">
                   <thead>
-                    <tr className="border-b border-slate-850 text-slate-500 font-mono uppercase text-[10px] bg-slate-950/40">
-                      <th className="py-2.5 px-3">Data da Transação</th>
-                      <th className="py-2.5 px-3">Origem / Descrição</th>
-                      <th className="py-2.5 px-3 font-mono">Método</th>
-                      <th className="py-2.5 px-3 font-mono">Preço Entrada / Saída</th>
-                      <th className="py-2.5 px-3 text-right">Status</th>
+                    <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[10px] tracking-widest bg-slate-50/50">
+                      <th className="py-3 px-4 rounded-tl-xl rounded-bl-xl">Data / Hora</th>
+                      <th className="py-3 px-4">Origem / Descrição</th>
+                      <th className="py-3 px-4">Método</th>
+                      <th className="py-3 px-4">Entrada / Saída</th>
+                      <th className="py-3 px-4 text-right rounded-tr-xl rounded-br-xl">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-850">
+                  <tbody className="divide-y divide-slate-50">
                     {myPayments.length > 0 ? (
                       myPayments.map(payment => (
-                        <tr key={payment.id} className="hover:bg-slate-900/45">
-                          <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">{payment.date}</td>
-                          <td className="py-3 px-3 font-medium text-slate-200">{payment.description}</td>
-                          <td className="py-3 px-3 uppercase font-mono text-[10.5px] text-slate-400">{payment.method}</td>
-                          <td className="py-3 px-3 font-mono font-bold">
+                        <tr key={payment.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="py-4 px-4 font-medium text-slate-600 text-xs">{payment.date}</td>
+                          <td className="py-4 px-4 font-semibold text-slate-800">{payment.description}</td>
+                          <td className="py-4 px-4">
+                            <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest">
+                              {payment.method}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 font-extrabold tracking-tight">
                             {payment.status === 'refunded' ? (
-                              <span className="text-red-400">- R$ {payment.amount.toFixed(2)}</span>
+                              <span className="text-red-600">- R$ {payment.amount.toFixed(2)}</span>
                             ) : (
-                              <span className="text-emerald-400">+ R$ {payment.amount.toFixed(2)}</span>
+                              <span className="text-emerald-600">+ R$ {payment.amount.toFixed(2)}</span>
                             )}
                           </td>
-                          <td className="py-3 px-3 text-right">
-                            <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
-                              payment.status === 'paid' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-500'
+                          <td className="py-4 px-4 text-right">
+                            <span className={`px-3 py-1 rounded-full text-[10px] uppercase font-bold tracking-widest border ${
+                              payment.status === 'paid' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'
                             }`}>
-                              {payment.status === 'paid' ? 'Pago (Caixa)' : 'Saída'}
+                              {payment.status === 'paid' ? 'Pago' : 'Saída'}
                             </span>
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={5} className="text-center py-10 text-slate-500 italic">Nenhuma transação registrada no fechamento do caixa hoje.</td>
+                        <td colSpan={5} className="text-center py-12 text-slate-400 font-medium bg-slate-50/50 rounded-xl mt-2 border border-dashed border-slate-200">
+                          Nenhuma transação registrada no fechamento do caixa hoje.
+                        </td>
                       </tr>
                     )}
                   </tbody>
@@ -1335,17 +1369,17 @@ export default function ClientAdminPanel({
           <div className="space-y-6 transition-all animate-fade-in text-xs font-sans">
             
             {/* Header banner */}
-            <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="bg-white p-8 rounded-3xl border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
               <div>
-                <span className="text-[10px] font-mono text-teal-400 uppercase tracking-widest font-bold block mb-1">Configurações Gerais de Operação</span>
-                <h3 className="text-lg font-bold text-slate-100 uppercase sm:tracking-tight">Serviços, Equipe, Personalização & Horários</h3>
-                <p className="text-xs text-slate-450 mt-1">Defina sua identidade visual, configure horários de funcionamento específicos para cada dia da semana, gerencie colaboradores e edite o catálogo de atendimentos.</p>
+                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest block mb-2">Configurações Gerais de Operação</span>
+                <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Serviços, Equipe, Personalização & Horários</h3>
+                <p className="text-sm text-slate-500 mt-2 font-medium leading-relaxed">Defina sua identidade visual, configure horários de funcionamento específicos para cada dia da semana, gerencie colaboradores e edite o catálogo de atendimentos.</p>
               </div>
-              <div className="flex bg-slate-900 border border-slate-800 p-2.5 rounded-xl text-center select-none shrink-0 gap-3">
-                <span className="text-3xl p-1 bg-slate-950 rounded border border-slate-850 flex items-center justify-center">{tenantLogo}</span>
-                <div className="text-left font-mono text-[10px]">
-                  <p className="text-slate-350 font-bold">{tenantName || 'Sem Nome'}</p>
-                  <p className="text-teal-400 font-semibold">{editedDays.length} Dias ativos • Configuração individual de horários ativa</p>
+              <div className="flex bg-slate-50 border border-slate-200 p-4 rounded-2xl md:items-center text-center select-none shrink-0 gap-4 shadow-3xs">
+                <span className="text-4xl p-2 bg-white rounded-xl border border-slate-200 flex items-center justify-center shadow-sm">{tenantLogo}</span>
+                <div className="text-left">
+                  <p className="text-slate-800 font-bold text-sm tracking-tight">{tenantName || 'Sem Nome'}</p>
+                  <p className="text-emerald-600 font-semibold text-[10px] tracking-wide uppercase mt-1">{editedDays.length} Dias ativos • Configuração individual de horários ativa</p>
                 </div>
               </div>
             </div>
@@ -1493,7 +1527,7 @@ export default function ClientAdminPanel({
                 {/* Days of week selector tabs */}
                 <div className="space-y-4">
                   <label className="text-xs font-semibold text-slate-500 uppercase">Selecione o Dia:</label>
-                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                  <div className="bg-slate-100 p-1.5 rounded-full flex flex-wrap gap-2 shadow-sm border border-slate-200/60 max-w-fit">
                     {[
                       { id: 'seg', label: 'Seg' },
                       { id: 'ter', label: 'Ter' },
@@ -1509,10 +1543,10 @@ export default function ClientAdminPanel({
                           key={day.id}
                           type="button"
                           onClick={() => setSelectedHoursDay(day.id)}
-                          className={`py-3 text-center font-bold text-xs rounded-xl border transition-all ${
+                          className={`px-4 py-2 text-center font-bold text-xs rounded-full transition-all duration-300 ${
                             isSelected
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-slate-50 border-slate-100 text-slate-600'
+                              ? 'bg-blue-600 text-white shadow-md scale-100'
+                              : 'text-slate-500 hover:text-slate-900 hover:bg-white scale-95 hover:scale-100'
                           }`}
                         >
                           {day.label}
@@ -1677,6 +1711,18 @@ export default function ClientAdminPanel({
                   <h5 className="text-xs font-bold text-slate-900 uppercase">Novo Colaborador</h5>
                   
                   <form onSubmit={handleAddProfessionalSubmit} className="space-y-4">
+                    <div className="space-y-1 relative">
+                      <label className="text-xs font-semibold text-slate-500 uppercase block">Foto (Opcional)</label>
+                      <div className="flex items-center gap-4">
+                        <img src={profAvatar} alt="Preview" className="size-16 rounded-2xl border border-slate-200 object-cover" />
+                        <input
+                           type="file"
+                           accept="image/*"
+                           onChange={handleAvatarUpload}
+                           className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                      </div>
+                    </div>
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-slate-500 uppercase block">Nome</label>
                       <input
@@ -1686,6 +1732,71 @@ export default function ClientAdminPanel({
                         onChange={(e) => setProfName(e.target.value)}
                         className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm"
                       />
+                    </div>
+                    <div className="space-y-2 pt-2 border-t border-slate-200/60">
+                       <label className="text-xs font-semibold text-slate-500 uppercase block">Horários de Atendimento</label>
+                       
+                       <div className="flex flex-wrap gap-2 mb-3">
+                         {['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'].map(d => (
+                           <button
+                             key={d}
+                             type="button"
+                             onClick={() => setProfSelectedHoursDay(d)}
+                             className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition ${profSelectedHoursDay === d ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                           >
+                             {d}
+                           </button>
+                         ))}
+                       </div>
+                       
+                       <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+                         <div className="flex items-center justify-between">
+                           <span className="text-xs font-medium text-slate-900">Atenderá na {profSelectedHoursDay}?</span>
+                           <button
+                             type="button"
+                             onClick={() => {
+                               const isOpen = profEditedDays.includes(profSelectedHoursDay);
+                               if (isOpen) setProfEditedDays(prev => prev.filter(x => x !== profSelectedHoursDay));
+                               else setProfEditedDays(prev => [...prev, profSelectedHoursDay]);
+                             }}
+                             className={`text-xs font-bold px-3 py-1 rounded-full border transition ${
+                               profEditedDays.includes(profSelectedHoursDay) ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'
+                             }`}
+                           >
+                             {profEditedDays.includes(profSelectedHoursDay) ? 'Sim' : 'Não'}
+                           </button>
+                         </div>
+                         
+                         {profEditedDays.includes(profSelectedHoursDay) && (
+                           <div className="space-y-2 pt-2 border-t border-slate-100">
+                             <div className="flex flex-wrap gap-1">
+                               {(profEditedHoursByDay[profSelectedHoursDay] || []).map(hour => (
+                                 <span key={hour} className="text-[10px] bg-slate-50 border border-slate-200 px-2 py-1 rounded font-mono font-semibold text-slate-700 flex items-center gap-1">
+                                   {hour}
+                                   <button type="button" onClick={() => {
+                                     setProfEditedHoursByDay(prev => ({
+                                       ...prev,
+                                       [profSelectedHoursDay]: prev[profSelectedHoursDay].filter(h => h !== hour)
+                                     }));
+                                   }} className="text-red-500 hover:text-red-700 font-bold ml-1">×</button>
+                                 </span>
+                               ))}
+                             </div>
+                             <div className="flex gap-2 pt-2">
+                               <input type="time" value={profNewHourInput} onChange={e => setProfNewHourInput(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-900"/>
+                               <button type="button" onClick={() => {
+                                 if (profNewHourInput) {
+                                   setProfEditedHoursByDay(prev => ({
+                                     ...prev,
+                                     [profSelectedHoursDay]: Array.from(new Set([...(prev[profSelectedHoursDay]||[]), profNewHourInput])).sort()
+                                   }));
+                                   setProfNewHourInput('');
+                                 }
+                               }} className="px-3 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800">Add</button>
+                             </div>
+                           </div>
+                         )}
+                       </div>
                     </div>
                     
                     <button
@@ -1704,10 +1815,27 @@ export default function ClientAdminPanel({
                     {myProfessionals.map(prof => (
                       <div
                         key={prof.id}
-                        className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center gap-4 text-sm"
+                        className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between gap-4 text-sm shadow-sm"
                       >
-                        <img src={prof.avatar} alt={prof.name} className="size-10 rounded-full" />
-                        <div className="font-bold text-slate-900">{prof.name}</div>
+                        <div className="flex items-center gap-4">
+                          <img src={prof.avatar} alt={prof.name} className="size-12 rounded-full border border-slate-200 object-cover" />
+                          <div>
+                            <div className="font-bold text-slate-900">{prof.name}</div>
+                            <div className="text-xs text-slate-500 font-medium">{prof.role}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="flex flex-wrap justify-end gap-1 max-w-[200px]">
+                            {(prof.businessDays || []).map(day => (
+                              <span key={day} className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase" title={(prof.businessHoursByDay?.[day] || []).join(', ')}>
+                                {day}
+                              </span>
+                            ))}
+                          </div>
+                          {(prof.businessDays || []).length === 0 && (
+                            <span className="text-[10px] text-slate-400 italic">Horário Padrão do Salão</span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

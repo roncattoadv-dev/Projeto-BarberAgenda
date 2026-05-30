@@ -301,86 +301,51 @@ CREATE TABLE audit_logs (
   const calculatedARR = (activeUsersSim * 149.90 * customPriceMultiplier * 12).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div id="saas-architect-root" className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+    <div id="saas-architect-root" className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
       {/* Header */}
-      <div className="bg-gradient-to-r from-teal-900/30 to-amber-900/10 p-6 border-b border-slate-800">
+      <div className="bg-gradient-to-r from-teal-900/30 to-amber-900/10 p-6 border-b border-slate-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-400/10 text-teal-400 border border-teal-500/20">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-400/10 text-blue-600 border border-teal-500/20">
                 Lançamento SaaS v1.0
               </span>
-              <span className="text-xs font-mono text-slate-400">Pronto para Comercialização</span>
+              <span className="text-xs font-mono text-slate-500">Pronto para Comercialização</span>
             </div>
-            <h2 className="text-2xl font-bold text-slate-100 uppercase tracking-wide">
+            <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-wide">
               Mecanismo e Planejamento Técnico SaaS
             </h2>
-            <p className="text-sm text-slate-400 mt-1">
+            <p className="text-sm text-slate-500 mt-1">
               Arquitetura de microsserviços, modelagem física, fluxos mapeados, estimativas financeiras e APIs REST multi-tenant.
             </p>
           </div>
           
-          <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1 overflow-x-auto max-w-full">
-            <button
-              id="tab-arq"
-              onClick={() => setActiveTab('arquitetura')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                activeTab === 'arquitetura'
-                  ? 'bg-teal-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Network className="w-3 h-3 inline-block mr-1 text-xs" />
-              Arquitetura & Fluxo
-            </button>
-            <button
-              id="tab-bd"
-              onClick={() => setActiveTab('banco')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                activeTab === 'banco'
-                  ? 'bg-teal-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Database className="w-3 h-3 inline-block mr-1 text-xs" />
-              BD Model (SQL DDL)
-            </button>
-            <button
-              id="tab-apis"
-              onClick={() => setActiveTab('apis')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                activeTab === 'apis'
-                  ? 'bg-teal-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Terminal className="w-3 h-3 inline-block mr-1 text-xs" />
-              API Explorer
-            </button>
-            <button
-              id="tab-mon"
-              onClick={() => setActiveTab('monetizacao')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                activeTab === 'monetizacao'
-                  ? 'bg-teal-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <DollarSign className="w-3 h-3 inline-block mr-1 text-xs" />
-              Monetização Sim
-            </button>
-            <button
-              id="tab-road"
-              onClick={() => setActiveTab('roadmap')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                activeTab === 'roadmap'
-                  ? 'bg-teal-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Layers className="w-3 h-3 inline-block mr-1 text-xs" />
-              Regras e Roadmap
-            </button>
+          <div className="bg-slate-50 border border-slate-200 rounded-full flex gap-2 overflow-x-auto max-w-full shadow-sm p-2 no-scrollbar mx-4 mt-4">
+            {[
+              { id: 'arquitetura', label: 'Arquitetura & Fluxo', icon: Network },
+              { id: 'banco', label: 'BD Model (SQL DDL)', icon: Database },
+              { id: 'apis', label: 'API Explorer', icon: Terminal },
+              { id: 'monetizacao', label: 'Monetização Sim', icon: DollarSign },
+              { id: 'roadmap', label: 'Regras e Roadmap', icon: Layers }
+            ].map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  id={`tab-${tab.id.substring(0, 3)}`}
+                  onClick={() => setActiveTab(tab.id as 'arquitetura' | 'banco' | 'apis' | 'monetizacao' | 'roadmap')}
+                  className={`flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-full transition-all duration-300 cursor-pointer whitespace-nowrap ${
+                    isActive 
+                      ? 'bg-blue-600 text-white shadow-md scale-100' 
+                      : 'text-slate-500 hover:bg-slate-100 scale-95 hover:scale-100 font-medium'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-slate-950' : 'text-slate-500'}`} strokeWidth={isActive ? 2.5 : 2} />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -393,45 +358,45 @@ CREATE TABLE audit_logs (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
-                <div className="p-2 bg-teal-500/10 text-teal-400 w-fit rounded-lg mb-3">
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="p-2 bg-teal-500/10 text-blue-600 w-fit rounded-lg mb-3">
                   <Layers className="w-5 h-5" />
                 </div>
-                <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Isolamento de Dados (Tenant-Level)</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                  Para garantir performance e segurança em conformidade com a LGPD, o SaaS é projetado usando arquitetura de <strong>Shared Database com Schemas Dinâmicos ou Row Level Security (RLS)</strong> do PostgreSQL. Uma coluna indexada <span className="text-teal-400 font-mono">tenant_id</span> assegura que cada query filtra exclusivamente dados do cliente correspondente.
+                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-widest font-bold">Isolamento de Dados (Tenant-Level)</h3>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  Para garantir performance e segurança em conformidade com a LGPD, o SaaS é projetado usando arquitetura de <strong>Shared Database com Schemas Dinâmicos ou Row Level Security (RLS)</strong> do PostgreSQL. Uma coluna indexada <span className="text-blue-600 font-mono">tenant_id</span> assegura que cada query filtra exclusivamente dados do cliente correspondente.
                 </p>
-                <div className="mt-4 flex flex-col gap-1.5 text-[10px] font-mono text-slate-400">
+                <div className="mt-4 flex flex-col gap-1.5 text-[10px] font-mono text-slate-500">
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-teal-400"></div> Isolamento estrito a nível de Conexão</div>
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-teal-400"></div> Middlewares injetando ID no Contexto</div>
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-teal-400"></div> Criptografia em repouso AES-256</div>
                 </div>
               </div>
 
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="p-2 bg-amber-500/10 text-amber-400 w-fit rounded-lg mb-3">
                   <Network className="w-5 h-5" />
                 </div>
-                <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Notificações Automáticas</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-widest font-bold">Notificações Automáticas</h3>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                   Utilização de filas de mensagens assíncronas via <strong>BullMQ (Redis)</strong> executadas por timers cron. Sempre que um agendamento é marcado/alterado, eventos de fila disparam webhooks customizados com APIs integradas de disparo de mensagens do WhatsApp (Z-API/Chatpro) sem engasgar o servidor principal.
                 </p>
-                <div className="mt-4 flex flex-col gap-1.5 text-[10px] font-mono text-slate-400">
+                <div className="mt-4 flex flex-col gap-1.5 text-[10px] font-mono text-slate-500">
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-400"></div> Gatilho Lembrete T-2h e T-24h</div>
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-400"></div> Envio automático de Pix Copia e Cola</div>
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-400"></div> Mensagens customizadas com Tags dinâmicas</div>
                 </div>
               </div>
 
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="p-2 bg-blue-500/10 text-blue-400 w-fit rounded-lg mb-3">
                   <Cpu className="w-5 h-5" />
                 </div>
-                <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Gateway de Pagamentos Integrado</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-widest font-bold">Gateway de Pagamentos Integrado</h3>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                   Controle de assinaturas do SaaS integrado via Gateway <strong>Asaas API</strong>. A criação da conta do Tenant Admin ativa o período de teste de 10 dias de forma imediata. Ao expirar ou inadimplir, o sistema utiliza o webhook do financeiro para bloquear dinamicamente o acesso do painel do salão.
                 </p>
-                <div className="mt-4 flex flex-col gap-1.5 text-[10px] font-mono text-slate-400">
+                <div className="mt-4 flex flex-col gap-1.5 text-[10px] font-mono text-slate-500">
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div> Cobrança Recorrente (Cartão/Pix)</div>
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div> Tentativas de reenvio inteligentes</div>
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div> Split de Pagamento dinâmico</div>
@@ -440,17 +405,17 @@ CREATE TABLE audit_logs (
             </div>
 
             {/* FLUXO INTERATIVO DOS USUÁRIOS */}
-            <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
-              <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-4">Fluxo Unificado de Usuários & Roles</h3>
+            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-widest font-bold mb-4">Fluxo Unificado de Usuários & Roles</h3>
               
               <div className="flex flex-col lg:flex-row items-stretch justify-between gap-4">
                 
-                <div className="flex-1 bg-slate-900/60 p-4 rounded-lg border border-slate-800">
+                <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-400 text-xs flex items-center justify-center font-bold">1</span>
-                    <h4 className="text-xs font-semibold text-slate-200">SUPER ADMIN</h4>
+                    <h4 className="text-xs font-semibold text-slate-900">SUPER ADMIN</h4>
                   </div>
-                  <ul className="text-[11px] text-slate-400 space-y-2">
+                  <ul className="text-[11px] text-slate-500 space-y-2">
                     <li className="flex items-start gap-1.5">
                       <ArrowRight className="w-3.5 h-3.5 text-purple-400 mt-0.5 shrink-0" />
                       <span>Monitoramento do MRR total e Churn</span>
@@ -470,22 +435,22 @@ CREATE TABLE audit_logs (
                   <ArrowRight className="w-6 h-6 rotate-90 lg:rotate-0" />
                 </div>
 
-                <div className="flex-1 bg-slate-900/60 p-4 rounded-lg border border-slate-800">
+                <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="w-5 h-5 rounded-full bg-teal-500/20 text-teal-400 text-xs flex items-center justify-center font-bold">2</span>
-                    <h4 className="text-xs font-semibold text-slate-200">TENANT ADMIN (SALÃO)</h4>
+                    <span className="w-5 h-5 rounded-full bg-teal-500/20 text-blue-600 text-xs flex items-center justify-center font-bold">2</span>
+                    <h4 className="text-xs font-semibold text-slate-900">TENANT ADMIN (SALÃO)</h4>
                   </div>
-                  <ul className="text-[11px] text-slate-400 space-y-2">
+                  <ul className="text-[11px] text-slate-500 space-y-2">
                     <li className="flex items-start gap-1.5">
-                      <ArrowRight className="w-3.5 h-3.5 text-teal-400 mt-0.5 shrink-0" />
+                      <ArrowRight className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
                       <span>Setup da Página e Link Único de Reservas</span>
                     </li>
                     <li className="flex items-start gap-1.5">
-                      <ArrowRight className="w-3.5 h-3.5 text-teal-400 mt-0.5 shrink-0" />
+                      <ArrowRight className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
                       <span>Controle de Estoque e Comissões Financeiras</span>
                     </li>
                     <li className="flex items-start gap-1.5">
-                      <ArrowRight className="w-3.5 h-3.5 text-teal-400 mt-0.5 shrink-0" />
+                      <ArrowRight className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
                       <span>Painel de Horários com Drag & Drop Inteligente</span>
                     </li>
                   </ul>
@@ -495,12 +460,12 @@ CREATE TABLE audit_logs (
                   <ArrowRight className="w-6 h-6 rotate-90 lg:rotate-0" />
                 </div>
 
-                <div className="flex-1 bg-slate-900/60 p-4 rounded-lg border border-slate-800">
+                <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-xs flex items-center justify-center font-bold">3</span>
-                    <h4 className="text-xs font-semibold text-slate-200">CLIENTE FINAL</h4>
+                    <h4 className="text-xs font-semibold text-slate-900">CLIENTE FINAL</h4>
                   </div>
-                  <ul className="text-[11px] text-slate-400 space-y-2">
+                  <ul className="text-[11px] text-slate-500 space-y-2">
                     <li className="flex items-start gap-1.5">
                       <ArrowRight className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
                       <span>Acesso via QRCode ou link direto em dispositivo móvel</span>
@@ -520,12 +485,12 @@ CREATE TABLE audit_logs (
             </div>
 
             {/* ESTRUTURA DE PASTAS */}
-            <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
-              <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-2">Estrutura de Pastas Recomendada (Full-Stack CLI)</h3>
-              <p className="text-xs text-slate-400 mb-4">Organização modular escalável ideal para produção robusta com NestJS backend e Vite frontend.</p>
+            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-widest font-bold mb-2">Estrutura de Pastas Recomendada (Full-Stack CLI)</h3>
+              <p className="text-xs text-slate-500 mb-4">Organização modular escalável ideal para produção robusta com NestJS backend e Vite frontend.</p>
               
-              <div className="bg-slate-900 p-4 rounded-lg border border-slate-800 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
-                <div>📁 <span className="text-teal-400 font-semibold">saas-barber-mono/</span></div>
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-xs font-mono text-slate-700 overflow-x-auto leading-relaxed">
+                <div>📁 <span className="text-blue-600 font-semibold">saas-barber-mono/</span></div>
                 <div className="pl-4">📁 <span className="text-amber-400 font-semibold">apps/backend/</span> <span className="text-slate-500">// NestJS API REST Framework</span></div>
                 <div className="pl-8">📁 src/</div>
                 <div className="pl-12">📁 <span className="text-blue-400">auth/</span> <span className="text-slate-500">// RBAC & JWT Guards</span></div>
@@ -553,25 +518,25 @@ CREATE TABLE audit_logs (
         {activeTab === 'banco' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Modelagem Física SQL (PostgreSQL DDL)</h3>
+              <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-widest font-bold">Modelagem Física SQL (PostgreSQL DDL)</h3>
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(sqlSchema);
                   alert("Código SQL copiado para a área de transferência!");
                 }}
-                className="px-3 py-1 bg-slate-850 hover:bg-slate-800 text-teal-400 hover:text-teal-300 font-mono text-[11px] rounded border border-slate-700 transition"
+                className="px-3 py-1 bg-slate-850 hover:bg-slate-800 text-blue-600 hover:text-teal-300 font-mono text-[11px] rounded border border-slate-700 transition"
               >
                 Copiar SQL schema
               </button>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed mb-4">
-              Cada tabela requer herança ou mapeamento de chave estrangeira ao <span className="text-teal-400 font-mono">tenant_id</span> (exceto a tabela global de Tenants e o controle global de usuários SaaS como Super Admins). Foram inseridos índices compostos visando otimização extrema de performance em buscas simultâneas na agenda.
+            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+              Cada tabela requer herança ou mapeamento de chave estrangeira ao <span className="text-blue-600 font-mono">tenant_id</span> (exceto a tabela global de Tenants e o controle global de usuários SaaS como Super Admins). Foram inseridos índices compostos visando otimização extrema de performance em buscas simultâneas na agenda.
             </p>
             <div className="relative">
-              <div className="absolute top-3 right-3 text-[10px] font-mono text-slate-500 bg-slate-950 px-2 py-0.5 rounded border border-slate-800/80">
+              <div className="absolute top-3 right-3 text-[10px] font-mono text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/80">
                 POSTGRESQL
               </div>
-              <pre className="p-4 bg-slate-955 rounded-xl border border-slate-800 text-[11px] font-mono text-slate-300 max-h-[420px] overflow-y-auto leading-relaxed scrollbar-thin scrollbar-thumb-slate-800">
+              <pre className="p-4 bg-slate-955 rounded-xl border border-slate-200 text-[11px] font-mono text-slate-700 max-h-[420px] overflow-y-auto leading-relaxed scrollbar-thin scrollbar-thumb-slate-800">
                 {sqlSchema}
               </pre>
             </div>
@@ -581,13 +546,13 @@ CREATE TABLE audit_logs (
         {/* TAB 3: API EXPLORER */}
         {activeTab === 'apis' && (
           <div className="space-y-6">
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-              <h4 className="text-xs font-semibold text-slate-200 uppercase tracking-wider mb-3">API Interactive REST Explorer</h4>
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <h4 className="text-xs font-semibold text-slate-900 uppercase tracking-widest font-bold mb-3">API Interactive REST Explorer</h4>
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => { setActiveApiRoute('get_appointments'); setTestResult(null); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition ${
-                    activeApiRoute === 'get_appointments' ? 'bg-indigo-650 text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                    activeApiRoute === 'get_appointments' ? 'bg-indigo-650 text-white' : 'bg-slate-50 text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   <span className="px-1 text-[9px] font-bold bg-green-500/20 text-green-400 rounded">GET</span>
@@ -596,7 +561,7 @@ CREATE TABLE audit_logs (
                 <button
                   onClick={() => { setActiveApiRoute('post_appointment'); setTestResult(null); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition ${
-                    activeApiRoute === 'post_appointment' ? 'bg-indigo-650 text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                    activeApiRoute === 'post_appointment' ? 'bg-indigo-650 text-white' : 'bg-slate-50 text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   <span className="px-1 text-[9px] font-bold bg-amber-500/20 text-amber-400 rounded">POST</span>
@@ -605,7 +570,7 @@ CREATE TABLE audit_logs (
                 <button
                   onClick={() => { setActiveApiRoute('create_tenant'); setTestResult(null); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-mono flex items-center gap-1.5 transition ${
-                    activeApiRoute === 'create_tenant' ? 'bg-indigo-650 text-white' : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                    activeApiRoute === 'create_tenant' ? 'bg-indigo-650 text-white' : 'bg-slate-50 text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   <span className="px-1 text-[9px] font-bold bg-purple-500/20 text-purple-400 rounded">POST</span>
@@ -617,7 +582,7 @@ CREATE TABLE audit_logs (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* API REQUEST DETAIL */}
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-4 text-xs">
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 text-xs">
                 <div className="flex items-center gap-2">
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                     apiSpecs[activeApiRoute].method === 'GET' ? 'bg-green-500/20 text-green-400' :
@@ -625,14 +590,14 @@ CREATE TABLE audit_logs (
                   }`}>
                     {apiSpecs[activeApiRoute].method}
                   </span>
-                  <span className="font-mono text-slate-200 font-semibold">{apiSpecs[activeApiRoute].endpoint}</span>
+                  <span className="font-mono text-slate-900 font-semibold">{apiSpecs[activeApiRoute].endpoint}</span>
                 </div>
                 
-                <p className="text-slate-400 leading-relaxed text-xs">{apiSpecs[activeApiRoute].desc}</p>
+                <p className="text-slate-500 leading-relaxed text-xs">{apiSpecs[activeApiRoute].desc}</p>
                 
                 <div>
                   <h5 className="font-mono text-[10px] uppercase text-slate-500 mb-1.5 font-bold">Headers obrigatórios</h5>
-                  <pre className="p-3 bg-slate-900 rounded border border-slate-850 font-mono text-[10px] text-slate-400 overflow-x-auto leading-relaxed">
+                  <pre className="p-3 bg-slate-50 rounded border border-slate-200 font-mono text-[10px] text-slate-500 overflow-x-auto leading-relaxed">
                     {JSON.stringify(apiSpecs[activeApiRoute].headers, null, 2)}
                   </pre>
                 </div>
@@ -640,7 +605,7 @@ CREATE TABLE audit_logs (
                 {apiSpecs[activeApiRoute].queryParams && (
                   <div>
                     <h5 className="font-mono text-[10px] uppercase text-slate-500 mb-1.5 font-bold">Query Parameters</h5>
-                    <pre className="p-2.5 bg-slate-900 rounded border border-slate-850 font-mono text-[11px] text-teal-400">
+                    <pre className="p-2.5 bg-slate-50 rounded border border-slate-200 font-mono text-[11px] text-blue-600">
                       {apiSpecs[activeApiRoute].queryParams}
                     </pre>
                   </div>
@@ -649,7 +614,7 @@ CREATE TABLE audit_logs (
                 {(apiSpecs[activeApiRoute] as any).body && (
                   <div>
                     <h5 className="font-mono text-[10px] uppercase text-slate-500 mb-1.5 font-bold font-bold">Request Body (JSON)</h5>
-                    <pre className="p-3 bg-slate-900 rounded border border-slate-850 font-mono text-[10px] text-slate-350 overflow-x-auto leading-relaxed">
+                    <pre className="p-3 bg-slate-50 rounded border border-slate-200 font-mono text-[10px] text-slate-350 overflow-x-auto leading-relaxed">
                       {JSON.stringify((apiSpecs[activeApiRoute] as any).body, null, 2)}
                     </pre>
                   </div>
@@ -659,7 +624,7 @@ CREATE TABLE audit_logs (
                   id="btn-test-api"
                   onClick={simulateApiCall}
                   disabled={simulatingApi}
-                  className="w-full py-2.5 bg-teal-500 text-slate-950 font-semibold text-xs rounded-lg active:scale-[0.99] transition flex items-center justify-center gap-2 hover:bg-teal-400 disabled:opacity-50"
+                  className="w-full py-2.5 bg-blue-600 text-white font-semibold text-xs rounded-lg active:scale-[0.99] transition flex items-center justify-center gap-2 hover:bg-teal-400 disabled:opacity-50"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
                   {simulatingApi ? 'Simulando requisição...' : 'Enviar Chamada ao Servidor (Simulado)'}
@@ -667,10 +632,10 @@ CREATE TABLE audit_logs (
               </div>
 
               {/* API RESPONSE PANEL */}
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 flex flex-col justify-between">
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
-                  <div className="flex items-center justify-between border-b border-slate-850 pb-2 mb-4">
-                    <h4 className="text-xs font-semibold text-slate-200 uppercase tracking-wider">Resposta HTTP do Servidor</h4>
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-4">
+                    <h4 className="text-xs font-semibold text-slate-900 uppercase tracking-widest font-bold">Resposta HTTP do Servidor</h4>
                     <span className="text-[10px] font-mono text-slate-500">Formato: JSON</span>
                   </div>
 
@@ -682,14 +647,14 @@ CREATE TABLE audit_logs (
                         <span className="text-slate-500">|</span>
                         <span className="text-slate-500 font-mono">Tempo: 41ms</span>
                       </div>
-                      <pre className="p-4 bg-slate-900 rounded-lg border border-slate-850 text-[10px] font-mono text-slate-300 leading-relaxed overflow-x-auto max-h-[300px]">
+                      <pre className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-[10px] font-mono text-slate-700 leading-relaxed overflow-x-auto max-h-[300px]">
                         {JSON.stringify(testResult, null, 2)}
                       </pre>
                     </div>
                   ) : simulatingApi ? (
                     <div className="flex flex-col items-center justify-center py-20 gap-3">
                       <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-                      <p className="text-xs font-mono text-slate-400">Processando resposta no tenant sandbox...</p>
+                      <p className="text-xs font-mono text-slate-500">Processando resposta no tenant sandbox...</p>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-20 text-center gap-2 text-slate-500">
@@ -700,7 +665,7 @@ CREATE TABLE audit_logs (
                   )}
                 </div>
 
-                <div className="text-[10px] text-slate-500 font-mono bg-slate-900/40 p-3 rounded border border-slate-850 mt-4">
+                <div className="text-[10px] text-slate-500 font-mono bg-slate-50/40 p-3 rounded border border-slate-200 mt-4">
                   💡 <strong>Segurança Act:</strong> Cada endpoint possui Rate Limit nativo por IP (máx 120 requisições/minuto) e sanitização estrita de payload contra SQL Injection e ataques XSS.
                 </div>
               </div>
@@ -713,74 +678,74 @@ CREATE TABLE audit_logs (
         {activeTab === 'monetizacao' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 flex flex-col justify-between">
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Opção Plano Mensal</h4>
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Opção Plano Mensal</h4>
                   <div className="mt-2 flex items-baseline gap-1">
-                    <span className="text-3xl font-extrabold text-slate-100 font-mono">R$ 149</span>
-                    <span className="text-xs text-slate-400">,90/mês</span>
+                    <span className="text-3xl font-extrabold text-slate-900 font-mono">R$ 149</span>
+                    <span className="text-xs text-slate-500">,90/mês</span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                  <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                     Ideal para pequenas barbearias e profissionais autônomos que desejam automatizar o fluxo básico sem burocracia.
                   </p>
                 </div>
-                <ul className="text-[10.5px] text-slate-400 mt-4 space-y-2 border-t border-slate-850 pt-4">
-                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-400 shrink-0" /> Até 2 Profissionais</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-400 shrink-0" /> Suporte via Email</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-400 shrink-0" /> Notificação WhatsApp inclusa</li>
+                <ul className="text-[10.5px] text-slate-500 mt-4 space-y-2 border-t border-slate-200 pt-4">
+                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Até 2 Profissionais</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Suporte via Email</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Notificação WhatsApp inclusa</li>
                 </ul>
               </div>
 
-              <div className="bg-slate-950 p-5 rounded-xl border border-teal-500/30 relative flex flex-col justify-between">
+              <div className="bg-slate-50 p-5 rounded-xl border border-teal-500/30 relative flex flex-col justify-between">
                 <span className="absolute top-3 right-3 px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 font-semibold text-[9px] uppercase tracking-wider border border-teal-500/30">
                   Mais Vendido (Ganho 15%)
                 </span>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Plano Semestral</h4>
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-widest">Plano Semestral</h4>
                   <div className="mt-2 flex items-baseline gap-1">
-                    <span className="text-3xl font-extrabold text-teal-400 font-mono">R$ 129</span>
-                    <span className="text-xs text-slate-300">,90/mês</span>
+                    <span className="text-3xl font-extrabold text-blue-600 font-mono">R$ 129</span>
+                    <span className="text-xs text-slate-700">,90/mês</span>
                   </div>
                   <p className="text-xs text-slate-450 mt-2 leading-relaxed">
                     Excelente custo-benefício para salões consolidados com fluxo constante de clientes.
                   </p>
                 </div>
-                <ul className="text-[10.5px] text-slate-400 mt-4 space-y-2 border-t border-slate-850 pt-4">
-                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-400 shrink-0" /> Até 6 Profissionais</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-400 shrink-0" /> Suporte Whatsapp Prioritário</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-400 shrink-0" /> Histórico & Configuração Completa</li>
+                <ul className="text-[10.5px] text-slate-500 mt-4 space-y-2 border-t border-slate-200 pt-4">
+                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Até 6 Profissionais</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Suporte Whatsapp Prioritário</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Histórico & Configuração Completa</li>
                 </ul>
               </div>
 
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 flex flex-col justify-between">
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Plano Anual Premium</h4>
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Plano Anual Premium</h4>
                   <div className="mt-2 flex items-baseline gap-1">
-                    <span className="text-3xl font-extrabold text-slate-100 font-mono">R$ 99</span>
-                    <span className="text-xs text-slate-400">,90/mês</span>
+                    <span className="text-3xl font-extrabold text-slate-900 font-mono">R$ 99</span>
+                    <span className="text-xs text-slate-500">,90/mês</span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                  <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                     Foco em redes de salões de beleza e franquias que necessitam de domínio personalizado e múltiplas filiais.
                   </p>
                 </div>
-                <ul className="text-[10.5px] text-slate-400 mt-4 space-y-2 border-t border-slate-850 pt-4">
-                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-400 shrink-0" /> Profissionais ilimitados</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-400 shrink-0" /> Domínio .com.br do salão</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-teal-400 shrink-0" /> Gerente dedicado de conta</li>
+                <ul className="text-[10.5px] text-slate-500 mt-4 space-y-2 border-t border-slate-200 pt-4">
+                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Profissionais ilimitados</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Domínio .com.br do salão</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Gerente dedicado de conta</li>
                 </ul>
               </div>
             </div>
 
             {/* INTERACTIVE METRIC ESTIMATOR */}
-            <div className="bg-slate-950 p-6 rounded-xl border border-slate-800">
-              <h4 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-4">Calculadora de Escala SaaS do Platform Owner</h4>
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-900 uppercase tracking-widest font-bold mb-4">Calculadora de Escala SaaS do Platform Owner</h4>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">
                   <div>
-                    <div className="flex justify-between text-xs text-slate-400 mb-1">
+                    <div className="flex justify-between text-xs text-slate-500 mb-1">
                       <span>Número de Barbearias Clientes Ativos</span>
-                      <strong className="text-teal-400 font-mono">{activeUsersSim}</strong>
+                      <strong className="text-blue-600 font-mono">{activeUsersSim}</strong>
                     </div>
                     <input
                       type="range"
@@ -794,9 +759,9 @@ CREATE TABLE audit_logs (
                   </div>
 
                   <div>
-                    <div className="flex justify-between text-xs text-slate-400 mb-1">
+                    <div className="flex justify-between text-xs text-slate-500 mb-1">
                       <span>Multiplicador por Premium/SMS Adicionais</span>
-                      <strong className="text-teal-400 font-mono">x {customPriceMultiplier.toFixed(2)}</strong>
+                      <strong className="text-blue-600 font-mono">x {customPriceMultiplier.toFixed(2)}</strong>
                     </div>
                     <input
                       type="range"
@@ -810,15 +775,15 @@ CREATE TABLE audit_logs (
                   </div>
                 </div>
 
-                <div className="bg-slate-900 duration-200 p-5 rounded-lg border border-slate-800 flex flex-col justify-center text-center">
+                <div className="bg-white duration-200 p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-center text-center">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <span className="text-[10px] uppercase text-slate-500 tracking-wider">MRR Projetado (Mensal)</span>
-                      <p className="text-xl md:text-2xl font-bold font-mono text-teal-400 mt-1">R$ {calculatedMRR}</p>
+                      <p className="text-xl md:text-2xl font-bold font-mono text-blue-600 mt-1">R$ {calculatedMRR}</p>
                     </div>
                     <div>
                       <span className="text-[10px] uppercase text-slate-500 tracking-wider">ARR Projetado (Anual)</span>
-                      <p className="text-xl md:text-2xl font-bold font-mono text-indigo-400 mt-1">R$ {calculatedARR}</p>
+                      <p className="text-xl md:text-2xl font-bold font-mono text-indigo-600 mt-1">R$ {calculatedARR}</p>
                     </div>
                   </div>
                   <p className="text-[10px] text-slate-550 mt-4 italic leading-relaxed">
@@ -835,54 +800,54 @@ CREATE TABLE audit_logs (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-4">
-                <h4 className="text-xs font-semibold text-slate-200 uppercase tracking-wider border-b border-slate-850 pb-2">Regras Críticas de Negócio</h4>
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <h4 className="text-xs font-semibold text-slate-900 uppercase tracking-widest font-bold border-b border-slate-200 pb-2">Regras Críticas de Negócio</h4>
                 
                 <div className="space-y-4 text-xs">
                   <div>
-                    <span className="text-teal-400 font-semibold block">⏳ Regra Trial Grátis de 10 Dias</span>
-                    <p className="text-slate-400 text-xs leading-relaxed mt-1">
+                    <span className="text-blue-600 font-semibold block">⏳ Regra Trial Grátis de 10 Dias</span>
+                    <p className="text-slate-500 text-xs leading-relaxed mt-1">
                       Não exige cartão no setup. No 11º dia sem assinatura contratada, a agenda pública é pausada, impedindo novos agendamentos e exibindo tela de "Bloqueio Temporário" por falta de pagamento.
                     </p>
                   </div>
 
                   <div>
-                    <span className="text-teal-400 font-semibold block">💬 Lembretes Inteligentes via Whatsapp</span>
-                    <p className="text-slate-400 text-xs leading-relaxed mt-1">
+                    <span className="text-blue-600 font-semibold block">💬 Lembretes Inteligentes via Whatsapp</span>
+                    <p className="text-slate-500 text-xs leading-relaxed mt-1">
                       O lembrete envia automaticamente um link de "Confirmar Presença" e outro de "Cancelar de Forma Segura". Se confirmado pelo cliente final via Whatsapp, o status é alterado de forma automatizada na agenda para <strong>confirmado</strong> sem ação do gerente do salão.
                     </p>
                   </div>
 
                   <div>
-                    <span className="text-teal-400 font-semibold block">📊 Relatórios & Histórico em Tempo Real</span>
-                    <p className="text-slate-400 text-xs leading-relaxed mt-1">
+                    <span className="text-blue-600 font-semibold block">📊 Relatórios & Histórico em Tempo Real</span>
+                    <p className="text-slate-500 text-xs leading-relaxed mt-1">
                       Armazena, computa e exibe dados analíticos detalhados de ticket médio, faturamento líquido, assiduidade por cliente e evolução das comissões financeiras dos barbeiros visagistas.
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-4">
-                <h4 className="text-xs font-semibold text-slate-200 uppercase tracking-wider border-b border-slate-850 pb-2">Estratégia de Escalabilidade Técnica</h4>
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <h4 className="text-xs font-semibold text-slate-900 uppercase tracking-widest font-bold border-b border-slate-200 pb-2">Estratégia de Escalabilidade Técnica</h4>
                 
                 <div className="space-y-4 text-xs">
                   <div>
-                    <span className="text-indigo-400 font-semibold block">📦 Infraestrutura de Contêineres Automáticos</span>
-                    <p className="text-slate-400 text-xs leading-relaxed mt-1">
+                    <span className="text-indigo-600 font-semibold block">📦 Infraestrutura de Contêineres Automáticos</span>
+                    <p className="text-slate-500 text-xs leading-relaxed mt-1">
                       Hospedagem em nuvem Docker/Kubernetes na AWS com auto-scaling ativado no gateway. O processador gerencia picos de tráfego de forma otimizada escalando novas réplicas de execução automaticamente se a CPU passar de 65%.
                     </p>
                   </div>
 
                   <div>
-                    <span className="text-indigo-400 font-semibold block">🚀 Otimização do Banco (Replicação de Leitura)</span>
-                    <p className="text-slate-400 text-xs leading-relaxed mt-1">
+                    <span className="text-indigo-600 font-semibold block">🚀 Otimização do Banco (Replicação de Leitura)</span>
+                    <p className="text-slate-500 text-xs leading-relaxed mt-1">
                       O aplicativo separa rotas de gravação de agendamento (escrita) da renderização pública de horários das barbearias (leitura). A exibição pública consome de réplicas de leitura PostgreSQL, reduzindo concorrência.
                     </p>
                   </div>
 
                   <div>
-                    <span className="text-indigo-400 font-semibold block">⚡ Cache Atômico com Redis</span>
-                    <p className="text-slate-400 text-xs leading-relaxed mt-1">
+                    <span className="text-indigo-600 font-semibold block">⚡ Cache Atômico com Redis</span>
+                    <p className="text-slate-500 text-xs leading-relaxed mt-1">
                       Os horários de funcionamento e slots já preenchidos das próximas 48 horas são armazenados em cache atômico Redis. Isso impede queries pesadas ao banco em acessos repetitivos de usuários via smartphone.
                     </p>
                   </div>
@@ -892,30 +857,30 @@ CREATE TABLE audit_logs (
             </div>
 
             {/* ROADMAP CRONOLÓGICO */}
-            <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
-              <h4 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-4">Roadmap do Produto (Fase de Evolução Comercial)</h4>
+            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <h4 className="text-sm font-semibold text-slate-900 uppercase tracking-widest font-bold mb-4">Roadmap do Produto (Fase de Evolução Comercial)</h4>
               
-              <div className="relative border-l border-slate-800 ml-4 py-2 space-y-8">
+              <div className="relative border-l border-slate-200 ml-4 py-2 space-y-8">
                 
                 <div className="relative pl-6">
                   <div className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-teal-500 ring-4 ring-teal-500/10"></div>
-                  <span className="text-[10px] font-mono text-teal-400 font-bold">Fase 01 - MVP Consolidado (Atual)</span>
-                  <h5 className="text-xs font-bold text-slate-200 mt-0.5">Lançamento dos Dashboards e Agendamentos Básicos</h5>
-                  <p className="text-xs text-slate-400 mt-1">Estrutura SaaS com suporte a multi-tenancy, agenda móvel e simulação de automações via Whatsapp.</p>
+                  <span className="text-[10px] font-mono text-blue-600 font-bold">Fase 01 - MVP Consolidado (Atual)</span>
+                  <h5 className="text-xs font-bold text-slate-900 mt-0.5">Lançamento dos Dashboards e Agendamentos Básicos</h5>
+                  <p className="text-xs text-slate-500 mt-1">Estrutura SaaS com suporte a multi-tenancy, agenda móvel e simulação de automações via Whatsapp.</p>
                 </div>
 
                 <div className="relative pl-6">
                   <div className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-slate-700"></div>
-                  <span className="text-[10px] font-mono text-slate-400">Fase 02 - Q2 2026</span>
-                  <h5 className="text-xs font-bold text-slate-300 mt-0.5">Integração Real de APIs e Split de Pagamentos</h5>
-                  <p className="text-xs text-slate-400 mt-1">Ativação de Webhooks oficiais do WhatsApp Business API e Split automatizado de Pix e Cartão com taxas reduzidas.</p>
+                  <span className="text-[10px] font-mono text-slate-500">Fase 02 - Q2 2026</span>
+                  <h5 className="text-xs font-bold text-slate-700 mt-0.5">Integração Real de APIs e Split de Pagamentos</h5>
+                  <p className="text-xs text-slate-500 mt-1">Ativação de Webhooks oficiais do WhatsApp Business API e Split automatizado de Pix e Cartão com taxas reduzidas.</p>
                 </div>
 
                 <div className="relative pl-6">
                   <div className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-slate-700"></div>
-                  <span className="text-[10px] font-mono text-slate-400">Fase 03 - Q3 2026</span>
-                  <h5 className="text-xs font-bold text-slate-300 mt-0.5">Inteligência Artificial & Otimização de Slots</h5>
-                  <p className="text-xs text-slate-400 mt-1">Treinamento de IA de agendamento por comandos de voz automatizado e reorganização inteligente de gaps na agenda.</p>
+                  <span className="text-[10px] font-mono text-slate-500">Fase 03 - Q3 2026</span>
+                  <h5 className="text-xs font-bold text-slate-700 mt-0.5">Inteligência Artificial & Otimização de Slots</h5>
+                  <p className="text-xs text-slate-500 mt-1">Treinamento de IA de agendamento por comandos de voz automatizado e reorganização inteligente de gaps na agenda.</p>
                 </div>
 
               </div>
