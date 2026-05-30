@@ -1,8 +1,33 @@
+# Dependências
 node_modules/
-build/
+.npm
+
+# Build
 dist/
-coverage/
-.DS_Store
-*.log
-.env*
+build/
+
+# Env — NUNCA commitar
+.env
+.env.local
+.env.*.local
 !.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+
+# Vite
+.vite/

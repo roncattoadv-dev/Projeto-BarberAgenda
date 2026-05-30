@@ -21,7 +21,7 @@ import SuperAdminPanel from './components/SuperAdminPanel';
 import ClientAdminPanel from './components/ClientAdminPanel';
 import CustomerBookingFlow from './components/CustomerBookingFlow';
 import SaaSArchitect from './components/SaaSArchitect';
-import { Scissors, ShieldCheck, Users, Layers, Smartphone, Settings, Clock, Ban, DollarSign, Database, HelpCircle } from 'lucide-react';
+import { Scissors, ShieldCheck, Layers, Smartphone } from 'lucide-react';
 
 export default function App() {
   // Master SaaS Reactive States
@@ -72,7 +72,7 @@ export default function App() {
     const newLog: AuditLog = {
       id: `log-gen-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
       timestamp: currentTime,
-      ip: '177.104.22.40',
+      ip: window.location.hostname || 'internal',
       userId: tenantId ? 'usr-tenant-admin' : 'super-usr-1',
       userName,
       tenantId,

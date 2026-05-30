@@ -1,8 +1,0 @@
-{
-  "name": "SaaS de Agendamento Online",
-  "description": "Sistema SaaS completo de agendamento online multi-tenant para barbearias e salões de beleza, com painel Super Admin, painel Administrativo do Cliente e fluxo de agendamento do cliente final, além de especificações completas de arquitetura, banco de dados e APIs.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
