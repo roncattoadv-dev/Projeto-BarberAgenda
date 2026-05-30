@@ -5,8 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "3000:80"
+    expose:
+      - "80"
     environment:
       NODE_ENV: production
       EVO_URL:      ${EVO_URL:-}
@@ -67,8 +67,8 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-pgadmin2026}
     volumes:
       - pgadmin_data:/var/lib/pgadmin
-    ports:
-      - "5050:80"
+    expose:
+      - "80"
     depends_on:
       postgres:
         condition: service_healthy
