@@ -1,0 +1,86 @@
+# ============================================================
+# BarberAgenda — Docker Compose LOCAL (desenvolvimento)
+# Uso: docker compose -f docker-compose.dev.yml up -d
+# ============================================================
+
+version: "3.9"
+
+networks:
+  barber_dev:
+    driver: bridge
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder       # usa o stage de build com hot-reload
+    command: npm run dev
+    volumes:
+      - .:/app
+      - /app/node_modules   # evita sobrescrever node_modules do container
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:4000
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    networks:
+      - barber_dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: barberflow
+      POSTGRES_USER: barber_user
+      POSTGRES_PASSWORD: barber_local_pass
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - barber_dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U barber_user -d barberflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - barber_dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+    networks:
+      - barber_dev
+    depends_on:
+      - postgres

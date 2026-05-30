@@ -1,0 +1,40 @@
+# ── Dependências e cache ─────────────────────────────────────
+node_modules
+npm-debug.log*
+.npm
+
+# ── Build output (gerado dentro do container) ────────────────
+dist
+build
+
+# ── Git e IDE ────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+*.swp
+*.swo
+
+# ── Env e secrets — NUNCA na imagem ──────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Docker files (não precisa copiar para dentro do container) 
+Dockerfile
+docker-compose*.yml
+.dockerignore
+deploy.sh
+
+# ── Docs e testes ────────────────────────────────────────────
+README.md
+*.md
+*.test.*
+*.spec.*
+__tests__
+coverage
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

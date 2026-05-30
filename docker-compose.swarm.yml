@@ -1,0 +1,220 @@
+# ============================================================
+# BarberAgenda SaaS — Docker Swarm Stack
+# EasyPanel: cole este arquivo em "Custom Compose"
+#
+# Serviços:
+#   app      — React (Vite build + Nginx)
+#   api      — Node/Express backend (futuro)
+#   postgres — PostgreSQL 16 com persistência
+#   redis    — Redis 7 para cache e filas
+#   pgadmin  — Interface web para Postgres (opcional)
+# ============================================================
+
+version: "3.9"
+
+# ── Rede overlay interna do Swarm ────────────────────────────
+networks:
+  barber_net:
+    driver: overlay
+    attachable: true
+
+# ── Volumes persistentes gerenciados pelo Docker ─────────────
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# ── Secrets (referencia secrets criadas no EasyPanel/Swarm) ──
+secrets:
+  postgres_password:
+    external: true
+  redis_password:
+    external: true
+
+# ============================================================
+# SERVICES
+# ============================================================
+services:
+
+  # ────────────────────────────────────────────────────────
+  # APP — Frontend React (Vite + Nginx)
+  # ────────────────────────────────────────────────────────
+  app:
+    image: ${REGISTRY:-registry.easypanel.io}/${PROJECT:-barberflow}/app:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    networks:
+      - barber_net
+    environment:
+      - NODE_ENV=production
+    ports:
+      - target: 80
+        published: 3000
+        protocol: tcp
+        mode: ingress
+    deploy:
+      mode: replicated
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first          # zero-downtime rolling update
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+      labels:
+        # EasyPanel / Traefik routing (ajuste o domínio)
+        - "traefik.enable=true"
+        - "traefik.http.routers.barber-app.rule=Host(`barber.seudominio.com.br`)"
+        - "traefik.http.routers.barber-app.entrypoints=websecure"
+        - "traefik.http.routers.barber-app.tls.certresolver=letsencrypt"
+        - "traefik.http.services.barber-app.loadbalancer.server.port=80"
+        - "traefik.http.middlewares.barber-redirect.redirectscheme.scheme=https"
+        - "traefik.http.routers.barber-app-http.rule=Host(`barber.seudominio.com.br`)"
+        - "traefik.http.routers.barber-app-http.entrypoints=web"
+        - "traefik.http.routers.barber-app-http.middlewares=barber-redirect"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ────────────────────────────────────────────────────────
+  # POSTGRES 16 — Banco de dados principal
+  # ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    networks:
+      - barber_net
+    environment:
+      POSTGRES_DB: barberflow
+      POSTGRES_USER: barber_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=pt_BR.UTF-8 --lc-ctype=pt_BR.UTF-8"
+      # Performance tuning para servidor pequeno (ajuste conforme RAM)
+      POSTGRES_SHARED_BUFFERS: "256MB"
+      POSTGRES_WORK_MEM: "16MB"
+      POSTGRES_MAX_CONNECTIONS: "100"
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro   # migrations iniciais
+    deploy:
+      mode: replicated
+      replicas: 1          # Postgres não escala horizontalmente sem setup extra
+      placement:
+        constraints:
+          - node.role == manager   # garante que rode no nó com o volume
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U barber_user -d barberflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ────────────────────────────────────────────────────────
+  # REDIS 7 — Cache de sessão, filas de notificações, rate-limit
+  # ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    networks:
+      - barber_net
+    command: >
+      sh -c "redis-server
+        --requirepass $$(cat /run/secrets/redis_password)
+        --maxmemory 128mb
+        --maxmemory-policy allkeys-lru
+        --save 900 1
+        --save 300 10
+        --appendonly yes
+        --appendfilename appendonly.aof"
+    secrets:
+      - redis_password
+    volumes:
+      - redis_data:/data
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 192M
+        reservations:
+          cpus: "0.05"
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "$(cat /run/secrets/redis_password)", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # ────────────────────────────────────────────────────────
+  # PGADMIN — Interface web Postgres (desabilite em produção)
+  # Acesse: http://seuip:5050
+  # ────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    networks:
+      - barber_net
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@barberflow.com.br}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme123!}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - target: 80
+        published: 5050
+        protocol: tcp
+        mode: ingress
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 5s
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+      labels:
+        - "traefik.enable=false"   # não expõe via traefik — acesso direto pela porta
