@@ -18,9 +18,14 @@ export default function SuperAdminPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [t, c, a] = await Promise.all([getTenants(), getCoupons(), getAuditLogs(null)]);
-    setTenants(t); setCoupons(c); setAuditLogs(a);
-    setLoading(false);
+    try {
+      const [t, c, a] = await Promise.all([getTenants(), getCoupons(), getAuditLogs(null)]);
+      setTenants(t); setCoupons(c); setAuditLogs(a);
+    } catch (err) {
+      console.error('[SuperAdmin] load error:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);

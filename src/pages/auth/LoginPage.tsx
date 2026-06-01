@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 
 export default function LoginPage() {
   const { signIn, profile, loading } = useAuth();
@@ -12,19 +13,37 @@ export default function LoginPage() {
   const [error,    setError]    = useState<string | null>(null);
   const [busy,     setBusy]     = useState(false);
 
-  // Redirect if already logged in
+  // Redirect se já estiver logado (ex: volta ao /login com sessão ativa)
   useEffect(() => {
     if (loading) return;
-    if (profile?.role === 'super_admin') navigate('/admin/super', { replace: true });
-    else if (profile?.role === 'tenant_admin') navigate('/admin/painel', { replace: true });
+    if (profile?.role === 'super_admin')  navigate('/admin/super',  { replace: true });
+    if (profile?.role === 'tenant_admin') navigate('/admin/painel', { replace: true });
   }, [profile, loading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); setError(null);
+
     const { error } = await signIn(email, password);
-    if (error) { setError('Email ou senha inválidos.'); setBusy(false); }
-    // onAuthStateChange in context will trigger re-render and redirect via useEffect
+    if (error) {
+      setError('Email ou senha inválidos.');
+      setBusy(false);
+      return;
+    }
+
+    // Login OK — busca o profile pelo ID do usuário autenticado
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (data?.role === 'super_admin')  { navigate('/admin/super',  { replace: true }); return; }
+        if (data?.role === 'tenant_admin') { navigate('/admin/painel', { replace: true }); return; }
+      }
+    } catch {
+      // Se a busca falhar, o useEffect redireciona quando o contexto atualizar
+    }
+
+    setBusy(false);
   };
 
   return (
