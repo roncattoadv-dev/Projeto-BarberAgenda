@@ -198,7 +198,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   const handleLogout = async () => {
     if (!window.confirm('Desconectar o WhatsApp desta instância?')) return;
     try {
-      await evoFetchDynamic(cfg, '/instance/disconnect', { method: 'DELETE', body: JSON.stringify({ instanceId: cfg.instance }) });
+      await evoFetchDynamic(cfg, '/instance/disconnect', { method: 'POST', body: JSON.stringify({ instanceId: cfg.instance }) });
       setConnState('close');
       setInstanceInfo(null);
       setQrData(null);

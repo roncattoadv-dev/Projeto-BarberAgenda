@@ -6,7 +6,7 @@
  *   GET  /instance/all             → { data: [...] }          (global key)
  *   GET  /instance/status?instanceId=  → { data: { Connected, LoggedIn, Name } }
  *   GET  /instance/qr?instanceId=  → { data: { Qrcode, Code } }
- *   DEL  /instance/disconnect      { instanceId }
+ *   POST /instance/disconnect      { instanceId }
  *   POST /send/text                { instanceId, number, text }
  *
  * Auth: global key para admin ops / token da instância para ops da instância
@@ -112,7 +112,7 @@ export async function fetchQRCode(instance = EVO_INSTANCE): Promise<QRCodeData |
 /** Desconecta (logout) a instância */
 export async function logoutInstance(instance = EVO_INSTANCE): Promise<void> {
   await evoFetch('/instance/disconnect', {
-    method: 'DELETE',
+    method: 'POST',
     body: JSON.stringify({ instanceId: instance }),
   });
 }
