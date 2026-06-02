@@ -23,6 +23,7 @@ const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY || ''; // service_role 
 const WEBHOOK_SECRET  = process.env.ASAAS_WEBHOOK_SECRET || '';
 const EVO_URL         = (process.env.EVO_URL || '').replace(/\/$/, '');
 const EVO_GLOBAL_KEY  = process.env.EVO_GLOBAL_KEY || process.env.EVO_APIKEY || '';
+const SITE_URL        = (process.env.SITE_URL || process.env.CORS_ORIGIN || '').replace(/\/$/, '');
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('[Server] SUPABASE_URL e SUPABASE_SERVICE_KEY são obrigatórios');
@@ -314,6 +315,13 @@ function bookingCode(id: string): string {
   return id.replace(/-/g, '').slice(0, 8).toUpperCase();
 }
 
+function buildLink(tenant: { slug: string; wpp_booking_url?: string | null }, code: string): string {
+  const tpl = tenant.wpp_booking_url?.trim();
+  if (tpl) return tpl.replace('{slug}', tenant.slug).replace('{codigo}', code);
+  // URL padrão: página de agendamento do tenant no barberflow
+  return SITE_URL ? `${SITE_URL}/${tenant.slug}/agendamento` : '';
+}
+
 function applyTemplate(tpl: string, vars: Record<string, string>): string {
   return Object.entries(vars).reduce((msg, [k, v]) => msg.replaceAll(`{${k}}`, v), tpl);
 }
@@ -379,9 +387,7 @@ app.post('/api/whatsapp/notify', async (req, res) => {
     if (!phone) { res.json({ ok: true, skipped: 'sem telefone' }); return; }
 
     const code  = bookingCode(appt.id);
-    const link  = tenant.wpp_booking_url
-      ? tenant.wpp_booking_url.replace('{slug}', tenant.slug).replace('{codigo}', code)
-      : '';
+    const link  = buildLink(tenant, code);
     const vars  = {
       nome:          appt.customer_name    ?? '',
       salao:         tenant.name           ?? '',
@@ -658,9 +664,7 @@ async function sendConfirmations(): Promise<void> {
 
     try {
       const code = bookingCode(appt.id);
-      const link = tenant.wpp_booking_url
-        ? tenant.wpp_booking_url.replace('{slug}', tenant.slug).replace('{codigo}', code)
-        : '';
+      const link = buildLink(tenant, code);
       const vars = {
         nome:         appt.customer_name                  ?? '',
         salao:        tenant.name                         ?? '',
@@ -725,9 +729,7 @@ async function sendReminders(): Promise<void> {
 
     try {
       const code  = bookingCode(appt.id);
-      const link  = tenant.wpp_booking_url
-        ? tenant.wpp_booking_url.replace('{slug}', tenant.slug).replace('{codigo}', code)
-        : '';
+      const link  = buildLink(tenant, code);
       const vars  = {
         nome:         appt.customer_name             ?? '',
         salao:        tenant.name                    ?? '',
