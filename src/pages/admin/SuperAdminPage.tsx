@@ -52,25 +52,63 @@ export default function SuperAdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen" style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
       {/* Top bar */}
-      <div className="bg-slate-900 text-white px-6 py-3 flex items-center justify-between text-xs font-mono">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-blue-400" />
-          <span className="text-blue-300 font-bold">BarberFlow</span>
-          <span className="text-slate-500">·</span>
-          <span className="text-slate-300">Super Admin Console</span>
+      <div
+        style={{
+          backgroundColor: '#021340',
+          borderBottom: '1px solid rgba(255,255,255,0.09)',
+          padding: '12px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <img
+            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%201%20de%20jun.%20de%202026,%2011_34_59%20(1).png"
+            alt="BarberFlow"
+            style={{ height: 40, objectFit: 'contain' }}
+          />
+          <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.18)' }} />
+          <ShieldCheck style={{ width: 16, height: 16, color: 'rgba(255,255,255,0.65)' }} />
+          <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, fontWeight: 500 }}>Super Admin Console</span>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-slate-400">{profile?.name}</span>
-          <button onClick={signOut} className="text-slate-400 hover:text-white transition">Sair</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <span style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13 }}>{profile?.name}</span>
+          <button
+            onClick={signOut}
+            style={{
+              color: 'rgba(255,255,255,0.65)',
+              background: 'none',
+              border: '1px solid rgba(255,255,255,0.18)',
+              borderRadius: 8,
+              padding: '5px 14px',
+              fontSize: 12,
+              cursor: 'pointer',
+              fontFamily: 'Outfit, sans-serif',
+              fontWeight: 600,
+              transition: 'color 0.15s',
+            }}
+          >
+            Sair
+          </button>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
+            <div
+              style={{
+                width: 36,
+                height: 144,
+                border: '3px solid rgba(255,255,255,0.09)',
+                borderTopColor: 'rgba(255,255,255,0.65)',
+                borderRadius: '50%',
+              }}
+              className="animate-spin"
+            />
           </div>
         ) : (
           <SuperAdminPanel

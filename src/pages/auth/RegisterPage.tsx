@@ -12,7 +12,7 @@ const API_URL = (() => {
 function slugify(str: string) {
   return str
     .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // remove acentos
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .substring(0, 40);
@@ -87,35 +87,97 @@ export default function RegisterPage() {
     }
   };
 
+  const inputStyle = (hasError?: boolean): React.CSSProperties => ({
+    width: '100%',
+    background: 'rgba(255,255,255,0.04)',
+    border: `1px solid ${hasError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.09)'}`,
+    borderRadius: 12,
+    padding: '12px 16px',
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 14,
+    outline: 'none',
+    fontFamily: 'Outfit, sans-serif',
+    boxSizing: 'border-box',
+  });
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '2px',
+    color: 'rgba(255,255,255,0.38)',
+    marginBottom: 6,
+  };
+
+  const errorStyle: React.CSSProperties = {
+    fontSize: 11,
+    color: '#fca5a5',
+    marginTop: 4,
+  };
+
   // ── Sucesso ──────────────────────────────────────────────────────────────────
   if (done) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
+    >
       <div className="w-full max-w-md text-center space-y-6">
-        <div className="text-6xl">🎉</div>
+        <div style={{ fontSize: 56 }}>🎉</div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Cadastro concluído!</h1>
-          <p className="text-slate-500 mt-2 text-sm leading-relaxed">
-            Sua barbearia tem <strong>10 dias grátis</strong> para testar tudo.<br />
-            Após o período, o plano é <strong>R$ 89,90/mês</strong> — você receberá o link de pagamento por email.
+          <h1 style={{ color: 'rgba(255,255,255,0.88)', fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Cadastro concluído!</h1>
+          <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 14, lineHeight: 1.6 }}>
+            Sua barbearia tem <strong style={{ color: 'rgba(255,255,255,0.88)' }}>10 dias grátis</strong> para testar tudo.<br />
+            Após o período, o plano é <strong style={{ color: 'rgba(255,255,255,0.88)' }}>R$ 89,90/mês</strong> — você receberá o link de pagamento por email.
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 text-left space-y-3">
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Link de agendamento</p>
-            <code className="text-sm text-blue-600 font-mono bg-blue-50 px-3 py-1.5 rounded-lg block">
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.09)',
+            borderRadius: 16,
+            padding: 20,
+            textAlign: 'left',
+          }}
+        >
+          <div className="mb-4">
+            <p style={labelStyle}>Link de agendamento</p>
+            <code
+              style={{
+                display: 'block',
+                background: 'rgba(255,255,255,0.07)',
+                border: '1px solid rgba(255,255,255,0.09)',
+                borderRadius: 8,
+                padding: '8px 12px',
+                fontSize: 13,
+                color: 'rgba(255,255,255,0.88)',
+                fontFamily: 'monospace',
+              }}
+            >
               {window.location.origin}/{done.slug}/agendamento
             </code>
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Trial gratuito até</p>
-            <p className="text-sm font-semibold text-slate-700">{
+            <p style={labelStyle}>Trial gratuito até</p>
+            <p style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 700, fontSize: 15 }}>{
               new Date(done.trialEndsAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
             }</p>
           </div>
         </div>
         <button
           onClick={() => navigate('/login')}
-          className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition text-sm"
+          style={{
+            width: '100%',
+            padding: '14px',
+            background: '#ffffff',
+            color: '#031D3C',
+            fontWeight: 700,
+            fontSize: 14,
+            border: 'none',
+            borderRadius: 12,
+            cursor: 'pointer',
+            fontFamily: 'Outfit, sans-serif',
+          }}
         >
           Acessar o painel →
         </button>
@@ -124,85 +186,171 @@ export default function RegisterPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-4 py-12">
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-4 py-12"
+      style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
+    >
       <div className="w-full max-w-md">
 
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-3">💈</div>
-          <h1 className="text-2xl font-bold text-slate-900">Crie sua conta grátis</h1>
-          <p className="text-sm text-slate-500 mt-1">10 dias grátis · depois R$ 89,90/mês · cancele quando quiser</p>
+        <div className="flex flex-col items-center mb-8">
+          <img
+            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%201%20de%20jun.%20de%202026,%2011_34_59%20(1).png"
+            alt="BarberFlow"
+            style={{ height: 256, objectFit: 'contain', marginBottom: 16 }}
+          />
+          <h1 style={{ color: 'rgba(255,255,255,0.88)', fontSize: 22, fontWeight: 800, marginBottom: 4 }}>
+            Crie sua conta grátis
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 12, textAlign: 'center' }}>
+            10 dias grátis · depois R$ 89,90/mês · cancele quando quiser
+          </p>
         </div>
 
-        {/* Progress */}
+        {/* Steps indicator */}
         <div className="flex items-center gap-2 mb-6">
-          {[1,2].map(s => (
+          {[1, 2].map(s => (
             <div key={s} className="flex items-center gap-2 flex-1">
-              <div className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 transition ${
-                step === s ? 'bg-slate-900 text-white' : step > s ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
-              }`}>{step > s ? '✓' : s}</div>
-              {s === 1 && <div className={`h-0.5 flex-1 transition-all ${step > 1 ? 'bg-emerald-500' : 'bg-slate-200'}`} />}
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  flexShrink: 0,
+                  transition: 'all 0.2s',
+                  background: step === s
+                    ? '#ffffff'
+                    : step > s
+                    ? 'rgba(255,255,255,0.18)'
+                    : 'transparent',
+                  border: `2px solid ${step === s ? '#ffffff' : step > s ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.18)'}`,
+                  color: step === s ? '#031D3C' : step > s ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)',
+                }}
+              >
+                {step > s ? '✓' : s}
+              </div>
+              {s === 1 && (
+                <div
+                  style={{
+                    flex: 1,
+                    height: 1,
+                    background: step > 1 ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.09)',
+                    transition: 'all 0.3s',
+                  }}
+                />
+              )}
             </div>
           ))}
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-3xl shadow-sm p-8">
+        {/* Card */}
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.09)',
+            borderRadius: 20,
+            padding: 32,
+          }}
+        >
 
           {/* ── Step 1: dados da barbearia ──────────────────────────────── */}
           {step === 1 && (
             <div className="space-y-5">
               <div>
-                <h2 className="text-base font-bold text-slate-900 mb-0.5">Sua barbearia</h2>
-                <p className="text-xs text-slate-400">Informações básicas do seu negócio</p>
+                <h2 style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 700, fontSize: 16, marginBottom: 2 }}>Sua barbearia</h2>
+                <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 12 }}>Informações básicas do seu negócio</p>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Nome da barbearia <span className="text-red-500">*</span>
+                <label style={labelStyle}>
+                  Nome da barbearia <span style={{ color: '#fca5a5' }}>*</span>
                 </label>
                 <input
                   type="text" value={name} onChange={e => handleNameChange(e.target.value)}
                   placeholder="Ex: Barbearia Dom Pedro"
-                  className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.name ? 'border-red-300' : 'border-slate-200'}`}
+                  style={inputStyle(!!errors.name)}
                 />
-                {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+                {errors.name && <p style={errorStyle}>{errors.name}</p>}
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Endereço do agendamento <span className="text-red-500">*</span>
+                <label style={labelStyle}>
+                  Endereço do agendamento <span style={{ color: '#fca5a5' }}>*</span>
                 </label>
-                <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 transition">
-                  <span className="px-3 py-3 text-slate-400 text-sm border-r border-slate-200 bg-white whitespace-nowrap">
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${errors.slug ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.09)'}`,
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <span
+                    style={{
+                      padding: '12px 12px',
+                      color: 'rgba(255,255,255,0.38)',
+                      fontSize: 13,
+                      borderRight: '1px solid rgba(255,255,255,0.09)',
+                      background: 'rgba(255,255,255,0.02)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     barberflow.com/
                   </span>
                   <input
                     type="text" value={slug}
                     onChange={e => { setSlug(slugify(e.target.value)); setSlugEdited(true); }}
                     placeholder="minha-barbearia"
-                    className={`flex-1 bg-transparent px-3 py-3 text-slate-900 text-sm focus:outline-none font-mono ${errors.slug ? 'text-red-500' : ''}`}
+                    style={{
+                      flex: 1,
+                      background: 'transparent',
+                      border: 'none',
+                      padding: '12px 12px',
+                      color: errors.slug ? '#fca5a5' : 'rgba(255,255,255,0.88)',
+                      fontSize: 14,
+                      outline: 'none',
+                      fontFamily: 'monospace',
+                    }}
                   />
                 </div>
                 {errors.slug ? (
-                  <p className="text-xs text-red-500 mt-1">{errors.slug}</p>
+                  <p style={errorStyle}>{errors.slug}</p>
                 ) : (
-                  <p className="text-xs text-slate-400 mt-1">Seus clientes vão agendar neste endereço.</p>
+                  <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 11, marginTop: 4 }}>Seus clientes vão agendar neste endereço.</p>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Telefone</label>
+                <label style={labelStyle}>Telefone</label>
                 <input
                   type="tel" value={phone} onChange={e => setPhone(e.target.value)}
                   placeholder="(11) 99999-9999"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  style={inputStyle()}
                 />
               </div>
 
               <button
                 type="button"
                 onClick={() => { if (validate1()) setStep(2); }}
-                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl transition"
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: '#ffffff',
+                  color: '#031D3C',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  border: 'none',
+                  borderRadius: 12,
+                  cursor: 'pointer',
+                  fontFamily: 'Outfit, sans-serif',
+                }}
               >
                 Continuar →
               </button>
@@ -213,69 +361,98 @@ export default function RegisterPage() {
           {step === 2 && (
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setStep(1)} className="text-slate-400 hover:text-slate-700 transition">←</button>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  style={{ color: 'rgba(255,255,255,0.38)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: 0 }}
+                >
+                  ←
+                </button>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900 mb-0.5">Acesso ao painel</h2>
-                  <p className="text-xs text-slate-400">Crie suas credenciais de administrador</p>
+                  <h2 style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 700, fontSize: 16, marginBottom: 2 }}>Acesso ao painel</h2>
+                  <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 12 }}>Crie suas credenciais de administrador</p>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Email <span className="text-red-500">*</span>
+                <label style={labelStyle}>
+                  Email <span style={{ color: '#fca5a5' }}>*</span>
                 </label>
                 <input
                   type="email" value={email} onChange={e => setEmail(e.target.value)} autoFocus
                   placeholder="voce@barbearia.com.br"
-                  className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.email ? 'border-red-300' : 'border-slate-200'}`}
+                  style={inputStyle(!!errors.email)}
                 />
-                {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+                {errors.email && <p style={errorStyle}>{errors.email}</p>}
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Senha <span className="text-red-500">*</span>
+                <label style={labelStyle}>
+                  Senha <span style={{ color: '#fca5a5' }}>*</span>
                 </label>
                 <input
                   type="password" value={password} onChange={e => setPassword(e.target.value)}
                   placeholder="Mínimo 8 caracteres"
-                  className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.password ? 'border-red-300' : 'border-slate-200'}`}
+                  style={inputStyle(!!errors.password)}
                 />
-                {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password}</p>}
+                {errors.password && <p style={errorStyle}>{errors.password}</p>}
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Confirmar senha <span className="text-red-500">*</span>
+                <label style={labelStyle}>
+                  Confirmar senha <span style={{ color: '#fca5a5' }}>*</span>
                 </label>
                 <input
                   type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
                   placeholder="••••••••"
-                  className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.confirm ? 'border-red-300' : 'border-slate-200'}`}
+                  style={inputStyle(!!errors.confirm)}
                 />
-                {errors.confirm && <p className="text-xs text-red-500 mt-1">{errors.confirm}</p>}
+                {errors.confirm && <p style={errorStyle}>{errors.confirm}</p>}
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">CPF ou CNPJ <span className="text-slate-300">(opcional — para emissão de boleto)</span></label>
+                <label style={labelStyle}>
+                  CPF ou CNPJ{' '}
+                  <span style={{ color: 'rgba(255,255,255,0.25)', textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>
+                    (opcional — para emissão de boleto)
+                  </span>
+                </label>
                 <input
                   type="text" value={cpfCnpj} onChange={e => setCpfCnpj(e.target.value)}
                   placeholder="000.000.000-00 ou 00.000.000/0001-00"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  style={inputStyle()}
                 />
               </div>
 
               {/* Resumo do plano */}
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-700 space-y-1">
-                <p className="font-bold text-blue-800">📋 Resumo do plano</p>
-                <p>✓ <strong>10 dias grátis</strong> — sem cobrar nada agora</p>
-                <p>✓ Após o trial: <strong>R$ 89,90/mês</strong> via boleto ou Pix</p>
-                <p>✓ Cancele quando quiser, sem fidelidade</p>
+              <div
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.09)',
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                }}
+              >
+                <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Resumo do plano</p>
+                <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginBottom: 3 }}>✓ <strong style={{ color: 'rgba(255,255,255,0.88)' }}>10 dias grátis</strong> — sem cobrar nada agora</p>
+                <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginBottom: 3 }}>✓ Após o trial: <strong style={{ color: 'rgba(255,255,255,0.88)' }}>R$ 89,90/mês</strong> via boleto ou Pix</p>
+                <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>✓ Cancele quando quiser, sem fidelidade</p>
               </div>
 
               <button
                 type="submit" disabled={busy}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-sm rounded-xl transition active:scale-[0.99]"
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: busy ? 'rgba(255,255,255,0.55)' : '#ffffff',
+                  color: '#031D3C',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  border: 'none',
+                  borderRadius: 12,
+                  cursor: busy ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Outfit, sans-serif',
+                }}
               >
                 {busy ? 'Criando sua conta…' : 'Criar conta grátis →'}
               </button>
@@ -283,8 +460,14 @@ export default function RegisterPage() {
           )}
         </div>
 
-        <p className="text-center text-xs text-slate-400 mt-6">
-          Já tem uma conta? <Link to="/login" className="text-blue-600 hover:underline font-medium">Entrar</Link>
+        <p className="text-center mt-6" style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>
+          Já tem uma conta?{' '}
+          <Link
+            to="/login"
+            style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 600, textDecoration: 'underline' }}
+          >
+            Entrar
+          </Link>
         </p>
       </div>
     </div>

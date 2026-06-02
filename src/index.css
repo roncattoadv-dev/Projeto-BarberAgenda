@@ -1,29 +1,58 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --color-brand-600: #2563eb;
   --color-brand-700: #1d4ed8;
   --color-brand-50: #eff6ff;
+
+  /* BarberFlow Design System */
+  --color-navy:       #031D3C;
+  --color-navy-mid:   #0B1929;
+  --color-navy-card:  #021340;
+  --color-navy-light: #162840;
+
+  /* White opacity tokens */
+  --color-w100: rgba(255,255,255,1.00);
+  --color-w88:  rgba(255,255,255,0.88);
+  --color-w65:  rgba(255,255,255,0.65);
+  --color-w38:  rgba(255,255,255,0.38);
+  --color-w18:  rgba(255,255,255,0.18);
+  --color-w09:  rgba(255,255,255,0.09);
+  --color-w04:  rgba(255,255,255,0.04);
+
+  /* Status palette */
+  --color-green-bg:  #E6F4EC;
+  --color-green-txt: #0A4A2C;
 }
 
-/* Glass-card */
+/* ── Navy utility classes ─────────────────────────────────────────────── */
+.bg-navy       { background-color: #031D3C; }
+.bg-navy-mid   { background-color: #0B1929; }
+.bg-navy-card  { background-color: #021340; }
+.bg-navy-light { background-color: #162840; }
+
+/* ── Glass-card (legacy, kept for compatibility) ──────────────────────── */
 .glass-card {
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+/* ── Navy card ────────────────────────────────────────────────────────── */
+.navy-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
 }
 
 .sidebar-item-active {
-  background: #EFF6FF;
-  color: #2563EB;
-  border-right: 4px solid #2563EB;
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+  border-right: 3px solid #ffffff;
 }
 
-/* Fade-in usado nos steps do CustomerBookingFlow e tabs */
+/* ── Fade-in ──────────────────────────────────────────────────────────── */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -33,11 +62,11 @@
   animation: fadeIn 0.22s ease-out both;
 }
 
-/* Esconde scrollbar mantendo scroll funcional */
+/* ── No-scrollbar ─────────────────────────────────────────────────────── */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Toast container — usado pelo sistema de notificações */
+/* ── Toast ────────────────────────────────────────────────────────────── */
 .toast-container {
   position: fixed;
   bottom: 1.5rem;
@@ -58,7 +87,7 @@
   font-size: 13px;
   font-weight: 500;
   border: 1px solid;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
   animation: fadeIn 0.2s ease-out both;
 }
 
@@ -66,3 +95,44 @@
 .toast-error   { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
 .toast-info    { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
 .toast-warning { background: #fffbeb; color: #d97706; border-color: #fed7aa; }
+
+/* ── Input / select dark override ────────────────────────────────────── */
+.navy-input {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.09);
+  color: rgba(255,255,255,0.88);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+  font-family: inherit;
+}
+.navy-input::placeholder { color: rgba(255,255,255,0.38); }
+.navy-input:focus { border-color: rgba(255,255,255,0.38); }
+
+.navy-select {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.09);
+  color: rgba(255,255,255,0.88);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  outline: none;
+  width: 100%;
+  font-family: inherit;
+  appearance: none;
+}
+.navy-select option { background: #031D3C; color: rgba(255,255,255,0.88); }
+
+/* ── Label micro-caps ─────────────────────────────────────────────────── */
+.navy-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.38);
+  margin-bottom: 6px;
+}

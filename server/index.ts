@@ -27,8 +27,13 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1);
 }
 
-// Service role key — bypassa RLS para operações administrativas
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Client para tabelas de negócio (schema barber)
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  db: { schema: 'barber' },
+});
+
+// Client para tabelas de auth (schema public: profiles, auth.admin)
+const supabasePublic = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const app = express();
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
@@ -84,7 +89,7 @@ app.post('/api/register', async (req, res) => {
     if (tenantErr) throw tenantErr;
 
     // 4. Cria usuário no Supabase Auth
-    const { data: authUser, error: authErr } = await supabase.auth.admin.createUser({
+    const { data: authUser, error: authErr } = await supabasePublic.auth.admin.createUser({
       email,
       password,
       email_confirm: true, // confirma automaticamente (sem email de verificação)
@@ -105,7 +110,7 @@ app.post('/api/register', async (req, res) => {
     }
 
     // 5. Garante que o profile existe com role correto
-    await supabase.from('profiles').upsert({
+    await supabasePublic.from('profiles').upsert({
       id:        authUser.user.id,
       name,
       email,

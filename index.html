@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="BarberFlow — Sistema SaaS de agendamento online para barbearias e salões de beleza" />
     <title>BarberFlow — Agendamento SaaS</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💈</text></svg>" />
+    <link rel="icon" type="image/png" href="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%201%20de%20jun.%20de%202026,%2021_55_29%20(1).png" />
+    <!-- config.js deve ser o PRIMEIRO script — define window.__BARBER_CONFIG__
+         antes que qualquer módulo ES seja avaliado pelo bundle do Vite -->
+    <script src="/config.js"></script>
   </head>
   <body>
     <div id="root"></div>
-    <!-- Runtime config: variáveis de ambiente injetadas pelo docker-entrypoint.sh -->
-    <script src="/config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

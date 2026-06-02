@@ -25,42 +25,49 @@ export default function DashboardTab({ myServices, myProfessionals, myAppointmen
     revenueGenerated: myAppointments.filter(a => a.serviceId === srv.id && a.status !== 'cancelled').length * srv.price,
   })).sort((a, b) => b.occurrences - a.occurrences);
 
+  const card: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.09)',
+    borderRadius: 16,
+    padding: 24,
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Faturamento Líquido', value: `R$ ${netEarnings.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, sub: 'mensal' },
-          { label: 'Agendamentos Hoje', value: String(appointmentsToday.length), sub: `${attendedToday} concluídos · ${confirmedToday} confirmados` },
-          { label: 'Equipe', value: String(myProfessionals.length), sub: 'profissionais ativos' },
-          { label: 'Catálogo', value: String(myServices.length), sub: 'serviços configurados' },
-        ].map(card => (
-          <div key={card.label} className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-3">{card.label}</span>
-            <p className="text-4xl font-extrabold text-slate-900 tracking-tight">{card.value}</p>
-            <div className="text-sm text-slate-500 mt-2 font-medium">{card.sub}</div>
+          { label: 'Faturamento Líquido', value: `R$ ${netEarnings.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, sub: 'receita − despesas', highlight: true },
+          { label: 'Agendamentos Hoje', value: String(appointmentsToday.length), sub: `${attendedToday} concluídos · ${confirmedToday} confirmados`, highlight: false },
+          { label: 'Equipe', value: String(myProfessionals.length), sub: 'profissionais ativos', highlight: false },
+          { label: 'Catálogo', value: String(myServices.length), sub: 'serviços configurados', highlight: false },
+        ].map(c => (
+          <div key={c.label} style={card}>
+            <span style={{ display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2px', color: 'rgba(255,255,255,0.38)', marginBottom: 12 }}>{c.label}</span>
+            <p style={{ fontSize: 28, fontWeight: 800, color: c.highlight ? '#4ade80' : 'rgba(255,255,255,0.88)', fontFamily: 'monospace', marginBottom: 6 }}>{c.value}</p>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{c.sub}</div>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Serviços mais vendidos */}
-        <div className="glass-card p-5 rounded-xl space-y-4">
-          <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wider border-b border-slate-200 pb-2 flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" />
+        <div style={card}>
+          <h3 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', display: 'inline-block', flexShrink: 0 }} />
             Serviços Mais Vendidos
           </h3>
-          <div className="space-y-3.5">
+          <div className="space-y-4">
             {serviceSalesFrequency.map((srv, idx) => {
               const maxOccur = Math.max(...serviceSalesFrequency.map(s => s.occurrences), 1);
               return (
                 <div key={idx} className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-700 font-semibold">{srv.name}</span>
-                    <span className="text-slate-500 font-mono font-bold">{srv.occurrences} agend. (R$ {srv.revenueGenerated})</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <span style={{ color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>{srv.name}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.38)', fontFamily: 'monospace', fontWeight: 700 }}>{srv.occurrences} agend. (R$ {srv.revenueGenerated})</span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
-                    <div className="bg-blue-600 h-2 rounded-full transition-all duration-500" style={{ width: `${(srv.occurrences / maxOccur) * 100}%` }} />
+                  <div style={{ width: '100%', background: 'rgba(255,255,255,0.07)', height: 6, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ background: '#4ade80', height: 6, borderRadius: 4, transition: 'width 0.5s', width: `${(srv.occurrences / maxOccur) * 100}%` }} />
                   </div>
                 </div>
               );
@@ -69,23 +76,23 @@ export default function DashboardTab({ myServices, myProfessionals, myAppointmen
         </div>
 
         {/* Clientes recentes */}
-        <div className="glass-card p-5 rounded-xl space-y-3">
-          <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wider border-b border-slate-200 pb-2 flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" />
+        <div style={card}>
+          <h3 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', display: 'inline-block', flexShrink: 0 }} />
             Cadastro de Clientes
           </h3>
-          <div className="divide-y divide-slate-100 max-h-[220px] overflow-y-auto">
+          <div style={{ maxHeight: 220, overflowY: 'auto' }} className="no-scrollbar">
             {myCustomers.map(cust => (
-              <div key={cust.id} className="py-2.5 flex items-center justify-between text-xs">
+              <div key={cust.id} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
                 <div>
-                  <p className="font-semibold text-slate-700">{cust.name}</p>
-                  <span className="text-[10px] text-slate-400 font-mono">{cust.phone}</span>
+                  <p style={{ fontWeight: 600, color: 'rgba(255,255,255,0.65)' }}>{cust.name}</p>
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', fontFamily: 'monospace' }}>{cust.phone}</span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-mono">{cust.email}</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>{cust.email}</span>
               </div>
             ))}
           </div>
-          <p className="bg-slate-50 p-3 rounded border border-slate-200 text-[11px] text-slate-500 font-mono">
+          <p style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: 'rgba(255,255,255,0.38)', fontStyle: 'italic', marginTop: 12 }}>
             💡 Atualizado a cada novo agendamento no portal online.
           </p>
         </div>

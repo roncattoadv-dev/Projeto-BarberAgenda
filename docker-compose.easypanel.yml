@@ -1,53 +1,19 @@
 ###############################################################################
-# BarberFlow SaaS — EasyPanel Custom Compose
-# Gerado com revisão de 7 bugs do draft anterior (veja comentários BUG-FIX)
+# BarberFlow SaaS — docker-compose.easypanel.yml
+#
+# Domínios (via Traefik/EasyPanel):
+#   Frontend : barberflow-barberflow.i9inu5.easypanel.host  → app:80
+#   API      : barberflow-api.i9inu5.easypanel.host         → api:4000
+#   Supabase : barberflow-supabase.i9inu5.easypanel.host    → kong:8000 (projeto separado)
 ###############################################################################
 
-# BUG-FIX 1: 'version' removido — obsoleto no Compose v2+ e causa warning no EasyPanel
-
-x-supabase-env: &supabase-env
-  POSTGRES_PASSWORD:  ${POSTGRES_PASSWORD:-postgres}
-  POSTGRES_DB:        postgres
-  POSTGRES_USER:      postgres
-  JWT_SECRET:         ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-  ANON_KEY:           ${SUPABASE_ANON_KEY}
-  SERVICE_ROLE_KEY:   ${SUPABASE_SERVICE_ROLE_KEY}
-  API_EXTERNAL_URL:   ${API_EXTERNAL_URL:-http://supabase-kong:8000}
-  SMTP_HOST:          ${SMTP_HOST:-}
-  SMTP_PORT:          ${SMTP_PORT:-587}
-  SMTP_USER:          ${SMTP_USER:-}
-  SMTP_PASS:          ${SMTP_PASS:-}
-  SMTP_SENDER_NAME:   ${SMTP_SENDER_NAME:-BarberFlow}
+version: "3.9"
 
 services:
 
-  # ─── POSTGRES (imagem Supabase com extensões pgjwt, pgcrypto, etc.) ──────────
-  postgres:
-    image: supabase/postgres:15.6.1.143
-    restart: unless-stopped
-    command:
-      - postgres
-      - -c
-      - config_file=/etc/postgresql/postgresql.conf
-      - -c
-      - log_min_messages=fatal
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB:       postgres
-      POSTGRES_USER:     postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./infra/init-supabase-schemas.sql:/docker-entrypoint-initdb.d/00-supabase-schemas.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 120s
-    networks:
-      - barberflow
-
-  # ─── REDIS ───────────────────────────────────────────────────────────────────
+  ##############################################################################
+  # REDIS
+  ##############################################################################
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -60,293 +26,89 @@ services:
       retries: 5
     networks:
       - barberflow
+      - supabase_net
 
-  # ─── KONG (API Gateway) ───────────────────────────────────────────────────────
-  supabase-kong:
-    image: kong:2.8.1
-    restart: unless-stopped
-    entrypoint: ["/bin/sh", "/kong-init.sh"]
-    # BUG-FIX 2: entrypoint como array — evita que o sh interprete o path
-    # errado em algumas versões do Docker/EasyPanel
-    environment:
-      KONG_DATABASE:                    "off"
-      KONG_DNS_ORDER:                   LAST,A,CNAME
-      KONG_PLUGINS:                     request-transformer,cors,key-auth,acl,basic-auth
-      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
-      KONG_NGINX_PROXY_PROXY_BUFFERS:   64 160k
-      KONG_LOG_LEVEL:                   warn
-      SUPABASE_ANON_KEY:                ${SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY:        ${SUPABASE_SERVICE_ROLE_KEY}
-    volumes:
-      - ./infra/kong.yml:/var/lib/kong/kong.yml.template:ro
-      - ./infra/kong-entrypoint.sh:/kong-init.sh:ro
-    expose:
-      - "8000"
-    # BUG-FIX 3: porta 8000 NÃO exposta no host — Kong só é acessado
-    # internamente pelo app/api. Expor no host cria vetor de ataque.
-    # Se precisar acessar externamente, use o domínio pelo Traefik do EasyPanel.
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - barberflow
-
-  # ─── GOTRUE (Auth) ───────────────────────────────────────────────────────────
-  supabase-auth:
-    image: supabase/gotrue:v2.151.0
-    restart: unless-stopped
-    environment:
-      <<: *supabase-env
-      GOTRUE_API_HOST:                    0.0.0.0
-      GOTRUE_API_PORT:                    9999
-      GOTRUE_DB_DRIVER:                   postgres
-      GOTRUE_DB_DATABASE_URL:             postgresql://supabase_auth_admin:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres
-      GOTRUE_SITE_URL:                    ${SITE_URL:-http://localhost:3001}
-      GOTRUE_URI_ALLOW_LIST:              "*"
-      GOTRUE_DISABLE_SIGNUP:              "false"
-      GOTRUE_JWT_ADMIN_ROLES:             service_role
-      GOTRUE_JWT_AUD:                     authenticated
-      GOTRUE_JWT_DEFAULT_GROUP_NAME:      authenticated
-      GOTRUE_JWT_EXP:                     3600
-      GOTRUE_JWT_SECRET:                  ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-      GOTRUE_EXTERNAL_EMAIL_ENABLED:      "true"
-      GOTRUE_MAILER_AUTOCONFIRM:          ${MAILER_AUTOCONFIRM:-true}
-      GOTRUE_SMTP_HOST:                   ${SMTP_HOST:-}
-      GOTRUE_SMTP_PORT:                   ${SMTP_PORT:-587}
-      GOTRUE_SMTP_USER:                   ${SMTP_USER:-}
-      GOTRUE_SMTP_PASS:                   ${SMTP_PASS:-}
-      GOTRUE_SMTP_SENDER_NAME:            ${SMTP_SENDER_NAME:-BarberFlow}
-      GOTRUE_MAILER_URLPATHS_INVITE:      /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_RECOVERY:    /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
-      GOTRUE_EXTERNAL_PHONE_ENABLED:      "false"
-      GOTRUE_SMS_AUTOCONFIRM:             "false"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9999/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    networks:
-      - barberflow
-
-  # ─── POSTGREST ───────────────────────────────────────────────────────────────
-  supabase-rest:
-    image: postgrest/postgrest:v12.0.2
-    restart: unless-stopped
-    environment:
-      PGRST_DB_URI:                   postgresql://authenticator:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres
-      PGRST_DB_SCHEMAS:               public,storage,graphql_public
-      PGRST_DB_ANON_ROLE:             anon
-      PGRST_JWT_SECRET:               ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-      PGRST_DB_USE_LEGACY_GUCS:       "false"
-      PGRST_APP_SETTINGS_JWT_SECRET:  ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-      PGRST_APP_SETTINGS_JWT_EXP:     3600
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      # BUG-FIX 4: PostgREST expõe na porta 3000 internamente, mas o nome
-      # conflita com Supabase Studio (também na 3000 no draft anterior).
-      # Aqui ficam em redes isoladas — sem conflito. Healthcheck correto.
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-    networks:
-      - barberflow
-
-  # ─── REALTIME ────────────────────────────────────────────────────────────────
-  supabase-realtime:
-    image: supabase/realtime:v2.30.34
-    restart: unless-stopped
-    environment:
-      PORT:                    4000
-      DB_HOST:                 postgres
-      DB_PORT:                 5432
-      DB_USER:                 supabase_admin
-      DB_PASSWORD:             ${POSTGRES_PASSWORD:-postgres}
-      DB_NAME:                 postgres
-      DB_AFTER_CONNECT_QUERY:  "SET search_path TO _realtime"
-      DB_ENC_KEY:              ${DB_ENC_KEY:-supabaseencryptionkey}
-      API_JWT_SECRET:          ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-      FLY_ALLOC_ID:            fly123
-      FLY_APP_NAME:            realtime
-      SECRET_KEY_BASE:         ${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
-      ERL_AFLAGS:              -proto_dist inet_tcp
-      ENABLE_TAILSCALE:        "false"
-      DNS_NODES:               "''"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sSfL --head -o /dev/null http://localhost:4000/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    networks:
-      - barberflow
-
-  # ─── STORAGE ─────────────────────────────────────────────────────────────────
-  supabase-storage:
-    image: supabase/storage-api:v1.11.13
-    restart: unless-stopped
-    environment:
-      ANON_KEY:               ${SUPABASE_ANON_KEY}
-      SERVICE_KEY:            ${SUPABASE_SERVICE_ROLE_KEY}
-      POSTGREST_URL:          http://supabase-rest:3000
-      PGRST_JWT_SECRET:       ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-      DATABASE_URL:           postgresql://supabase_storage_admin:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres
-      FILE_SIZE_LIMIT:        52428800
-      STORAGE_BACKEND:        file
-      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
-      TENANT_ID:              stub
-      REGION:                 stub
-      GLOBAL_S3_BUCKET:       stub
-      ENABLE_IMAGE_TRANSFORMATION: "false"
-    volumes:
-      - storage_data:/var/lib/storage
-    depends_on:
-      postgres:
-        condition: service_healthy
-      supabase-rest:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/status || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-    networks:
-      - barberflow
-
-  # ─── PG-META ─────────────────────────────────────────────────────────────────
-  supabase-meta:
-    image: supabase/postgres-meta:v0.80.0
-    restart: unless-stopped
-    environment:
-      PG_META_PORT:        8080
-      PG_META_DB_HOST:     postgres
-      PG_META_DB_PORT:     5432
-      PG_META_DB_NAME:     postgres
-      PG_META_DB_USER:     supabase_admin
-      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - barberflow
-
-  # ─── STUDIO ──────────────────────────────────────────────────────────────────
-  supabase-studio:
-    image: supabase/studio:20240729-ce42139
-    restart: unless-stopped
-    environment:
-      STUDIO_PG_META_URL:        http://supabase-meta:8080
-      POSTGRES_PASSWORD:         ${POSTGRES_PASSWORD:-postgres}
-      DEFAULT_ORGANIZATION_NAME: BarberFlow
-      DEFAULT_PROJECT_NAME:      barberflow
-      SUPABASE_URL:              http://supabase-kong:8000
-      SUPABASE_PUBLIC_URL:       ${SUPABASE_PUBLIC_URL:-http://localhost:8000}
-      SUPABASE_ANON_KEY:         ${SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_KEY:      ${SUPABASE_SERVICE_ROLE_KEY}
-      AUTH_JWT_SECRET:           ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
-      NEXT_PUBLIC_ENABLE_LOGS:   "false"
-    expose:
-      - "3000"
-    # BUG-FIX 5: Studio sem porta exposta no host — acesse pelo domínio do
-    # EasyPanel. Expor 3000:3000 diretamente conflita com outros serviços
-    # e deixa o painel admin acessível publicamente sem auth.
-    depends_on:
-      supabase-auth:
-        condition: service_healthy
-      supabase-rest:
-        condition: service_healthy
-      supabase-meta:
-        condition: service_healthy
-    networks:
-      - barberflow
-
-  # ─── BACKEND API (Express: /api/register + /api/webhook/asaas) ───────────────
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    restart: unless-stopped
-    expose:
-      - "4000"
-    environment:
-      SERVER_PORT:          4000
-      NODE_ENV:             production
-      SUPABASE_URL:         http://supabase-kong:8000
-      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      ASAAS_API_KEY:        ${ASAAS_API_KEY:-}
-      ASAAS_SANDBOX:        ${ASAAS_SANDBOX:-true}
-      ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_SECRET:-}
-      FRONTEND_URL:         ${SITE_URL:-*}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      supabase-auth:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    networks:
-      - barberflow
-
-  # ─── APP (React + Nginx) ─────────────────────────────────────────────────────
+  ##############################################################################
+  # APP — Frontend React (nginx)
+  # SUPABASE_URL deve ser a URL PÚBLICA do Supabase (acessível pelo browser)
+  ##############################################################################
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: barberflow-app:latest
     restart: unless-stopped
-    expose:
-      - "80"
     environment:
-      NODE_ENV:          production
-      SUPABASE_URL:      http://supabase-kong:8000
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-      EVO_URL:           ${EVO_URL:-}
-      EVO_INSTANCE:      ${EVO_INSTANCE:-barberflow}
-      EVO_APIKEY:        ${EVO_APIKEY:-}
-      API_URL:           http://api:4000
-      SITE_URL:          ${SITE_URL:-}
-    depends_on:
-      supabase-kong:
-        condition: service_started
-      supabase-auth:
-        condition: service_healthy
-      api:
-        condition: service_healthy
+      # URL pública — browser do usuário acessa de fora da rede Docker
+      SUPABASE_URL: https://barberflow-supabase.i9inu5.easypanel.host
+      # Chave anon do Supabase instalado (demo key — trocar ao atualizar o Supabase)
+      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE
+      # URL pública da API Express
+      API_URL: https://barberflow-api.i9inu5.easypanel.host
+      SITE_URL: https://barberflow-barberflow.i9inu5.easypanel.host
+      EVO_URL: ${EVO_URL}
+      EVO_INSTANCE: ${EVO_INSTANCE:-barberflow}
+      EVO_APIKEY: ${EVO_APIKEY}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 10s
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - barberflow
+      - supabase_net
 
+  ##############################################################################
+  # API — Backend Express (registro + webhook Asaas)
+  # SUPABASE_URL aqui é interna (servidor-para-servidor, não precisa ser pública)
+  ##############################################################################
+  api:
+    image: barberflow-api:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SERVER_PORT: 4000
+      # Kong interno — acesso servidor-para-servidor, não pelo browser
+      SUPABASE_URL: http://kong:8000
+      # Service role key do Supabase instalado (demo key — trocar ao atualizar o Supabase)
+      SUPABASE_SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q
+      ASAAS_API_KEY: ${ASAAS_API_KEY}
+      ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_TOKEN}
+      CORS_ORIGIN: https://barberflow-barberflow.i9inu5.easypanel.host
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - barberflow
+      - supabase_net
+      - easypanel
+
+##############################################################################
+# VOLUMES
+##############################################################################
 volumes:
-  postgres_data:
   redis_data:
-  storage_data:
 
+##############################################################################
+# NETWORKS
+##############################################################################
 networks:
   barberflow:
     driver: bridge
+
+  # Rede do Supabase já existente
+  supabase_net:
+    external: true
+    name: barberflow_supabase_default
+
+  # Rede do Traefik/EasyPanel — necessária para roteamento por domínio
+  easypanel:
+    external: true
+    name: easypanel

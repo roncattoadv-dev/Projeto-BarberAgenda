@@ -283,15 +283,25 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     return buildCustomMsg(tplsDraft.cancel, mock);
   };
 
-  const connColor  = { open:'bg-emerald-500', close:'bg-red-500', connecting:'bg-amber-400', error:'bg-slate-400', checking:'bg-slate-300' }[connState];
-  const connLabel  = { open:'Conectado ✓', close:'Desconectado', connecting:'Aguardando QR…', error:'Erro de conexão', checking:'Verificando…' }[connState];
-  const connBadge  = { open:'bg-emerald-50 text-emerald-700 border-emerald-200', close:'bg-red-50 text-red-700 border-red-200', connecting:'bg-amber-50 text-amber-700 border-amber-200', error:'bg-slate-100 text-slate-600 border-slate-200', checking:'bg-slate-100 text-slate-500 border-slate-200' }[connState];
+  const connDotColor = { open: '#4ade80', close: '#ef4444', connecting: '#fbbf24', error: '#94a3b8', checking: '#64748b' }[connState];
+  const connLabel    = { open:'Conectado ✓', close:'Desconectado', connecting:'Aguardando QR…', error:'Erro de conexão', checking:'Verificando…' }[connState];
+
+  const connBadgeStyle = (): React.CSSProperties => {
+    const base: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 20, border: '1px solid', fontSize: 12, fontWeight: 600 };
+    if (connState === 'open')       return { ...base, background: '#E6F4EC', color: '#0A4A2C', borderColor: '#A7D7BC' };
+    if (connState === 'connecting') return { ...base, background: '#FEF9EC', color: '#7A4B0A', borderColor: '#F5DCB0' };
+    if (connState === 'close')      return { ...base, background: '#FEECEC', color: '#7A0A0A', borderColor: '#F5B8B8' };
+    return { ...base, background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)', borderColor: 'rgba(255,255,255,0.09)' };
+  };
 
   const btnLabel = (key: string) => ({ idle:'Enviar', sending:'⏳…', done:'✓ Enviado', error:'✕ Erro' }[sendStates[key]||'idle']);
-  const btnCls   = (key: string) => {
-    const s = sendStates[key]||'idle';
-    const b = 'px-3 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap ';
-    return b + ({ idle:'bg-slate-900 text-white hover:bg-slate-700', sending:'bg-amber-50 text-amber-700 cursor-wait', done:'bg-emerald-50 text-emerald-700', error:'bg-red-50 text-red-700' }[s]);
+  const btnStyle = (key: string): React.CSSProperties => {
+    const s = sendStates[key] || 'idle';
+    const base: React.CSSProperties = { padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, border: 'none', cursor: s === 'sending' ? 'wait' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' };
+    if (s === 'idle')    return { ...base, background: 'rgba(255,255,255,0.88)', color: '#031D3C' };
+    if (s === 'sending') return { ...base, background: '#FEF9EC', color: '#7A4B0A' };
+    if (s === 'done')    return { ...base, background: '#E6F4EC', color: '#0A4A2C' };
+    return { ...base, background: '#FEECEC', color: '#7A0A0A' };
   };
 
   const tabs: { id: ActiveView; label: string; dot?: boolean }[] = [
@@ -301,52 +311,74 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     { id:'config',     label:'⚙️ Config' },
   ];
 
+  const card: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.09)',
+    borderRadius: 16,
+    padding: 24,
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
 
       {/* ── Header ──────────────────────────────────────────── */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div style={{ ...card, display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div>
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1">WhatsApp</span>
-          <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', display: 'block', marginBottom: 4 }}>WhatsApp</span>
+          <h3 style={{ fontSize: 18, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
             Evolution Go
-            <span className="text-xs font-normal text-slate-400 font-mono">
-              instância: <code className="bg-slate-100 px-1.5 py-0.5 rounded">{cfg.instance}</code>
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'rgba(255,255,255,0.38)', fontFamily: 'monospace' }}>
+              instância: <code style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 6px', borderRadius: 4 }}>{cfg.instance}</code>
             </span>
           </h3>
           {instanceInfo?.profileName && (
-            <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
-              {instanceInfo.profilePicUrl && <img src={instanceInfo.profilePicUrl} className="w-5 h-5 rounded-full" alt="" />}
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {instanceInfo.profilePicUrl && <img src={instanceInfo.profilePicUrl} style={{ width: 18, height: 18, borderRadius: '50%' }} alt="" />}
               {instanceInfo.profileName}
             </p>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-semibold ${connBadge}`}>
-            <span className={`w-2.5 h-2.5 rounded-full ${connColor} ${connState==='open'?'animate-pulse':''}`} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={connBadgeStyle()}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: connDotColor, flexShrink: 0, ...(connState === 'open' ? { animation: 'pulse 2s infinite' } : {}) }} />
             {connLabel}
           </div>
-          <button onClick={refreshStatus} className="size-9 rounded-full border border-slate-200 hover:bg-slate-100 flex items-center justify-center text-slate-500 text-lg transition" title="Verificar status">↻</button>
+          <button onClick={refreshStatus} style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.09)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Verificar status">↻</button>
         </div>
       </div>
 
       {/* ── Alerta sem config ───────────────────────────────── */}
       {!isConfigured && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900 flex items-start gap-3">
-          <span className="text-xl shrink-0">⚠️</span>
+        <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 14, padding: '14px 18px', fontSize: 13, color: '#fbbf24', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>⚠️</span>
           <div>
-            <strong>Evo Go não configurado.</strong> Vá para a aba <button onClick={()=>setActiveView('config')} className="underline font-bold">⚙️ Config</button> e preencha a URL, instância e API Key do seu Evo Go no EasyPanel.
+            <strong>Evo Go não configurado.</strong> Vá para a aba <button onClick={()=>setActiveView('config')} style={{ color: '#fbbf24', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'Outfit, sans-serif' }}>⚙️ Config</button> e preencha a URL, instância e API Key do seu Evo Go no EasyPanel.
           </div>
         </div>
       )}
 
       {/* ── Sub-tabs ─────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2">
+      <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
         {tabs.map(t => (
-          <button key={t.id} onClick={() => setActiveView(t.id)}
-            className={`relative px-5 py-2.5 text-sm font-semibold rounded-full transition-all ${activeView===t.id?'bg-slate-900 text-white shadow-md':'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+          <button
+            key={t.id}
+            onClick={() => setActiveView(t.id)}
+            style={{
+              position: 'relative' as const,
+              padding: '9px 18px',
+              fontSize: 13,
+              fontWeight: 600,
+              borderRadius: 20,
+              border: `1px solid ${activeView===t.id ? '#ffffff' : 'rgba(255,255,255,0.09)'}`,
+              background: activeView===t.id ? '#ffffff' : 'rgba(255,255,255,0.04)',
+              color: activeView===t.id ? '#031D3C' : 'rgba(255,255,255,0.55)',
+              cursor: 'pointer',
+              fontFamily: 'Outfit, sans-serif',
+              transition: 'all 0.15s',
+            }}
+          >
             {t.label}
-            {t.dot && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />}
+            {t.dot && <span style={{ position: 'absolute', top: 6, right: 6, width: 7, height: 7, borderRadius: '50%', background: '#ef4444' }} />}
           </button>
         ))}
       </div>
@@ -355,30 +387,32 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
           VIEW: CONEXÃO — QR Code
       ══════════════════════════════════════════════════════ */}
       {activeView === 'connection' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
           {/* Painel de estado + ações */}
-          <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
-            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3">Status da Instância</h4>
+          <div style={card} className="space-y-5">
+            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Status da Instância</h4>
 
             {/* Info card */}
-            <div className={`p-5 rounded-2xl border-2 text-center space-y-2 ${
-              connState==='open' ? 'bg-emerald-50 border-emerald-200'
-              : connState==='connecting' ? 'bg-amber-50 border-amber-200'
-              : 'bg-slate-50 border-slate-200'
-            }`}>
-              <div className="text-4xl">
+            <div style={{
+              padding: 20,
+              borderRadius: 14,
+              border: `2px solid ${connState==='open' ? 'rgba(74,222,128,0.35)' : connState==='connecting' ? 'rgba(251,191,36,0.35)' : 'rgba(255,255,255,0.09)'}`,
+              background: connState==='open' ? 'rgba(74,222,128,0.06)' : connState==='connecting' ? 'rgba(251,191,36,0.06)' : 'rgba(255,255,255,0.03)',
+              textAlign: 'center',
+            }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>
                 {connState==='open' ? '✅' : connState==='connecting' ? '📱' : connState==='error' ? '❌' : '⏳'}
               </div>
-              <p className="font-bold text-slate-900">{connLabel}</p>
+              <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', marginBottom: 4 }}>{connLabel}</p>
               {connState==='open' && instanceInfo && (
-                <p className="text-sm text-slate-600">{instanceInfo.profileName || cfg.instance}</p>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{instanceInfo.profileName || cfg.instance}</p>
               )}
               {connState==='close' && (
-                <p className="text-xs text-slate-500">Escaneie o QR Code para conectar</p>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>Escaneie o QR Code para conectar</p>
               )}
               {connState==='connecting' && (
-                <p className="text-xs text-amber-700">Aguardando leitura do QR Code…</p>
+                <p style={{ fontSize: 11, color: '#fbbf24' }}>Aguardando leitura do QR Code…</p>
               )}
             </div>
 
@@ -386,83 +420,83 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
             <div className="space-y-3">
               {connState !== 'open' && (
                 <button onClick={handleConnect} disabled={!isConfigured || qrLoading}
-                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-full transition flex items-center justify-center gap-2 text-sm shadow-sm">
+                  style={{ width: '100%', padding: '13px', background: '#E6F4EC', color: '#0A4A2C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: (!isConfigured || qrLoading) ? 'not-allowed' : 'pointer', opacity: (!isConfigured || qrLoading) ? 0.5 : 1, fontFamily: 'Outfit, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                   {qrLoading ? '⏳ Gerando QR…' : '📱 Conectar WhatsApp (QR Code)'}
                 </button>
               )}
               {connState !== 'open' && (
                 <button onClick={handleCreateInstance} disabled={!isConfigured}
-                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 font-bold rounded-full transition text-sm border border-slate-200">
+                  style={{ width: '100%', padding: '11px', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.65)', fontWeight: 700, fontSize: 13, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, cursor: !isConfigured ? 'not-allowed' : 'pointer', opacity: !isConfigured ? 0.5 : 1, fontFamily: 'Outfit, sans-serif' }}>
                   ➕ Criar instância "{cfg.instance}"
                 </button>
               )}
               {connState === 'open' && (
                 <button onClick={handleLogout}
-                  className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-full transition text-sm border border-red-200">
+                  style={{ width: '100%', padding: '11px', background: 'rgba(239,68,68,0.1)', color: '#fca5a5', fontWeight: 700, fontSize: 13, border: '1px solid rgba(239,68,68,0.25)', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                   🔌 Desconectar WhatsApp
                 </button>
               )}
               {(connState === 'connecting' || qrData) && (
                 <button onClick={fetchQR} disabled={qrLoading}
-                  className="w-full py-3 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded-full transition text-sm border border-amber-200">
+                  style={{ width: '100%', padding: '11px', background: 'rgba(251,191,36,0.08)', color: '#fbbf24', fontWeight: 700, fontSize: 13, border: '1px solid rgba(251,191,36,0.25)', borderRadius: 12, cursor: qrLoading ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                   🔄 Novo QR Code
                 </button>
               )}
             </div>
 
             {/* Info técnica */}
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs text-slate-500 space-y-1 font-mono">
-              <p><span className="text-slate-400">URL:</span> {cfg.url || '—'}</p>
-              <p><span className="text-slate-400">Instância:</span> {cfg.instance}</p>
-              <p><span className="text-slate-400">API Key:</span> {cfg.apikey ? '••••' + cfg.apikey.slice(-4) : '—'}</p>
+            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '12px 14px', fontSize: 11, color: 'rgba(255,255,255,0.38)', fontFamily: 'monospace', lineHeight: 1.8 }}>
+              <p><span style={{ color: 'rgba(255,255,255,0.25)' }}>URL:</span> {cfg.url || '—'}</p>
+              <p><span style={{ color: 'rgba(255,255,255,0.25)' }}>Instância:</span> {cfg.instance}</p>
+              <p><span style={{ color: 'rgba(255,255,255,0.25)' }}>API Key:</span> {cfg.apikey ? '••••' + cfg.apikey.slice(-4) : '—'}</p>
             </div>
           </div>
 
           {/* QR Code */}
-          <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center justify-center space-y-6 min-h-[340px]">
-            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider w-full border-b border-slate-100 pb-3">QR Code</h4>
+          <div style={{ ...card, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', minHeight: 340 }} className="space-y-5">
+            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0, width: '100%' }}>QR Code</h4>
 
             {connState === 'open' ? (
-              <div className="flex flex-col items-center gap-4 py-8">
-                <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center text-4xl">✅</div>
-                <p className="font-bold text-emerald-700 text-lg">WhatsApp Conectado!</p>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 16, padding: '24px 0' }}>
+                <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(74,222,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>✅</div>
+                <p style={{ fontWeight: 700, color: '#4ade80', fontSize: 16 }}>WhatsApp Conectado!</p>
                 {instanceInfo?.profileName && (
-                  <div className="flex items-center gap-3 bg-slate-50 px-5 py-3 rounded-2xl border border-slate-200">
-                    {instanceInfo.profilePicUrl && <img src={instanceInfo.profilePicUrl} className="w-10 h-10 rounded-full border border-slate-200" alt="" />}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.04)', padding: '12px 18px', borderRadius: 14, border: '1px solid rgba(255,255,255,0.09)' }}>
+                    {instanceInfo.profilePicUrl && <img src={instanceInfo.profilePicUrl} style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.09)' }} alt="" />}
                     <div>
-                      <p className="font-bold text-slate-900 text-sm">{instanceInfo.profileName}</p>
-                      <p className="text-xs text-slate-500">{instanceInfo.ownerJid?.replace('@s.whatsapp.net','')}</p>
+                      <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13 }}>{instanceInfo.profileName}</p>
+                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{instanceInfo.ownerJid?.replace('@s.whatsapp.net','')}</p>
                     </div>
                   </div>
                 )}
               </div>
             ) : qrLoading ? (
-              <div className="flex flex-col items-center gap-4 py-8">
-                <div className="w-16 h-16 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
-                <p className="text-sm text-slate-500">Gerando QR Code…</p>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 16, padding: '24px 0' }}>
+                <div style={{ width: 56, height: 56, border: '4px solid rgba(255,255,255,0.09)', borderTopColor: 'rgba(255,255,255,0.65)', borderRadius: '50%' }} className="animate-spin" />
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)' }}>Gerando QR Code…</p>
               </div>
             ) : qrData?.base64 ? (
-              <div className="flex flex-col items-center gap-4">
-                <div className="p-3 bg-white border-2 border-slate-200 rounded-2xl shadow-md">
+              <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 16 }}>
+                <div style={{ padding: 12, background: '#ffffff', borderRadius: 16 }}>
                   <img
                     src={qrData.base64.startsWith('data:') ? qrData.base64 : `data:image/png;base64,${qrData.base64}`}
                     alt="QR Code WhatsApp"
-                    className="w-52 h-52 object-contain"
+                    style={{ width: 200, height: 200, objectFit: 'contain' }}
                   />
                 </div>
-                <div className="text-center space-y-1">
-                  <p className="text-xs font-semibold text-slate-700">Abra o WhatsApp no celular</p>
-                  <p className="text-xs text-slate-500">⋯ → Dispositivos conectados → Conectar dispositivo</p>
-                  <p className="text-[10px] text-amber-600 font-mono mt-2 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>Abra o WhatsApp no celular</p>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>⋯ → Dispositivos conectados → Conectar dispositivo</p>
+                  <p style={{ fontSize: 10, color: '#fbbf24', fontFamily: 'monospace', marginTop: 8, background: 'rgba(251,191,36,0.08)', padding: '4px 12px', borderRadius: 20, border: '1px solid rgba(251,191,36,0.2)', display: 'inline-block' }}>
                     ⏰ QR expira em ~45s — atualizado automaticamente
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-4 py-8 text-center">
-                <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center text-4xl">📱</div>
-                <p className="text-slate-600 font-medium text-sm max-w-[220px]">
-                  Clique em <strong>"Conectar WhatsApp"</strong> para gerar o QR Code
+              <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 16, padding: '24px 0', textAlign: 'center' }}>
+                <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>📱</div>
+                <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13, maxWidth: 220 }}>
+                  Clique em <strong style={{ color: 'rgba(255,255,255,0.65)' }}>"Conectar WhatsApp"</strong> para gerar o QR Code
                 </p>
               </div>
             )}
@@ -474,44 +508,45 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
           VIEW: DISPARAR MENSAGENS
       ══════════════════════════════════════════════════════ */}
       {activeView === 'dispatch' && (
-        <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Disparar Notificações</h4>
-            <div className="flex items-center gap-3">
-              <span className={`text-xs px-3 py-1 rounded-full border font-semibold ${connBadge}`}>
-                <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${connColor}`} />{connLabel}
-              </span>
-              <span className="text-xs font-mono text-slate-400">{pendingAppts.length} agendamento(s)</span>
+        <div style={card} className="space-y-4">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 14 }}>
+            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: 0 }}>Disparar Notificações</h4>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={connBadgeStyle()}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: connDotColor, flexShrink: 0 }} />
+                {connLabel}
+              </div>
+              <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'rgba(255,255,255,0.38)' }}>{pendingAppts.length} agend.</span>
             </div>
           </div>
 
           {connState !== 'open' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800 flex items-center gap-3">
+            <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 10 }}>
               <span>⚠️</span>
-              <span>WhatsApp desconectado. <button onClick={()=>setActiveView('connection')} className="underline font-bold">Conecte na aba Conexão</button> para enviar mensagens.</span>
+              <span>WhatsApp desconectado. <button onClick={()=>setActiveView('connection')} style={{ color: '#fbbf24', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'Outfit, sans-serif' }}>Conecte na aba Conexão</button> para enviar mensagens.</span>
             </div>
           )}
 
           {pendingAppts.length === 0 ? (
-            <p className="text-center py-10 text-slate-400 text-sm">Nenhum agendamento confirmado ou pendente.</p>
+            <p style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>Nenhum agendamento confirmado ou pendente.</p>
           ) : (
-            <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
+            <div className="space-y-3 no-scrollbar" style={{ maxHeight: 560, overflowY: 'auto', paddingRight: 4 }}>
               {pendingAppts.map(appt => {
                 const srv  = myServices.find(s => s.id === appt.serviceId);
                 const prof = myProfessionals.find(p => p.id === appt.professionalId);
                 return (
-                  <div key={appt.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <span className="bg-slate-900 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-lg whitespace-nowrap">{appt.date} · {appt.time}</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border ${appt.status==='confirmed'?'bg-blue-50 text-blue-700 border-blue-200':'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                  <div key={appt.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '14px 16px', display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <span style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.88)', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap' as const }}>{appt.date} · {appt.time}</span>
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700, textTransform: 'uppercase' as const, background: appt.status==='confirmed' ? 'rgba(99,102,241,0.12)' : 'rgba(251,191,36,0.1)', color: appt.status==='confirmed' ? '#a5b4fc' : '#fbbf24', border: `1px solid ${appt.status==='confirmed' ? 'rgba(99,102,241,0.25)' : 'rgba(251,191,36,0.25)'}` }}>
                           {appt.status==='confirmed'?'Confirmado':'Pendente'}
                         </span>
                       </div>
-                      <p className="font-bold text-slate-900 text-sm truncate">{appt.customerName}</p>
-                      <p className="text-xs text-slate-500">{srv?.name} · {prof?.name} · <span className="font-mono">{appt.customerPhone}</span></p>
+                      <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{appt.customerName}</p>
+                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{srv?.name} · {prof?.name} · <span style={{ fontFamily: 'monospace' }}>{appt.customerPhone}</span></p>
                     </div>
-                    <div className="flex flex-wrap gap-2 shrink-0">
+                    <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6, flexShrink: 0 }}>
                       {([
                         { type:'confirmation' as const, label:'✓ Confirmar' },
                         { type:'reminder'     as const, label:'⏰ Lembrete' },
@@ -520,7 +555,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
                         const key  = `${appt.id}-${type}`;
                         const busy = sendStates[key] === 'sending';
                         return (
-                          <button key={type} disabled={busy || connState!=='open'} onClick={() => doSend(appt, type)} className={btnCls(key)}>
+                          <button key={type} disabled={busy || connState!=='open'} onClick={() => doSend(appt, type)} style={{ ...btnStyle(key), opacity: (busy || connState!=='open') ? 0.5 : 1 }}>
                             {sendStates[key] ? btnLabel(key) : label}
                           </button>
                         );
@@ -538,11 +573,11 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
           VIEW: MODELOS DE MENSAGEM
       ══════════════════════════════════════════════════════ */}
       {activeView === 'templates' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-5">
-            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3">Modelos de Mensagem</h4>
-            <p className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100">
-              Variáveis: <code className="bg-slate-200 px-1 rounded">{'{'}</code>cliente{'}'}  {'{'}{'}'}servico{'{'}{'}'}  profissional{'{'}{'}'}  data{'{'}{'}'}  hora{'{'}{'}'}  salao{'}'}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div style={card} className="space-y-5">
+            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Modelos de Mensagem</h4>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', fontFamily: 'monospace' }}>
+              Variáveis: {'{cliente}  {servico}  {profissional}  {data}  {hora}  {salao}'}
             </p>
             {([
               { key:'confirm' as const, label:'✅ Confirmação', preview:'confirmation' as const },
@@ -550,26 +585,26 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
               { key:'cancel'  as const, label:'❌ Cancelamento', preview:'cancellation' as const },
             ]).map(t => (
               <div key={t.key} onClick={() => setActivePreview(t.preview)}>
-                <label className={`text-xs font-semibold uppercase block mb-1 transition ${activePreview===t.preview?'text-blue-600':'text-slate-500'}`}>{t.label}</label>
+                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', display: 'block', marginBottom: 6, cursor: 'pointer', color: activePreview===t.preview ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.38)' }}>{t.label}</label>
                 <textarea
                   value={tplsDraft[t.key]}
                   onChange={e => setTplsDraft(prev => ({ ...prev, [t.key]: e.target.value }))}
                   rows={3}
-                  className={`w-full bg-slate-50 border rounded-xl px-4 py-3 text-slate-900 text-sm resize-none focus:outline-none transition ${activePreview===t.preview?'border-blue-400 ring-1 ring-blue-200':'border-slate-200 focus:border-blue-400'}`}
+                  style={{ width: '100%', background: activePreview===t.preview ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.04)', border: `1px solid ${activePreview===t.preview ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 10, padding: '10px 14px', color: 'rgba(255,255,255,0.88)', fontSize: 13, resize: 'none' as const, outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }}
                 />
               </div>
             ))}
-            <button onClick={handleSaveTpls} className="w-full py-3.5 bg-slate-900 text-white font-semibold rounded-full hover:bg-slate-800 transition text-sm">Salvar Modelos</button>
+            <button onClick={handleSaveTpls} style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar Modelos</button>
           </div>
 
-          {/* Preview estilo WhatsApp */}
-          <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Preview</h4>
-              <div className="flex gap-2">
+          {/* Preview estilo WhatsApp — mantém dark theme original */}
+          <div style={card} className="space-y-5">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12 }}>
+              <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: 0 }}>Preview</h4>
+              <div style={{ display: 'flex', gap: 6 }}>
                 {(['confirmation','reminder','cancellation'] as const).map(t => (
                   <button key={t} onClick={() => setActivePreview(t)}
-                    className={`text-xs px-3 py-1 rounded-full font-semibold transition ${activePreview===t?'bg-slate-900 text-white':'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                    style={{ fontSize: 11, padding: '4px 12px', borderRadius: 20, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: activePreview===t ? '#ffffff' : 'rgba(255,255,255,0.07)', color: activePreview===t ? '#031D3C' : 'rgba(255,255,255,0.55)', border: `1px solid ${activePreview===t ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>
                     {t==='confirmation'?'Confirm.':t==='reminder'?'Lembrete':'Cancel.'}
                   </button>
                 ))}
@@ -600,53 +635,53 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
           VIEW: CONFIGURAÇÃO Evo Go
       ══════════════════════════════════════════════════════ */}
       {activeView === 'config' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-5">
-            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3">Configuração Evolution Go</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div style={card} className="space-y-5">
+            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Configuração Evolution Go</h4>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', lineHeight: 1.6 }}>
               Preencha com os dados do seu Evo Go rodando no EasyPanel. As configurações ficam salvas localmente no navegador.
             </p>
 
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">URL do Evo Go <span className="text-red-500">*</span></label>
+                <label className="navy-label">URL do Evo Go <span style={{ color: '#fca5a5' }}>*</span></label>
                 <input type="url" placeholder="https://evo.seudominio.com.br" value={cfgDraft.url}
                   onChange={e => setCfgDraft(p => ({...p, url: e.target.value}))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500 font-mono" />
-                <p className="text-[10px] text-slate-400 mt-1">Ex: https://evo.barberflow.com.br (sem barra no final)</p>
+                  className="navy-input" style={{ fontFamily: 'monospace' }} />
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Ex: https://evo.barberflow.com.br (sem barra no final)</p>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Nome da Instância <span className="text-red-500">*</span></label>
+                <label className="navy-label">Nome da Instância <span style={{ color: '#fca5a5' }}>*</span></label>
                 <input type="text" placeholder="barberflow" value={cfgDraft.instance}
                   onChange={e => setCfgDraft(p => ({...p, instance: e.target.value.trim()}))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500 font-mono" />
-                <p className="text-[10px] text-slate-400 mt-1">Nome da instância criada no painel do Evo Go</p>
+                  className="navy-input" style={{ fontFamily: 'monospace' }} />
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Nome da instância criada no painel do Evo Go</p>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">GLOBAL_API_KEY <span className="text-red-500">*</span></label>
+                <label className="navy-label">GLOBAL_API_KEY <span style={{ color: '#fca5a5' }}>*</span></label>
                 <input type="password" placeholder="SUA_CHAVE_FORTE_AQUI" value={cfgDraft.apikey}
                   onChange={e => setCfgDraft(p => ({...p, apikey: e.target.value.trim()}))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500 font-mono" />
-                <p className="text-[10px] text-slate-400 mt-1">A mesma chave definida em <code className="bg-slate-100 px-1 rounded">GLOBAL_API_KEY</code> no .env do Evo Go</p>
+                  className="navy-input" style={{ fontFamily: 'monospace' }} />
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>A mesma chave definida em <code style={{ background: 'rgba(255,255,255,0.07)', padding: '1px 5px', borderRadius: 4 }}>GLOBAL_API_KEY</code> no .env do Evo Go</p>
               </div>
 
               <button onClick={handleSaveConfig}
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-full transition shadow-sm text-sm">
+                style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                 Salvar e Verificar Conexão
               </button>
               <button onClick={() => { setCfgDraft(getWindowDefaults()); }}
-                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold rounded-full transition text-sm border border-slate-200 text-xs">
+                style={{ width: '100%', padding: '11px', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', fontWeight: 600, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                 Restaurar valores das variáveis de ambiente
               </button>
             </div>
           </div>
 
           {/* Guia de configuração */}
-          <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-5">
-            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3">Guia rápido — EasyPanel</h4>
-            <div className="space-y-4 text-sm text-slate-600">
+          <div style={card} className="space-y-5">
+            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Guia rápido — EasyPanel</h4>
+            <div className="space-y-4">
               {[
                 { step:'1', title:'Acesse o EasyPanel', desc:'Abra seu EasyPanel e localize o serviço Evolution Go.' },
                 { step:'2', title:'Copie a URL', desc:'A URL pública do Evo Go geralmente tem formato: https://evo.seudominio.com.br ou https://seudominio.com/evo.' },
@@ -654,25 +689,25 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
                 { step:'4', title:'Nome da instância', desc:'Pode ser qualquer nome (ex: barberflow). Se ainda não criou, clique em "Criar instância" na aba Conexão após salvar a config.' },
                 { step:'5', title:'Conecte o WhatsApp', desc:'Vá para a aba Conexão, clique em "Conectar WhatsApp" e escaneie o QR Code com o celular.' },
               ].map(item => (
-                <div key={item.step} className="flex gap-3">
-                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
+                <div key={item.step} style={{ display: 'flex', gap: 12 }}>
+                  <span style={{ width: 24, height: 24, borderRadius: '50%', background: '#ffffff', color: '#031D3C', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{item.step}</span>
                   <div>
-                    <p className="font-semibold text-slate-900">{item.title}</p>
-                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{item.desc}</p>
+                    <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, marginBottom: 2 }}>{item.title}</p>
+                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', lineHeight: 1.6 }}>{item.desc}</p>
                   </div>
                 </div>
               ))}
             </div>
 
             {/* Referência .env Evo Go */}
-            <div className="bg-slate-950 rounded-2xl p-4 text-xs font-mono space-y-1">
-              <p className="text-slate-400 mb-2"># .env do Evo Go (EasyPanel)</p>
-              <p><span className="text-amber-400">SERVER_PORT</span>=<span className="text-emerald-400">8080</span></p>
-              <p><span className="text-amber-400">CLIENT_NAME</span>=<span className="text-emerald-400">evolution</span></p>
-              <p><span className="text-blue-400">GLOBAL_API_KEY</span>=<span className="text-red-400">SUA_CHAVE_FORTE_AQUI</span> <span className="text-slate-500">← copie esta</span></p>
-              <p><span className="text-amber-400">POSTGRES_AUTH_DB</span>=<span className="text-emerald-400">postgresql://...</span></p>
-              <p><span className="text-amber-400">POSTGRES_USERS_DB</span>=<span className="text-emerald-400">postgresql://...</span></p>
-              <p><span className="text-amber-400">CONNECT_ON_STARTUP</span>=<span className="text-emerald-400">true</span></p>
+            <div style={{ background: '#050d14', borderRadius: 14, padding: '16px 18px', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.8 }}>
+              <p style={{ color: 'rgba(255,255,255,0.25)', marginBottom: 8 }}># .env do Evo Go (EasyPanel)</p>
+              <p><span style={{ color: '#fbbf24' }}>SERVER_PORT</span>=<span style={{ color: '#4ade80' }}>8080</span></p>
+              <p><span style={{ color: '#fbbf24' }}>CLIENT_NAME</span>=<span style={{ color: '#4ade80' }}>evolution</span></p>
+              <p><span style={{ color: '#93c5fd' }}>GLOBAL_API_KEY</span>=<span style={{ color: '#fca5a5' }}>SUA_CHAVE_FORTE_AQUI</span> <span style={{ color: 'rgba(255,255,255,0.25)' }}>← copie esta</span></p>
+              <p><span style={{ color: '#fbbf24' }}>POSTGRES_AUTH_DB</span>=<span style={{ color: '#4ade80' }}>postgresql://...</span></p>
+              <p><span style={{ color: '#fbbf24' }}>POSTGRES_USERS_DB</span>=<span style={{ color: '#4ade80' }}>postgresql://...</span></p>
+              <p><span style={{ color: '#fbbf24' }}>CONNECT_ON_STARTUP</span>=<span style={{ color: '#4ade80' }}>true</span></p>
             </div>
           </div>
         </div>

@@ -54,83 +54,105 @@ export default function FinanceiroTab({ activeTenant, myPayments, myProfessional
     setExpenseAmount(0); setExpenseDesc('');
   };
 
+  const card: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.09)',
+    borderRadius: 16,
+    padding: 24,
+  };
+
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 700,
+    color: 'rgba(255,255,255,0.55)',
+    textTransform: 'uppercase',
+    letterSpacing: '1.5px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  };
+
+  const subText: React.CSSProperties = {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.38)',
+    borderBottom: '1px solid rgba(255,255,255,0.09)',
+    paddingBottom: 14,
+    marginBottom: 14,
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Receita avulsa */}
-        <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-emerald-600" /> Receita Avulsa
+        <div style={card} className="space-y-4">
+          <h3 style={sectionLabel}>
+            <ShoppingBag style={{ width: 14, height: 14, color: '#4ade80' }} /> Receita Avulsa
           </h3>
-          <p className="text-sm text-slate-500 border-b border-slate-100 pb-4">Faturamento direto de balcão.</p>
-          <form onSubmit={handleDirectSale} className="space-y-4 text-sm">
+          <p style={subText}>Faturamento direto de balcão.</p>
+          <form onSubmit={handleDirectSale} className="space-y-4">
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Descrição</label>
-              <input type="text" required placeholder="Ex: Venda de produto" value={directSaleDesc} onChange={e => setDirectSaleDesc(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-blue-500" />
+              <label className="navy-label">Descrição</label>
+              <input type="text" required placeholder="Ex: Venda de produto" value={directSaleDesc} onChange={e => setDirectSaleDesc(e.target.value)} className="navy-input" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Valor (R$)</label>
-                <input type="number" required min={1} value={directSaleAmount || ''} onChange={e => setDirectSaleAmount(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-blue-500" />
+                <label className="navy-label">Valor (R$)</label>
+                <input type="number" required min={1} value={directSaleAmount || ''} onChange={e => setDirectSaleAmount(Number(e.target.value))} className="navy-input" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Forma</label>
-                <select value={directSaleMethod} onChange={e => setDirectSaleMethod(e.target.value as any)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900">
+                <label className="navy-label">Forma</label>
+                <select value={directSaleMethod} onChange={e => setDirectSaleMethod(e.target.value as any)} className="navy-select">
                   <option value="pix">Pix</option>
                   <option value="cash">Dinheiro</option>
                   <option value="credit_card">Cartão</option>
                 </select>
               </div>
             </div>
-            <button type="submit" className="w-full py-3.5 bg-emerald-600 text-white font-semibold rounded-full hover:bg-emerald-700 transition">
+            <button type="submit" style={{ width: '100%', padding: '13px', background: '#E6F4EC', color: '#0A4A2C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
               Lançar Receita
             </button>
           </form>
         </div>
 
         {/* Despesa */}
-        <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-            <Trash className="w-5 h-5 text-red-600" /> Registrar Despesa
+        <div style={card} className="space-y-4">
+          <h3 style={sectionLabel}>
+            <Trash style={{ width: 14, height: 14, color: '#fca5a5' }} /> Registrar Despesa
           </h3>
-          <p className="text-sm text-slate-500 border-b border-slate-100 pb-4">Débito manual de pagamentos.</p>
-          <form onSubmit={handleExpense} className="space-y-4 text-sm">
+          <p style={subText}>Débito manual de pagamentos.</p>
+          <form onSubmit={handleExpense} className="space-y-4">
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Valor (R$)</label>
-              <input type="number" required min={1} value={expenseAmount || ''} onChange={e => setExpenseAmount(Number(e.target.value))}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-red-500" />
+              <label className="navy-label">Valor (R$)</label>
+              <input type="number" required min={1} value={expenseAmount || ''} onChange={e => setExpenseAmount(Number(e.target.value))} className="navy-input" />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Descrição</label>
-              <input type="text" required placeholder="Ex: Lavanderia" value={expenseDesc} onChange={e => setExpenseDesc(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-red-500" />
+              <label className="navy-label">Descrição</label>
+              <input type="text" required placeholder="Ex: Lavanderia" value={expenseDesc} onChange={e => setExpenseDesc(e.target.value)} className="navy-input" />
             </div>
-            <button type="submit" className="w-full py-3.5 bg-red-50 text-red-600 font-semibold rounded-full hover:bg-red-100 transition">
+            <button type="submit" style={{ width: '100%', padding: '13px', background: 'rgba(239,68,68,0.1)', color: '#fca5a5', fontWeight: 700, fontSize: 13, border: '1px solid rgba(239,68,68,0.25)', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
               Confirmar Despesa
             </button>
           </form>
         </div>
 
         {/* Comissões */}
-        <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-blue-600" /> Comissões
+        <div style={card} className="space-y-4">
+          <h3 style={sectionLabel}>
+            <DollarSign style={{ width: 14, height: 14, color: 'rgba(255,255,255,0.55)' }} /> Comissões
           </h3>
-          <p className="text-sm text-slate-500 border-b border-slate-100 pb-4">Repasse colaborativo da equipe.</p>
-          <div className="divide-y divide-slate-100 max-h-[220px] overflow-y-auto pr-2">
+          <p style={subText}>Repasse colaborativo da equipe.</p>
+          <div style={{ maxHeight: 220, overflowY: 'auto' }} className="no-scrollbar">
             {calculatedCommissions.map(c => (
-              <div key={c.id} className="py-3 flex items-center justify-between text-xs">
+              <div key={c.id} style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <p className="font-semibold text-slate-800 text-sm">{c.name}</p>
-                  <span className="text-slate-500">{c.closedCount} cortes · {c.commissionPct}%</span>
+                  <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, marginBottom: 2 }}>{c.name}</p>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{c.closedCount} cortes · {c.commissionPct}%</span>
                 </div>
-                <div className="text-right">
-                  <span className="text-emerald-600 font-extrabold text-[15px]">R$ {c.dueCommission.toFixed(2)}</span>
-                  <p className="text-[10px] text-slate-400 uppercase">Salão: R$ {(c.totalEarned - c.dueCommission).toFixed(2)}</p>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ color: '#4ade80', fontWeight: 800, fontSize: 14, fontFamily: 'monospace' }}>R$ {c.dueCommission.toFixed(2)}</span>
+                  <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Salão: R$ {(c.totalEarned - c.dueCommission).toFixed(2)}</p>
                 </div>
               </div>
             ))}
@@ -139,48 +161,57 @@ export default function FinanceiroTab({ activeTenant, myPayments, myProfessional
       </div>
 
       {/* Histórico */}
-      <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-            <RefreshCw className="w-5 h-5 text-blue-600" /> Fluxo de Caixa
+      <div style={card} className="space-y-4">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 14 }}>
+          <h3 style={sectionLabel}>
+            <RefreshCw style={{ width: 14, height: 14 }} /> Fluxo de Caixa
           </h3>
-          <div className="flex gap-4 text-xs font-mono">
-            <span className="text-emerald-600 font-bold">+ R$ {totalRevenue.toFixed(2)}</span>
-            <span className="text-red-600 font-bold">- R$ {totalExpenses.toFixed(2)}</span>
-            <span className="text-slate-700 font-bold">= R$ {(totalRevenue - totalExpenses).toFixed(2)}</span>
+          <div style={{ display: 'flex', gap: 16, fontSize: 12, fontFamily: 'monospace' }}>
+            <span style={{ color: '#4ade80', fontWeight: 700 }}>+ R$ {totalRevenue.toFixed(2)}</span>
+            <span style={{ color: '#fca5a5', fontWeight: 700 }}>− R$ {totalExpenses.toFixed(2)}</span>
+            <span style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 700 }}>= R$ {(totalRevenue - totalExpenses).toFixed(2)}</span>
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-500">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[10px] tracking-widest bg-slate-50/50">
-                <th className="py-3 px-4">Data</th>
-                <th className="py-3 px-4">Descrição</th>
-                <th className="py-3 px-4">Método</th>
-                <th className="py-3 px-4">Valor</th>
-                <th className="py-3 px-4 text-right">Status</th>
+              <tr style={{ background: '#021340', borderBottom: '1px solid rgba(255,255,255,0.09)' }}>
+                {['Data','Descrição','Método','Valor','Status'].map(h => (
+                  <th key={h} style={{ padding: '11px 14px', textAlign: h === 'Status' ? 'right' : 'left', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.38)', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
-              {myPayments.length > 0 ? myPayments.map(p => (
-                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="py-4 px-4 text-xs text-slate-600">{p.date}</td>
-                  <td className="py-4 px-4 font-semibold text-slate-800">{p.description}</td>
-                  <td className="py-4 px-4">
-                    <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded text-[10px] font-bold uppercase">{p.method}</span>
+            <tbody>
+              {myPayments.length > 0 ? myPayments.map((p, idx) => (
+                <tr key={p.id} style={{ background: idx % 2 === 0 ? '#ffffff' : '#F6F9FC', borderBottom: '1px solid #e8edf3' }}>
+                  <td style={{ padding: '12px 14px', fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{p.date}</td>
+                  <td style={{ padding: '12px 14px', fontWeight: 600, color: '#141E2D', fontSize: 13 }}>{p.description}</td>
+                  <td style={{ padding: '12px 14px' }}>
+                    <span style={{ background: '#F0F4F8', color: '#64748b', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', fontFamily: 'monospace' }}>{p.method}</span>
                   </td>
-                  <td className="py-4 px-4 font-extrabold">
-                    {p.status === 'refunded' ? <span className="text-red-600">- R$ {p.amount.toFixed(2)}</span>
-                      : <span className="text-emerald-600">+ R$ {p.amount.toFixed(2)}</span>}
+                  <td style={{ padding: '12px 14px', fontWeight: 800, fontFamily: 'monospace' }}>
+                    {p.status === 'refunded'
+                      ? <span style={{ color: '#dc2626' }}>− R$ {p.amount.toFixed(2)}</span>
+                      : <span style={{ color: '#16a34a' }}>+ R$ {p.amount.toFixed(2)}</span>}
                   </td>
-                  <td className="py-4 px-4 text-right">
-                    <span className={`px-3 py-1 rounded-full text-[10px] uppercase font-bold border ${
-                      p.status === 'paid' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'
-                    }`}>{p.status === 'paid' ? 'Pago' : 'Saída'}</span>
+                  <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                    <span style={{
+                      padding: '3px 10px',
+                      borderRadius: 20,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      background: p.status === 'paid' ? '#E6F4EC' : '#FEECEC',
+                      color: p.status === 'paid' ? '#0A4A2C' : '#7A0A0A',
+                    }}>
+                      {p.status === 'paid' ? 'Pago' : 'Saída'}
+                    </span>
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={5} className="text-center py-12 text-slate-400">Nenhuma transação registrada.</td></tr>
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>Nenhuma transação registrada.</td>
+                </tr>
               )}
             </tbody>
           </table>

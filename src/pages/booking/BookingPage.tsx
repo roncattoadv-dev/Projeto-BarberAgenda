@@ -43,34 +43,55 @@ export default function BookingPage() {
   }, [slug]);
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
+    >
       <div className="text-center space-y-4">
-        <div className="text-4xl animate-pulse">💈</div>
-        <p className="text-slate-400 text-sm font-medium">Carregando agendamento…</p>
+        <div style={{ fontSize: 40 }} className="animate-pulse">💈</div>
+        <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13, fontWeight: 500 }}>Carregando agendamento…</p>
       </div>
     </div>
   );
 
   if (notFound || !tenant) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
+    >
       <div className="text-center space-y-4 max-w-sm">
-        <div className="text-5xl">🔍</div>
-        <h1 className="text-xl font-bold text-slate-900">Barbearia não encontrada</h1>
-        <p className="text-slate-500 text-sm">
-          O endereço <code className="bg-slate-100 px-1 rounded">/{slug}/agendamento</code> não existe ou está inativo.
+        <div style={{ fontSize: 48 }}>🔍</div>
+        <h1 style={{ fontSize: 20, fontWeight: 800, color: 'rgba(255,255,255,0.88)' }}>Barbearia não encontrada</h1>
+        <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13 }}>
+          O endereço <code style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>/{slug}/agendamento</code> não existe ou está inativo.
         </p>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen" style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
       {/* Minimal public header */}
-      <div className="bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-3">
-        <span className="text-2xl">{tenant.logo}</span>
+      <div
+        style={{
+          backgroundColor: '#021340',
+          borderBottom: '1px solid rgba(255,255,255,0.09)',
+          padding: '10px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        <img
+          src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%201%20de%20jun.%20de%202026,%2011_34_59%20(1).png"
+          alt="BarberFlow"
+          style={{ height: 32, objectFit: 'contain', marginRight: 4 }}
+        />
+        <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.18)', flexShrink: 0 }} />
+        <span style={{ fontSize: 20, flexShrink: 0 }}>{tenant.logo}</span>
         <div>
-          <p className="font-bold text-slate-900 text-sm leading-tight">{tenant.name}</p>
-          <p className="text-xs text-slate-400">{tenant.address}</p>
+          <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, lineHeight: 1.3 }}>{tenant.name}</p>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{tenant.address}</p>
         </div>
       </div>
 
@@ -105,7 +126,7 @@ export default function BookingPage() {
 
       {/* Powered by footer */}
       <div className="text-center pb-8 pt-4">
-        <p className="text-xs text-slate-300">Agendamento online por <span className="font-semibold">BarberFlow</span></p>
+        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)' }}>Agendamento online por <span style={{ fontWeight: 600 }}>BarberFlow</span></p>
       </div>
     </div>
   );

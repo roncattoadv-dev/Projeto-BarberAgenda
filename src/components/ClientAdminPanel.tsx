@@ -1,13 +1,12 @@
 /**
  * ClientAdminPanel — Orquestrador (lean)
  * Estado e handlers ficam aqui; cada tab é um componente separado.
- * Tamanho reduzido de 1.851 → ~300 linhas.
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
 import { Calendar, Users, ShoppingBag, DollarSign, Plus, Scissors, MessageSquare,
          ExternalLink, Trash, Check, X, RefreshCw, Smartphone, LayoutDashboard,
-         Settings, CreditCard } from 'lucide-react';
+         Settings, CreditCard, ChevronRight, Menu, BookOpen } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
 import DashboardTab   from './tabs/DashboardTab';
 import FinanceiroTab  from './tabs/FinanceiroTab';
@@ -40,8 +39,10 @@ export default function ClientAdminPanel({
   onUpdateTenantDetails, onSwitchToBookingFlow
 }: ClientAdminPanelProps) {
   const toast = useToast();
-  type Tab = 'dashboard' | 'agenda' | 'financeiro' | 'whatsapp' | 'configuracoes';
+  type Tab = 'dashboard' | 'agenda' | 'clientes' | 'financeiro' | 'catalogo' | 'whatsapp' | 'configuracoes';
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [catalogoTab, setCatalogoTab] = useState<'servicos' | 'equipe'>('servicos');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Filtered by tenant
   const myServices      = services.filter(s => s.tenantId === activeTenant.id);
@@ -66,6 +67,7 @@ export default function ClientAdminPanel({
   const [custName,   setCustName]   = useState('');
   const [custPhone,  setCustPhone]  = useState('');
   const [custEmail,  setCustEmail]  = useState('');
+  const [custSearch, setCustSearch] = useState('');
 
   // ── Config state ──────────────────────────────────────────
   const [tenantLogo,      setTenantLogo]      = useState(activeTenant.logo    || '💈');
@@ -151,393 +153,549 @@ export default function ClientAdminPanel({
 
   const MONTHS_PT  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const formatDate = (d: string) => { try { const [y,m,dd] = d.split('-'); return `${Number(dd)} de ${MONTHS_PT[Number(m)-1]} de ${y}`; } catch { return d; } };
-
-  const getDaysInMonth     = (y:number,m:number) => new Date(y,m+1,0).getDate();
-  const getFirstDayOffset  = (y:number,m:number) => { const d = new Date(y,m,1).getDay(); return d===0?6:d-1; };
-
+  const getDaysInMonth    = (y:number,m:number) => new Date(y,m+1,0).getDate();
+  const getFirstDayOffset = (y:number,m:number) => { const d = new Date(y,m,1).getDay(); return d===0?6:d-1; };
   const selectedDayAppts = myAppointments.filter(a => a.date === scheduleFilterDate && a.status !== 'cancelled').sort((a,b) => a.time.localeCompare(b.time));
+  const filteredCustomers = myCustomers.filter(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) || c.phone.includes(custSearch));
+
+  // ── Sidebar nav items ─────────────────────────────────────
+  const navGroups = [
+    {
+      label: 'Principal',
+      items: [
+        { id: 'dashboard'  as Tab, label: 'Painel',      icon: LayoutDashboard },
+        { id: 'agenda'     as Tab, label: 'Agenda',      icon: Calendar },
+        { id: 'clientes'   as Tab, label: 'Clientes',    icon: Users },
+        { id: 'financeiro' as Tab, label: 'Financeiro',  icon: CreditCard },
+      ],
+    },
+    {
+      label: 'Gestão',
+      items: [
+        { id: 'catalogo'   as Tab, label: 'Catálogo',    icon: Scissors },
+        { id: 'whatsapp'   as Tab, label: 'WhatsApp',    icon: MessageSquare },
+      ],
+    },
+    {
+      label: 'Sistema',
+      items: [
+        { id: 'configuracoes' as Tab, label: 'Configurações', icon: Settings },
+      ],
+    },
+  ];
+
+  const navBadge: Partial<Record<Tab, number>> = {
+    agenda:   myAppointments.filter(a => a.date === today && a.status !== 'cancelled').length || 0,
+    clientes: myCustomers.length,
+    catalogo: myServices.length,
+  };
+
+  const pageTitles: Record<Tab, string> = {
+    dashboard: 'Painel', agenda: 'Agenda', clientes: 'Clientes',
+    financeiro: 'Financeiro', catalogo: 'Catálogo', whatsapp: 'WhatsApp',
+    configuracoes: 'Configurações',
+  };
+
+  const sidebarStyle: React.CSSProperties = {
+    width: 220,
+    flexShrink: 0,
+    background: '#021340',
+    borderRight: '1px solid rgba(255,255,255,0.07)',
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '100vh',
+    position: 'sticky' as const,
+    top: 0,
+    overflowY: 'auto',
+  };
+
+  const navItemStyle = (active: boolean): React.CSSProperties => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '10px 16px',
+    borderRadius: 10,
+    cursor: 'pointer',
+    fontFamily: 'Outfit, sans-serif',
+    fontSize: 13,
+    fontWeight: active ? 700 : 500,
+    color: active ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)',
+    background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+    border: active ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent',
+    transition: 'all 0.15s',
+    width: '100%',
+    textAlign: 'left' as const,
+  });
 
   // ── Render ────────────────────────────────────────────────
   return (
-    <div id="client-admin-root" className="bg-slate-50 min-h-screen p-4 md:p-10">
+    <div style={{ backgroundColor: '#031D3C', minHeight: '100vh', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Header */}
-      <div className="bg-white px-8 py-8 border border-slate-100 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm mb-8">
-        <div className="flex items-center gap-5">
-          <span className="text-5xl bg-slate-50 p-4 rounded-3xl border border-slate-100 flex items-center justify-center shadow-inner">
-            {tenantLogo.startsWith('data:') ? <img src={tenantLogo} alt="Logo" className="w-12 h-12 object-cover rounded-2xl" /> : tenantLogo}
-          </span>
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{activeTenant.name}</h1>
-              <span className={`px-3 py-1 rounded-full text-[11px] font-semibold tracking-wide border ${
-                activeTenant.status==='active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : activeTenant.status==='trial' ? 'bg-amber-50 text-amber-700 border-amber-200'
-                : 'bg-red-50 text-red-700 border-red-200'}`}>
-                {activeTenant.status==='active'?'Ativo':activeTenant.status==='trial'?'Período Teste':'Inadimplente'}
-              </span>
-            </div>
-            <p className="text-sm text-slate-500 font-medium">{activeTenant.address}</p>
+      {/* ── Topbar ── */}
+      <div style={{ background: '#021340', borderBottom: '1px solid rgba(255,255,255,0.07)', padding: '0 20px', height: 32, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'sticky', top: 0, zIndex: 50 }}>
+        {/* Left: hamburger (mobile) + breadcrumb */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={() => setSidebarOpen(o => !o)}
+            style={{ display: 'none', width: 36, height: 36, alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, cursor: 'pointer' }}
+            className="mobile-menu-btn"
+          >
+            <Menu style={{ width: 16, height: 16, color: 'rgba(255,255,255,0.65)' }} />
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>{activeTenant.name}</span>
+            <ChevronRight style={{ width: 12, height: 12, color: 'rgba(255,255,255,0.18)' }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.75)' }}>{pageTitles[activeTab]}</span>
           </div>
         </div>
-        <div className="bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100 flex flex-col items-end shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Link Público</span>
-          <button onClick={() => onSwitchToBookingFlow(activeTenant.slug)} className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition flex items-center gap-2">
-            saasbarber.io/book/{activeTenant.slug} <ExternalLink className="w-4 h-4" />
+        {/* Right: link público + status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span style={{
+            padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700,
+            textTransform: 'uppercase' as const, letterSpacing: '1px',
+            background: activeTenant.status === 'active' ? '#E6F4EC' : activeTenant.status === 'trial' ? '#FEF9EC' : '#FEECEC',
+            color: activeTenant.status === 'active' ? '#0A4A2C' : activeTenant.status === 'trial' ? '#7A4B0A' : '#7A0A0A',
+          }}>
+            {activeTenant.status === 'active' ? 'Ativo' : activeTenant.status === 'trial' ? 'Teste' : 'Inadimplente'}
+          </span>
+          <button
+            onClick={() => onSwitchToBookingFlow(activeTenant.slug)}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+          >
+            Link público <ExternalLink style={{ width: 12, height: 12 }} />
           </button>
         </div>
       </div>
 
-      {/* Tabs nav */}
-      <div className="bg-white/80 backdrop-blur-md px-2 py-2 border border-slate-200/60 rounded-full flex flex-wrap gap-2 mb-10 w-fit shadow-sm ring-1 ring-slate-900/5">
-        {([
-          { id:'dashboard',     label:'Painel',         icon:LayoutDashboard },
-          { id:'agenda',        label:'Agenda',         icon:Calendar },
-          { id:'financeiro',    label:'Financeiro',     icon:CreditCard },
-          { id:'whatsapp',      label:'WhatsApp',       icon:MessageSquare },
-          { id:'configuracoes', label:'Configurações',  icon:Settings },
-        ] as const).map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-full transition-all duration-300 ${isActive ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 scale-95 hover:scale-100'}`}>
-              <Icon className={`w-4 h-4 ${isActive ? 'text-slate-300' : 'text-slate-400'}`} strokeWidth={isActive?2.5:2} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* ── Body: sidebar + content ── */}
+      <div style={{ display: 'flex', flex: 1 }}>
 
-      {/* Tab panels */}
-      <div>
-        {activeTab === 'dashboard' && (
-          <DashboardTab myServices={myServices} myProfessionals={myProfessionals} myAppointments={myAppointments} myCustomers={myCustomers} myPayments={myPayments} />
-        )}
-
-        {activeTab === 'agenda' && (
-          <div className="space-y-8 animate-fade-in">
-            {/* Calendar header */}
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div>
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Gestão de Agenda</span>
-                <h3 className="text-2xl font-bold text-slate-900">Agenda Operacional</h3>
-              </div>
-              <button onClick={() => { setScheduleFilterDate(today); setAdminViewYear(new Date().getFullYear()); setAdminViewMonth(new Date().getMonth()); }}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-full text-sm font-semibold transition flex items-center gap-2">
-                <Calendar className="w-4 h-4" /> Hoje
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Calendar */}
-              <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                  <h4 className="text-lg font-semibold text-slate-900">{MONTHS_PT[adminViewMonth]} {adminViewYear}</h4>
-                  <div className="flex gap-2">
-                    <button onClick={() => { if(adminViewMonth===0){setAdminViewYear(y=>y-1);setAdminViewMonth(11);}else setAdminViewMonth(m=>m-1); }} className="size-10 rounded-full hover:bg-slate-100 flex items-center justify-center">‹</button>
-                    <button onClick={() => { if(adminViewMonth===11){setAdminViewYear(y=>y+1);setAdminViewMonth(0);}else setAdminViewMonth(m=>m+1); }} className="size-10 rounded-full hover:bg-slate-100 flex items-center justify-center">›</button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold text-slate-400 mb-3">
-                  {['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => <div key={d}>{d}</div>)}
-                </div>
-                <div className="grid grid-cols-7 gap-2">
-                  {Array.from({length: getFirstDayOffset(adminViewYear,adminViewMonth)}, (_,i) => <div key={`b${i}`}/>)}
-                  {Array.from({length: getDaysInMonth(adminViewYear,adminViewMonth)}, (_,i) => {
-                    const d = i+1;
-                    const dateStr = `${adminViewYear}-${String(adminViewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                    const hasAppts = myAppointments.some(a => a.date === dateStr && a.status !== 'cancelled');
+        {/* ── Sidebar ── */}
+        <aside style={sidebarStyle}>
+          {/* Nav groups */}
+          <div style={{ flex: 1, padding: '8px 10px', overflowY: 'auto' }} className="no-scrollbar">
+            {navGroups.map(group => (
+              <div key={group.label} style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '2px', padding: '0 8px', marginBottom: 6 }}>{group.label}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {group.items.map(item => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    const badge = navBadge[item.id];
                     return (
-                      <button key={d} onClick={() => setScheduleFilterDate(dateStr)}
-                        className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-sm font-medium transition relative ${scheduleFilterDate===dateStr?'bg-slate-900 text-white':'hover:bg-slate-100'}`}>
-                        {d}
-                        {hasAppts && <span className={`absolute bottom-1 w-1 h-1 rounded-full ${scheduleFilterDate===dateStr?'bg-white':'bg-blue-500'}`}/>}
+                      <button key={item.id} onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }} style={navItemStyle(isActive)}>
+                        <Icon style={{ width: 15, height: 15, flexShrink: 0 }} strokeWidth={isActive ? 2.5 : 2} />
+                        <span style={{ flex: 1 }}>{item.label}</span>
+                        {badge !== undefined && badge > 0 && (
+                          <span style={{ fontSize: 10, fontWeight: 700, background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)', color: isActive ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)', padding: '1px 7px', borderRadius: 20, fontFamily: 'monospace' }}>{badge}</span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
               </div>
+            ))}
+          </div>
 
-              {/* Day detail */}
-              <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-lg font-semibold text-slate-900">{formatDate(scheduleFilterDate)}</h4>
-                  <span className="text-xs font-mono text-blue-600 bg-blue-50 border border-blue-100 px-3 py-1 rounded-full font-bold">{selectedDayAppts.length} serviços</span>
+          {/* CTA: Novo Agendamento */}
+          <div style={{ padding: '12px 10px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+            <button
+              onClick={() => { setActiveTab('agenda'); setSidebarOpen(false); }}
+              style={{ width: '100%', padding: '11px 14px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontFamily: 'Outfit, sans-serif', letterSpacing: '0.5px' }}
+            >
+              <Plus style={{ width: 14, height: 14 }} /> Novo Agendamento
+            </button>
+          </div>
+        </aside>
+
+        {/* ── Main content ── */}
+        <main style={{ flex: 1, padding: '28px 24px', overflowX: 'hidden', minWidth: 0 }}>
+
+          {/* ── Dashboard ── */}
+          {activeTab === 'dashboard' && (
+            <DashboardTab myServices={myServices} myProfessionals={myProfessionals} myAppointments={myAppointments} myCustomers={myCustomers} myPayments={myPayments} />
+          )}
+
+          {/* ── Agenda ── */}
+          {activeTab === 'agenda' && (
+            <div className="space-y-6 animate-fade-in">
+              {/* Header */}
+              <div style={{ display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+                <div>
+                  <h2 style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0, letterSpacing: '-0.3px' }}>Agenda</h2>
+                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 4 }}>{myAppointments.filter(a=>a.date===today&&a.status!=='cancelled').length} agendamentos hoje</p>
                 </div>
-                <div className="space-y-4 max-h-[460px] overflow-y-auto pr-2">
-                  {selectedDayAppts.length > 0 ? selectedDayAppts.map(appt => {
-                    const srv  = myServices.find(s => s.id === appt.serviceId);
-                    const prof = myProfessionals.find(p => p.id === appt.professionalId);
-                    const isExpanded = expandedApptId === appt.id;
-                    return (
-                      <div key={appt.id} className={`p-5 rounded-2xl border transition-all shadow-sm ${appt.status==='attended'?'bg-emerald-50 border-emerald-100':'bg-blue-50 border-blue-100 border-b-2 border-b-blue-200'}`}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-4">
-                            <span className="px-3 py-1.5 bg-slate-900 rounded-xl text-sm font-extrabold text-white font-mono">{appt.time}</span>
-                            <div>
-                              <span className="font-extrabold text-slate-900 text-[15px]">{appt.customerName}</span>
-                              <p className="text-xs text-slate-500 mt-1">✂️ {srv?.name} · <span className="text-blue-600 font-bold">{prof?.name}</span></p>
-                            </div>
-                          </div>
-                          <span className="font-mono font-extrabold text-emerald-600 text-[15px]">R$ {appt.price.toFixed(2)}</span>
-                        </div>
-                        <div className="mt-4 pt-4 border-t border-slate-200/50 flex flex-wrap items-center justify-end gap-2">
-                          {appt.status !== 'attended' && (
-                            <button onClick={() => handleCompleteAppointment(appt)} className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl border-r border-slate-100 transition text-xs flex items-center gap-1.5">
-                              ✅ Concluir & Pag
-                            </button>
-                          )}
-                          <button onClick={() => setExpandedApptId(isExpanded ? null : appt.id)}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${isExpanded?'bg-blue-600 text-white':'bg-white hover:bg-slate-50 text-slate-600 border border-slate-200'}`}>
-                            💬 Zap
-                          </button>
-                          <button onClick={() => { if(window.confirm(`Cancelar agendamento de ${appt.customerName}?`)) { onUpdateAppointmentStatus(appt.id,'cancelled'); toast.info('Agendamento cancelado. Vaga liberada.'); }}}
-                            className="px-4 py-2 bg-white hover:bg-red-50 text-red-600 rounded-xl border border-slate-200 text-xs font-bold transition">
-                            Cancelar
-                          </button>
-                        </div>
-                        {isExpanded && (
-                          <div className="mt-3 p-3 bg-slate-900 border border-slate-800 rounded-lg animate-fade-in space-y-2.5">
-                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">WhatsApp — Enviar via Evo Go</p>
-                            <div className="grid grid-cols-2 gap-2">
-                              {([['confirmation','✓ Confirmação'],['reminder','⏰ Lembrete']] as const).map(([type,label]) => (
-                                <button key={type} onClick={() => { setActiveTab('whatsapp'); }}
-                                  className="p-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition text-left">
-                                  {label}<span className="block text-slate-400 text-[10px] mt-0.5">Ir para WhatsApp →</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }) : (
-                    <div className="text-center py-16 border border-dashed border-slate-200 bg-slate-50/50 rounded-3xl space-y-3">
-                      <span className="text-4xl grayscale opacity-60">☕</span>
-                      <p className="font-extrabold text-slate-700">Agenda livre neste dia</p>
-                      <p className="text-sm text-slate-500">Use o formulário abaixo para agendar.</p>
+                <button
+                  onClick={() => { setScheduleFilterDate(today); setAdminViewYear(new Date().getFullYear()); setAdminViewMonth(new Date().getMonth()); }}
+                  style={{ padding: '9px 18px', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.75)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}
+                >
+                  <Calendar style={{ width: 13, height: 13 }} /> Hoje
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Calendar */}
+                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                    <h4 style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{MONTHS_PT[adminViewMonth]} {adminViewYear}</h4>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button onClick={() => { if(adminViewMonth===0){setAdminViewYear(y=>y-1);setAdminViewMonth(11);}else setAdminViewMonth(m=>m-1); }} style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.65)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>‹</button>
+                      <button onClick={() => { if(adminViewMonth===11){setAdminViewYear(y=>y+1);setAdminViewMonth(0);}else setAdminViewMonth(m=>m+1); }} style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.65)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>›</button>
                     </div>
-                  )}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1" style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.38)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    {['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => <div key={d}>{d}</div>)}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {Array.from({length: getFirstDayOffset(adminViewYear,adminViewMonth)}, (_,i) => <div key={`b${i}`}/>)}
+                    {Array.from({length: getDaysInMonth(adminViewYear,adminViewMonth)}, (_,i) => {
+                      const d = i+1;
+                      const dateStr = `${adminViewYear}-${String(adminViewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                      const hasAppts = myAppointments.some(a => a.date === dateStr && a.status !== 'cancelled');
+                      const isSelected = scheduleFilterDate === dateStr;
+                      return (
+                        <button key={d} onClick={() => setScheduleFilterDate(dateStr)}
+                          style={{ aspectRatio: '1', borderRadius: 8, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, position: 'relative' as const, background: isSelected ? '#ffffff' : 'transparent', color: isSelected ? '#031D3C' : 'rgba(255,255,255,0.65)', border: 'none', cursor: 'pointer', transition: 'all 0.15s', padding: '6px 4px' }}
+                        >
+                          {d}
+                          {hasAppts && <span style={{ position: 'absolute', bottom: 2, width: 4, height: 4, borderRadius: '50%', background: isSelected ? '#031D3C' : '#4ade80' }} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Day detail */}
+                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <h4 style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{formatDate(scheduleFilterDate)}</h4>
+                    <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#4ade80', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.25)', padding: '3px 10px', borderRadius: 20 }}>{selectedDayAppts.length} serviços</span>
+                  </div>
+                  <div className="space-y-3 no-scrollbar" style={{ maxHeight: 460, overflowY: 'auto', paddingRight: 4 }}>
+                    {selectedDayAppts.length > 0 ? selectedDayAppts.map(appt => {
+                      const srv  = myServices.find(s => s.id === appt.serviceId);
+                      const prof = myProfessionals.find(p => p.id === appt.professionalId);
+                      const isExpanded = expandedApptId === appt.id;
+                      return (
+                        <div key={appt.id} style={{ padding: 16, borderRadius: 12, border: `1px solid ${appt.status==='attended' ? 'rgba(74,222,128,0.25)' : 'rgba(255,255,255,0.12)'}`, background: appt.status==='attended' ? 'rgba(74,222,128,0.06)' : 'rgba(255,255,255,0.04)', transition: 'all 0.15s' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <span style={{ padding: '5px 10px', background: 'rgba(255,255,255,0.12)', borderRadius: 8, fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.88)', fontFamily: 'monospace' }}>{appt.time}</span>
+                              <div>
+                                <span style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 14 }}>{appt.customerName}</span>
+                                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', marginTop: 2 }}>✂️ {srv?.name} · <span style={{ color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>{prof?.name}</span></p>
+                              </div>
+                            </div>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#4ade80', fontSize: 14 }}>R$ {appt.price.toFixed(2)}</span>
+                          </div>
+                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.09)', display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                            {appt.status !== 'attended' && (
+                              <button onClick={() => handleCompleteAppointment(appt)} style={{ padding: '6px 12px', background: '#E6F4EC', color: '#0A4A2C', fontWeight: 700, borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif' }}>✅ Concluir & Pag</button>
+                            )}
+                            <button onClick={() => setExpandedApptId(isExpanded ? null : appt.id)}
+                              style={{ padding: '6px 12px', background: isExpanded ? '#ffffff' : 'rgba(255,255,255,0.07)', color: isExpanded ? '#031D3C' : 'rgba(255,255,255,0.65)', fontWeight: 700, borderRadius: 8, border: `1px solid ${isExpanded ? '#ffffff' : 'rgba(255,255,255,0.09)'}`, cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif' }}>💬 Zap</button>
+                            <button onClick={() => { if(window.confirm(`Cancelar agendamento de ${appt.customerName}?`)) { onUpdateAppointmentStatus(appt.id,'cancelled'); toast.info('Agendamento cancelado.'); }}}
+                              style={{ padding: '6px 12px', background: 'rgba(239,68,68,0.08)', color: '#fca5a5', fontWeight: 700, borderRadius: 8, border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                          </div>
+                          {isExpanded && (
+                            <div className="animate-fade-in" style={{ marginTop: 10, padding: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10 }}>
+                              <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', marginBottom: 8 }}>WhatsApp — Enviar via Evo Go</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {([['confirmation','✓ Confirmação'],['reminder','⏰ Lembrete']] as const).map(([type,label]) => (
+                                  <button key={type} onClick={() => { setActiveTab('whatsapp'); }}
+                                    style={{ padding: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.88)', fontSize: 11, fontWeight: 600, cursor: 'pointer', textAlign: 'left' as const, fontFamily: 'Outfit, sans-serif' }}>
+                                    {label}<span style={{ display: 'block', color: 'rgba(255,255,255,0.38)', fontSize: 10, marginTop: 2 }}>Ir para WhatsApp →</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }) : (
+                      <div style={{ textAlign: 'center', padding: '48px 20px', border: '1px dashed rgba(255,255,255,0.09)', borderRadius: 16 }}>
+                        <span style={{ fontSize: 36, display: 'block', marginBottom: 12, opacity: 0.5 }}>☕</span>
+                        <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.65)', marginBottom: 6 }}>Agenda livre neste dia</p>
+                        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)' }}>Use o formulário abaixo para agendar.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Quick forms */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {/* Agendamento manual */}
-              <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-                <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest">Reserva Manual</h4>
-                <form onSubmit={handleManualAppointment} className="space-y-4 text-xs">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Reserva manual */}
+              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }} className="space-y-4">
+                <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: 0 }}>Reserva Manual</h4>
+                <form onSubmit={handleManualAppointment} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Cliente</label>
-                      <select value={apptCustId} onChange={e=>setApptCustId(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500">
-                        <option value="">-- Cliente --</option>
+                      <label className="navy-label">Cliente</label>
+                      <select value={apptCustId} onChange={e=>setApptCustId(e.target.value)} required className="navy-select">
+                        <option value="">-- Selecionar --</option>
                         {myCustomers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
                       </select>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Serviço</label>
-                        <select value={apptSrvId} onChange={e=>setApptSrvId(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500">
-                          <option value="">--</option>
-                          {myServices.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Profissional</label>
-                        <select value={apptProfId} onChange={e=>setApptProfId(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500">
-                          <option value="">--</option>
-                          {myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
-                      </div>
+                    <div>
+                      <label className="navy-label">Serviço</label>
+                      <select value={apptSrvId} onChange={e=>setApptSrvId(e.target.value)} required className="navy-select">
+                        <option value="">-- Selecionar --</option>
+                        {myServices.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="navy-label">Profissional</label>
+                      <select value={apptProfId} onChange={e=>setApptProfId(e.target.value)} required className="navy-select">
+                        <option value="">-- Selecionar --</option>
+                        {myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Data</label>
-                      <input type="date" value={apptDate} onChange={e=>setApptDate(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Horário</label>
-                      <input type="time" value={apptTime} onChange={e=>setApptTime(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500" />
-                    </div>
+                    <div><label className="navy-label">Data</label><input type="date" value={apptDate} onChange={e=>setApptDate(e.target.value)} required className="navy-input" /></div>
+                    <div><label className="navy-label">Horário</label><input type="time" value={apptTime} onChange={e=>setApptTime(e.target.value)} required className="navy-input" /></div>
                   </div>
-                  <textarea placeholder="Notas internas (opcional)" value={apptNotes} onChange={e=>setApptNotes(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 h-20 resize-none text-sm" />
-                  <button type="submit" className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-full shadow-md transition text-sm">Gravar Agendamento</button>
+                  <textarea placeholder="Notas internas (opcional)" value={apptNotes} onChange={e=>setApptNotes(e.target.value)} className="navy-input" style={{ height: 72, resize: 'none' as const }} />
+                  <button type="submit" style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Gravar Agendamento</button>
                 </form>
-              </div>
-
-              {/* Cadastro rápido cliente */}
-              <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-                <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest">Cadastrar Cliente</h4>
-                <form onSubmit={handleAddManualCustomer} className="space-y-4">
-                  <input type="text" placeholder="Nome completo" value={custName} onChange={e=>setCustName(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500" />
-                  <div className="grid grid-cols-2 gap-3">
-                    <input type="tel" placeholder="(DDD) Telefone" value={custPhone} onChange={e=>setCustPhone(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none" />
-                    <input type="email" placeholder="Email (opcional)" value={custEmail} onChange={e=>setCustEmail(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none" />
-                  </div>
-                  <button type="submit" className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-full border border-slate-300 transition">Adicionar Cliente</button>
-                </form>
-                <p className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-[11px] text-slate-500 italic">💡 Clientes cadastrados ficam disponíveis no seletor de reserva manual.</p>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'financeiro' && (
-          <FinanceiroTab activeTenant={activeTenant} myPayments={myPayments} myProfessionals={myProfessionals} myAppointments={myAppointments} myServices={myServices} onAddPayment={onAddPayment} />
-        )}
-
-        {activeTab === 'whatsapp' && (
-          <WhatsAppTab activeTenant={activeTenant} myAppointments={myAppointments} myServices={myServices} myProfessionals={myProfessionals} />
-        )}
-
-        {activeTab === 'configuracoes' && (
-          <div className="space-y-6 animate-fade-in">
-            {/* Settings header */}
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
-              <div>
-                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest block mb-2">Configurações</span>
-                <h3 className="text-xl font-extrabold text-slate-900">Serviços, Equipe e Horários</h3>
-              </div>
-              <div className="flex bg-slate-50 border border-slate-200 p-4 rounded-2xl items-center gap-4 shrink-0">
-                <span className="text-4xl p-2 bg-white rounded-xl border border-slate-200">{tenantLogo}</span>
+          {/* ── Clientes ── */}
+          {activeTab === 'clientes' && (
+            <div className="space-y-6 animate-fade-in">
+              <div style={{ display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div>
-                  <p className="text-slate-800 font-bold text-sm">{tenantName}</p>
-                  <p className="text-emerald-600 text-[10px] font-bold uppercase">{editedDays.length} dias ativos</p>
+                  <h2 style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0, letterSpacing: '-0.3px' }}>Clientes</h2>
+                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 4 }}>{myCustomers.length} clientes cadastrados</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Adicionar cliente */}
+                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }} className="space-y-4">
+                  <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: 0 }}>Novo Cliente</h4>
+                  <form onSubmit={handleAddManualCustomer} className="space-y-3">
+                    <input type="text" placeholder="Nome completo" value={custName} onChange={e=>setCustName(e.target.value)} required className="navy-input" />
+                    <input type="tel" placeholder="(DDD) Telefone" value={custPhone} onChange={e=>setCustPhone(e.target.value)} required className="navy-input" />
+                    <input type="email" placeholder="Email (opcional)" value={custEmail} onChange={e=>setCustEmail(e.target.value)} className="navy-input" />
+                    <button type="submit" style={{ width: '100%', padding: '12px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Adicionar Cliente</button>
+                  </form>
+                </div>
+
+                {/* Lista de clientes */}
+                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, gridColumn: 'span 2' }} className="space-y-4">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input
+                      placeholder="Buscar por nome ou telefone…"
+                      value={custSearch}
+                      onChange={e => setCustSearch(e.target.value)}
+                      className="navy-input"
+                      style={{ flex: 1 }}
+                    />
+                  </div>
+                  <div className="space-y-2 no-scrollbar" style={{ maxHeight: 480, overflowY: 'auto' }}>
+                    {filteredCustomers.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '40px 20px', border: '1px dashed rgba(255,255,255,0.09)', borderRadius: 12 }}>
+                        <Users style={{ width: 32, height: 32, color: 'rgba(255,255,255,0.18)', margin: '0 auto 12px' }} />
+                        <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13 }}>{custSearch ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado'}</p>
+                      </div>
+                    ) : filteredCustomers.map(c => {
+                      const lastAppt = myAppointments.filter(a => a.customerId === c.id && a.status === 'attended').sort((a,b)=>b.date.localeCompare(a.date))[0];
+                      const totalSpent = myPayments.filter(p => myAppointments.find(a=>a.id===p.appointmentId&&a.customerId===c.id)).reduce((s,p)=>s+p.amount,0);
+                      return (
+                        <div key={c.id} style={{ padding: '14px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.65)', flexShrink: 0 }}>
+                              {c.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13 }}>{c.name}</div>
+                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{c.phone}</div>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#4ade80', fontFamily: 'monospace' }}>R$ {totalSpent.toFixed(2)}</div>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>{lastAppt ? `Último: ${lastAppt.date}` : 'Sem visitas'}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Branding */}
-              <form onSubmit={e => { e.preventDefault(); onUpdateTenantDetails(activeTenant.id, { name: tenantName, logo: tenantLogo, phone: tenantPhone, address: tenantAddress, instagram: tenantInstagram, businessDays: editedDays, businessHoursByDay: editedHoursByDay, businessHours: editedHoursByDay['seg'] || [] }); toast.success('Configurações salvas!'); }} className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-5">
-                <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3">Identidade Visual</h4>
-                <input ref={logoInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e => { if(e.target.files?.[0]) setTenantLogo(await fileToDataURL(e.target.files[0])); }} />
-                <div className="flex gap-3">
-                  <button type="button" onClick={() => logoInputRef.current?.click()} className="size-14 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center text-2xl hover:bg-slate-100 transition">
-                    {tenantLogo.startsWith('data:') ? <img src={tenantLogo} alt="logo" className="size-12 object-cover rounded-xl" /> : tenantLogo}
-                  </button>
-                  <div className="flex flex-wrap gap-2">
-                    {['💈','💅','✂️','💄','🧖','💇','🧔','🌟','👑','🔥'].map(e => (
-                      <button key={e} type="button" onClick={() => setTenantLogo(e)} className={`size-9 text-lg rounded-xl border transition ${tenantLogo===e?'bg-blue-600 text-white':'bg-slate-50 border-slate-200'}`}>{e}</button>
-                    ))}
-                  </div>
-                </div>
-                <input value={tenantName} onChange={e=>setTenantName(e.target.value)} placeholder="Nome" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none focus:border-blue-500" />
-                <div className="grid grid-cols-2 gap-3">
-                  <input value={tenantPhone} onChange={e=>setTenantPhone(e.target.value)} placeholder="Telefone" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none" />
-                  <input value={tenantInstagram} onChange={e=>setTenantInstagram(e.target.value)} placeholder="@instagram" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none" />
-                </div>
-                <input value={tenantAddress} onChange={e=>setTenantAddress(e.target.value)} placeholder="Endereço" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none" />
-                <button type="submit" className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-full shadow transition">Salvar</button>
-              </form>
+          {/* ── Financeiro ── */}
+          {activeTab === 'financeiro' && (
+            <FinanceiroTab activeTenant={activeTenant} myPayments={myPayments} myProfessionals={myProfessionals} myAppointments={myAppointments} myServices={myServices} onAddPayment={onAddPayment} />
+          )}
 
-              {/* Horários */}
-              <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-5">
-                <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3">Horários por Dia</h4>
-                <div className="flex flex-wrap gap-2">
-                  {['seg','ter','qua','qui','sex','sab','dom'].map(d => (
-                    <button key={d} type="button" onClick={() => setSelectedHoursDay(d)} className={`px-4 py-2 rounded-full text-xs font-bold uppercase transition ${selectedHoursDay===d?'bg-blue-600 text-white shadow-md':'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{d}</button>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  <span className="text-sm font-medium text-slate-900">Dia Ativo:</span>
-                  <button type="button" onClick={() => { if(editedDays.includes(selectedHoursDay)) setEditedDays(prev=>prev.filter(d=>d!==selectedHoursDay)); else setEditedDays(prev=>[...prev,selectedHoursDay]); }}
-                    className={`text-xs font-bold px-4 py-2 rounded-full border transition ${editedDays.includes(selectedHoursDay)?'bg-emerald-50 text-emerald-600 border-emerald-200':'bg-red-50 text-red-600 border-red-200'}`}>
-                    {editedDays.includes(selectedHoursDay) ? 'Aberto' : 'Fechado'}
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {(editedHoursByDay[selectedHoursDay]||[]).map(h => (
-                    <span key={h} className="flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-1 rounded-lg text-xs font-mono text-slate-700">
-                      {h}
-                      <button type="button" onClick={() => setEditedHoursByDay(prev=>({...prev,[selectedHoursDay]:prev[selectedHoursDay].filter(x=>x!==h)}))} className="text-red-500 ml-1 font-bold hover:text-red-700">×</button>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input type="time" value={newHourInput} onChange={e=>setNewHourInput(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm flex-grow" />
-                  <button type="button" onClick={() => { if(newHourInput){ setEditedHoursByDay(prev=>({...prev,[selectedHoursDay]:Array.from(new Set([...(prev[selectedHoursDay]||[]),newHourInput])).sort()})); setNewHourInput(''); }}} className="px-5 bg-slate-900 text-white font-semibold rounded-xl text-sm hover:bg-slate-800 transition">+ Add</button>
-                </div>
-                <button type="button" onClick={() => { const h = editedHoursByDay[selectedHoursDay]||[]; const all = Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d=>[d,[...h]])); setEditedHoursByDay(all); toast.info('Horários copiados para todos os dias.'); }}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700">Copiar horários para todos os dias</button>
+          {/* ── Catálogo ── */}
+          {activeTab === 'catalogo' && (
+            <div className="space-y-6 animate-fade-in">
+              <div>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0, letterSpacing: '-0.3px' }}>Catálogo</h2>
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 4 }}>{myServices.length} serviços · {myProfessionals.length} profissionais</p>
               </div>
-            </div>
 
-            {/* Serviços */}
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
-              <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-4">
-                <Scissors className="w-5 h-5 text-blue-600" /> Serviços
-              </h4>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <form onSubmit={e=>{e.preventDefault();if(!srvName.trim())return;onAddService({tenantId:activeTenant.id,name:srvName.trim(),price:srvPrice,durationMinutes:srvDuration,category:srvCategory});toast.success(`Serviço "${srvName}" cadastrado!`);setSrvName('');}} className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
-                  <h5 className="text-xs font-bold text-slate-900 uppercase">Novo Serviço</h5>
-                  <input type="text" required placeholder="Nome do serviço" value={srvName} onChange={e=>setSrvName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none" />
-                  <div className="grid grid-cols-3 gap-3">
-                    <div><label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Preço R$</label><input type="number" value={srvPrice} onChange={e=>setSrvPrice(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm" /></div>
-                    <div><label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Duração min</label><input type="number" value={srvDuration} onChange={e=>setSrvDuration(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm" /></div>
-                    <div><label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Categoria</label><select value={srvCategory} onChange={e=>setSrvCategory(e.target.value as any)} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm"><option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option></select></div>
-                  </div>
-                  <button type="submit" className="w-full py-3 bg-blue-600 text-white font-semibold rounded-full text-sm hover:bg-blue-700 transition">Cadastrar</button>
-                </form>
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-3 max-h-72 overflow-y-auto">
-                  {myServices.map(s => (
-                    <div key={s.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between text-sm">
-                      <div><h6 className="font-bold text-slate-900">{s.name}</h6><p className="text-xs text-slate-500">{s.category} · {s.durationMinutes}min</p></div>
-                      <span className="font-bold text-slate-900">R$ {s.price.toFixed(2)}</span>
+              {/* Sub-tabs */}
+              <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0 }}>
+                {([['servicos','Serviços'], ['equipe','Equipe']] as const).map(([id, label]) => (
+                  <button key={id} onClick={() => setCatalogoTab(id)}
+                    style={{ padding: '9px 20px', fontSize: 13, fontWeight: 600, background: 'none', border: 'none', borderBottom: catalogoTab===id ? '2px solid #ffffff' : '2px solid transparent', color: catalogoTab===id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', marginBottom: -1 }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Serviços */}
+              {catalogoTab === 'servicos' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <form onSubmit={e=>{e.preventDefault();if(!srvName.trim())return;onAddService({tenantId:activeTenant.id,name:srvName.trim(),price:srvPrice,durationMinutes:srvDuration,category:srvCategory});toast.success(`Serviço "${srvName}" cadastrado!`);setSrvName('');}} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }} className="space-y-4">
+                    <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: 0 }}>Novo Serviço</h4>
+                    <input type="text" required placeholder="Nome do serviço" value={srvName} onChange={e=>setSrvName(e.target.value)} className="navy-input" />
+                    <div className="grid grid-cols-3 gap-3">
+                      <div><label className="navy-label">Preço R$</label><input type="number" value={srvPrice} onChange={e=>setSrvPrice(Number(e.target.value))} className="navy-input" /></div>
+                      <div><label className="navy-label">Duração min</label><input type="number" value={srvDuration} onChange={e=>setSrvDuration(Number(e.target.value))} className="navy-input" /></div>
+                      <div><label className="navy-label">Categoria</label><select value={srvCategory} onChange={e=>setSrvCategory(e.target.value as any)} className="navy-select"><option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option></select></div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Equipe */}
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
-              <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-4">
-                <Users className="w-5 h-5 text-blue-600" /> Equipe
-              </h4>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <form onSubmit={e=>{e.preventDefault();if(!profName.trim())return;onAddProfessional({tenantId:activeTenant.id,name:profName.trim(),role:profRole,avatar:profAvatar,rating:5,services:myServices.map(s=>s.id),commissionPercentage:profCommission,businessDays:profDays,businessHoursByDay:profHoursByDay});toast.success(`${profName} adicionado à equipe!`);setProfName('');}} className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
-                  <h5 className="text-xs font-bold text-slate-900 uppercase">Novo Colaborador</h5>
-                  <div className="flex items-center gap-4">
-                    <img src={profAvatar} alt="avatar" className="size-14 rounded-2xl border border-slate-200 object-cover" />
-                    <input ref={avatarInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e=>{ if(e.target.files?.[0]) setProfAvatar(await fileToDataURL(e.target.files[0])); }} />
-                    <button type="button" onClick={()=>avatarInputRef.current?.click()} className="text-xs text-blue-600 font-semibold hover:text-blue-800">Trocar foto</button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input type="text" required placeholder="Nome" value={profName} onChange={e=>setProfName(e.target.value)} className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none" />
-                    <input type="text" placeholder="Cargo" value={profRole} onChange={e=>setProfRole(e.target.value)} className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm focus:outline-none" />
-                  </div>
-                  <div><label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Comissão %</label><input type="number" min={0} max={100} value={profCommission} onChange={e=>setProfCommission(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm" /></div>
-                  <div className="flex flex-wrap gap-2">
-                    {['seg','ter','qua','qui','sex','sab','dom'].map(d=>(
-                      <button key={d} type="button" onClick={()=>{ setProfDays(prev=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d]); }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition ${profDays.includes(d)?'bg-blue-600 text-white':'bg-white border border-slate-200 text-slate-500'}`}>{d}</button>
+                    <button type="submit" style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cadastrar Serviço</button>
+                  </form>
+                  <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, maxHeight: 420, overflowY: 'auto' }} className="space-y-3 no-scrollbar">
+                    <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 16px' }}>Serviços Cadastrados</h4>
+                    {myServices.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '32px 16px' }}><p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>Nenhum serviço cadastrado</p></div>
+                    ) : myServices.map(s => (
+                      <div key={s.id} style={{ padding: '14px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 14 }}>{s.name}</div>
+                          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', marginTop: 2 }}>{s.category} · {s.durationMinutes}min</div>
+                        </div>
+                        <span style={{ fontWeight: 700, color: 'rgba(255,255,255,0.75)', fontSize: 15, fontFamily: 'monospace' }}>R$ {s.price.toFixed(2)}</span>
+                      </div>
                     ))}
                   </div>
-                  <button type="submit" className="w-full py-3 bg-blue-600 text-white font-semibold rounded-full text-sm hover:bg-blue-700 transition">Adicionar</button>
-                </form>
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-3 max-h-72 overflow-y-auto">
-                  {myProfessionals.map(p => (
-                    <div key={p.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center gap-4 text-sm">
-                      <img src={p.avatar} alt={p.name} className="size-12 rounded-full border border-slate-200 object-cover" />
-                      <div>
-                        <div className="font-bold text-slate-900">{p.name}</div>
-                        <div className="text-xs text-slate-500">{p.role} · {p.commissionPercentage}%</div>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {(p.businessDays||[]).map(d=><span key={d} className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase">{d}</span>)}
+                </div>
+              )}
+
+              {/* Equipe */}
+              {catalogoTab === 'equipe' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <form onSubmit={e=>{e.preventDefault();if(!profName.trim())return;onAddProfessional({tenantId:activeTenant.id,name:profName.trim(),role:profRole,avatar:profAvatar,rating:5,services:myServices.map(s=>s.id),commissionPercentage:profCommission,businessDays:profDays,businessHoursByDay:profHoursByDay});toast.success(`${profName} adicionado à equipe!`);setProfName('');}} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }} className="space-y-4">
+                    <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: 0 }}>Novo Colaborador</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <img src={profAvatar} alt="avatar" style={{ width: 52, height: 52, borderRadius: 14, border: '1px solid rgba(255,255,255,0.09)', objectFit: 'cover' }} />
+                      <input ref={avatarInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e=>{ if(e.target.files?.[0]) setProfAvatar(await fileToDataURL(e.target.files[0])); }} />
+                      <button type="button" onClick={()=>avatarInputRef.current?.click()} style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', textDecoration: 'underline' }}>Trocar foto</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input type="text" required placeholder="Nome" value={profName} onChange={e=>setProfName(e.target.value)} className="navy-input" />
+                      <input type="text" placeholder="Cargo" value={profRole} onChange={e=>setProfRole(e.target.value)} className="navy-input" />
+                    </div>
+                    <div><label className="navy-label">Comissão %</label><input type="number" min={0} max={100} value={profCommission} onChange={e=>setProfCommission(Number(e.target.value))} className="navy-input" /></div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                      {['seg','ter','qua','qui','sex','sab','dom'].map(d=>(
+                        <button key={d} type="button" onClick={()=>{ setProfDays(prev=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d]); }}
+                          style={{ padding: '5px 12px', borderRadius: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.07)', color: profDays.includes(d) ? '#031D3C' : 'rgba(255,255,255,0.38)', border: `1px solid ${profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>{d}</button>
+                      ))}
+                    </div>
+                    <button type="submit" style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Adicionar à Equipe</button>
+                  </form>
+                  <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, maxHeight: 420, overflowY: 'auto' }} className="space-y-3 no-scrollbar">
+                    <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 16px' }}>Equipe</h4>
+                    {myProfessionals.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '32px 16px' }}><p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>Nenhum profissional cadastrado</p></div>
+                    ) : myProfessionals.map(p => (
+                      <div key={p.id} style={{ padding: '14px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <img src={p.avatar} alt={p.name} style={{ width: 44, height: 44, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.09)', objectFit: 'cover', flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 14 }}>{p.name}</div>
+                          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', marginBottom: 4 }}>{p.role} · {p.commissionPercentage}% comissão</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 3 }}>
+                            {(p.businessDays||[]).map(d=><span key={d} style={{ fontSize: 9, background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)', padding: '2px 6px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1px' }}>{d}</span>)}
+                          </div>
                         </div>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── WhatsApp ── */}
+          {activeTab === 'whatsapp' && (
+            <WhatsAppTab activeTenant={activeTenant} myAppointments={myAppointments} myServices={myServices} myProfessionals={myProfessionals} />
+          )}
+
+          {/* ── Configurações ── */}
+          {activeTab === 'configuracoes' && (
+            <div className="space-y-6 animate-fade-in">
+              <div>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0, letterSpacing: '-0.3px' }}>Configurações</h2>
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 4 }}>Identidade do salão e horários de funcionamento</p>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Branding */}
+                <form onSubmit={e => { e.preventDefault(); onUpdateTenantDetails(activeTenant.id, { name: tenantName, logo: tenantLogo, phone: tenantPhone, address: tenantAddress, instagram: tenantInstagram, businessDays: editedDays, businessHoursByDay: editedHoursByDay, businessHours: editedHoursByDay['seg'] || [] }); toast.success('Configurações salvas!'); }} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }} className="space-y-5">
+                  <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Identidade Visual</h4>
+                  <input ref={logoInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e => { if(e.target.files?.[0]) setTenantLogo(await fileToDataURL(e.target.files[0])); }} />
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <button type="button" onClick={() => logoInputRef.current?.click()} style={{ width: 52, height: 52, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, cursor: 'pointer', flexShrink: 0 }}>
+                      {tenantLogo.startsWith('data:') ? <img src={tenantLogo} alt="logo" style={{ width: 42, height: 42, objectFit: 'cover', borderRadius: 10 }} /> : tenantLogo}
+                    </button>
+                    <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                      {['💈','💅','✂️','💄','🧖','💇','🧔','🌟','👑','🔥'].map(em => (
+                        <button key={em} type="button" onClick={() => setTenantLogo(em)} style={{ width: 34, height: 34, fontSize: 16, borderRadius: 8, border: `1px solid ${tenantLogo===em ? '#ffffff' : 'rgba(255,255,255,0.09)'}`, background: tenantLogo===em ? '#ffffff' : 'rgba(255,255,255,0.04)', cursor: 'pointer' }}>{em}</button>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+                  <input value={tenantName} onChange={e=>setTenantName(e.target.value)} placeholder="Nome do salão" className="navy-input" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input value={tenantPhone} onChange={e=>setTenantPhone(e.target.value)} placeholder="Telefone" className="navy-input" />
+                    <input value={tenantInstagram} onChange={e=>setTenantInstagram(e.target.value)} placeholder="@instagram" className="navy-input" />
+                  </div>
+                  <input value={tenantAddress} onChange={e=>setTenantAddress(e.target.value)} placeholder="Endereço" className="navy-input" />
+                  <button type="submit" style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar Alterações</button>
+                </form>
+
+                {/* Horários */}
+                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }} className="space-y-5">
+                  <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Horários por Dia</h4>
+                  <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                    {['seg','ter','qua','qui','sex','sab','dom'].map(d => (
+                      <button key={d} type="button" onClick={() => setSelectedHoursDay(d)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1px', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: selectedHoursDay===d ? '#ffffff' : 'rgba(255,255,255,0.07)', color: selectedHoursDay===d ? '#031D3C' : 'rgba(255,255,255,0.55)', border: `1px solid ${selectedHoursDay===d ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>{d}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.09)' }}>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>Dia Ativo:</span>
+                    <button type="button" onClick={() => { if(editedDays.includes(selectedHoursDay)) setEditedDays(prev=>prev.filter(d=>d!==selectedHoursDay)); else setEditedDays(prev=>[...prev,selectedHoursDay]); }}
+                      style={{ fontSize: 11, fontWeight: 700, padding: '5px 14px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: editedDays.includes(selectedHoursDay) ? '#E6F4EC' : 'rgba(239,68,68,0.1)', color: editedDays.includes(selectedHoursDay) ? '#0A4A2C' : '#fca5a5', border: `1px solid ${editedDays.includes(selectedHoursDay) ? '#A7D7BC' : 'rgba(239,68,68,0.3)'}` }}>
+                      {editedDays.includes(selectedHoursDay) ? 'Aberto' : 'Fechado'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                    {(editedHoursByDay[selectedHoursDay]||[]).map(h => (
+                      <span key={h} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', color: 'rgba(255,255,255,0.65)' }}>
+                        {h}
+                        <button type="button" onClick={() => setEditedHoursByDay(prev=>({...prev,[selectedHoursDay]:prev[selectedHoursDay].filter(x=>x!==h)}))} style={{ color: '#fca5a5', marginLeft: 4, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input type="time" value={newHourInput} onChange={e=>setNewHourInput(e.target.value)} className="navy-input" style={{ flex: 1 }} />
+                    <button type="button" onClick={() => { if(newHourInput){ setEditedHoursByDay(prev=>({...prev,[selectedHoursDay]:Array.from(new Set([...(prev[selectedHoursDay]||[]),newHourInput])).sort()})); setNewHourInput(''); }}} style={{ padding: '0 18px', background: '#ffffff', color: '#031D3C', fontWeight: 700, borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 13, fontFamily: 'Outfit, sans-serif' }}>+ Add</button>
+                  </div>
+                  <button type="button" onClick={() => { const h = editedHoursByDay[selectedHoursDay]||[]; const all = Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d=>[d,[...h]])); setEditedHoursByDay(all); toast.info('Horários copiados para todos os dias.'); }}
+                    style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.55)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0, textDecoration: 'underline' }}>Copiar para todos os dias</button>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+        </main>
       </div>
     </div>
   );

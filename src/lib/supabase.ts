@@ -17,6 +17,7 @@ if (!url || !anonKey) {
 }
 
 export const supabase = createClient(url || 'http://localhost', anonKey || 'placeholder', {
+  db: { schema: 'barber' },
   auth: {
     autoRefreshToken:  true,
     persistSession:    true,
