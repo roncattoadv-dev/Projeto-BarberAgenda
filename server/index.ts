@@ -406,25 +406,19 @@ app.get('/api/whatsapp/qr', verifyTenant, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/whatsapp/disconnect
-// Deleta e recria a instância (equivalente a desconectar).
+// Faz logout do WhatsApp mantendo a instância no EvoGo.
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/whatsapp/disconnect', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
   if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
 
-  const instanceName  = tenant.slug;
   const instanceToken = evoInstanceToken(tenant.slug, tenantId);
 
   try {
-    const all = await evoAdmin<{ data: any[] }>('/instance/all');
-    const inst = (all.data ?? []).find((i: any) => i.name === instanceName);
-    if (inst?.id) {
-      await evoAdmin(`/instance/delete/${inst.id}`, { method: 'DELETE' });
-    }
-    await evoAdmin('/instance/create', {
+    await evoInstance(instanceToken, '/instance/disconnect', {
       method: 'POST',
-      body: JSON.stringify({ name: instanceName, token: instanceToken }),
+      body: JSON.stringify({ instanceId: tenant.slug }),
     });
     res.json({ ok: true });
   } catch (err: any) {
