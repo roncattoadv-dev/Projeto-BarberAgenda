@@ -45,11 +45,12 @@ function getWindowDefaults(): EvoConfig {
 }
 
 function loadConfig(): EvoConfig {
+  const defaults = getWindowDefaults();
   try {
     const saved = localStorage.getItem(LS_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) return { ...defaults, ...JSON.parse(saved) };
   } catch {}
-  return getWindowDefaults();
+  return defaults;
 }
 
 function saveConfig(cfg: EvoConfig) {
