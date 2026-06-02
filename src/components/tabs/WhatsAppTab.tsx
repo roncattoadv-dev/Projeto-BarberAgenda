@@ -128,20 +128,16 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   const refreshStatus = useCallback(async () => {
     if (!isConfigured) { setConnState('error'); return; }
     try {
-      const res = await evoFetchDynamic<{ instance: { state: ConnectionState } }>(
-        cfg, `/instance/connectionState/${cfg.instance}`
+      const res = await evoFetchDynamic<{ data: { Connected: boolean; LoggedIn: boolean; Name: string }; message: string }>(
+        cfg, `/instance/status?instanceId=${cfg.instance}`
       );
-      const state = res?.instance?.state ?? 'error';
+      const { Connected, LoggedIn, Name } = res?.data ?? {};
+      const state: ConnectionState = LoggedIn ? 'open' : Connected ? 'connecting' : 'close';
       setConnState(state);
       if (state === 'open') {
         setQrData(null);
         stopQrPolling();
-        // Busca info do perfil quando conectado
-        try {
-          const info = await evoFetchDynamic<any>(cfg, `/instance/fetchInstances?instanceName=${cfg.instance}`);
-          const inst = Array.isArray(info) ? info[0]?.instance : info?.instance;
-          if (inst) setInstanceInfo(inst);
-        } catch {}
+        setInstanceInfo({ instanceName: cfg.instance, connectionStatus: 'open', profileName: Name || cfg.instance });
       }
     } catch {
       setConnState('error');
@@ -157,19 +153,15 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     if (!isConfigured) return;
     setQrLoading(true);
     try {
-      const data = await evoFetchDynamic<any>(cfg, `/instance/connect/${cfg.instance}`);
-      if (data?.base64 || data?.qrcode?.base64) {
-        const qr: QRCodeData = {
-          base64: data?.base64        || data?.qrcode?.base64 || '',
-          code:   data?.code          || data?.qrcode?.code   || '',
-          count:  (qrRefreshCount + 1),
-        };
-        setQrData(qr);
+      const data = await evoFetchDynamic<{ data: { Qrcode: string; Code: string }; message: string }>(
+        cfg, `/instance/qr?instanceId=${cfg.instance}`
+      );
+      if (data?.data?.Qrcode) {
+        setQrData({ base64: data.data.Qrcode, code: data.data.Code || '', count: qrRefreshCount + 1 });
         setQrRefreshCount(c => c + 1);
-      } else if (data?.instance?.state === 'open') {
-        setConnState('open');
-        setQrData(null);
-        stopQrPolling();
+      } else {
+        // Sem QR = já conectado
+        await refreshStatus();
       }
     } catch (err) {
       console.error('[QR]', err);
@@ -206,7 +198,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   const handleLogout = async () => {
     if (!window.confirm('Desconectar o WhatsApp desta instância?')) return;
     try {
-      await evoFetchDynamic(cfg, `/instance/logout/${cfg.instance}`, { method: 'DELETE' });
+      await evoFetchDynamic(cfg, '/instance/disconnect', { method: 'DELETE', body: JSON.stringify({ instanceId: cfg.instance }) });
       setConnState('close');
       setInstanceInfo(null);
       setQrData(null);
@@ -220,7 +212,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     try {
       await evoFetchDynamic(cfg, '/instance/create', {
         method: 'POST',
-        body: JSON.stringify({ instanceName: cfg.instance, qrcode: true, integration: 'WHATSAPP-BAILEYS' }),
+        body: JSON.stringify({ name: cfg.instance, token: cfg.apikey }),
       });
       toast.success(`Instância "${cfg.instance}" criada!`);
       await refreshStatus();
@@ -257,9 +249,9 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     // Usa fetch dinâmico com config atual
     let result: WppStatus = 'error';
     try {
-      await evoFetchDynamic(cfg, `/message/sendText/${cfg.instance}`, {
+      await evoFetchDynamic(cfg, '/send/text', {
         method: 'POST',
-        body: JSON.stringify({ number: normalizePhone(appt.customerPhone), text: msg, delay: 1200 }),
+        body: JSON.stringify({ instanceId: cfg.instance, number: normalizePhone(appt.customerPhone), text: msg }),
       });
       result = 'sent';
     } catch { result = 'error'; }

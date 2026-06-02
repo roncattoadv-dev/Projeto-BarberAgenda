@@ -1,17 +1,17 @@
 /**
- * WhatsApp Service — Evolution Go (Evo Go)
- * Documentação: https://github.com/evolution-foundation/evolution-go
+ * WhatsApp Service — Evolution Go (EvoGo v0.6.1)
  *
- * Config em produção (EasyPanel): variáveis de ambiente do container
- *   EVO_URL, EVO_INSTANCE, EVO_APIKEY
- *   → injetadas em runtime via docker-entrypoint.sh → window.__BARBER_CONFIG__
+ * Endpoints reais confirmados:
+ *   POST /instance/create          { name, token }
+ *   GET  /instance/all             → { data: [...] }          (global key)
+ *   GET  /instance/status?instanceId=  → { data: { Connected, LoggedIn, Name } }
+ *   GET  /instance/qr?instanceId=  → { data: { Qrcode, Code } }
+ *   DEL  /instance/disconnect      { instanceId }
+ *   POST /send/text                { instanceId, number, text }
  *
- * Config em desenvolvimento local (.env.local):
- *   VITE_EVO_URL, VITE_EVO_INSTANCE, VITE_EVO_APIKEY
- *   → lidas via import.meta.env (build-time, apenas local)
+ * Auth: global key para admin ops / token da instância para ops da instância
  */
 
-// Lê do window em runtime (produção) ou do import.meta.env (dev local)
 function getRuntimeConfig() {
   const w = (window as any).__BARBER_CONFIG__ || {};
   return {
@@ -21,12 +21,9 @@ function getRuntimeConfig() {
   };
 }
 
-// Exporta valores iniciais — o WhatsAppTab usa loadConfig() do localStorage
-// que tem prioridade sobre estes defaults
 export const EVO_URL      = getRuntimeConfig().url;
 export const EVO_INSTANCE = getRuntimeConfig().instance;
 export const EVO_APIKEY   = getRuntimeConfig().apikey;
-
 export const EVO_CONFIGURED = !!(EVO_URL && EVO_APIKEY);
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
@@ -34,32 +31,25 @@ export type ConnectionState = 'open' | 'close' | 'connecting' | 'error' | 'check
 export type WppStatus       = 'sent' | 'error' | 'not_configured';
 
 export interface InstanceInfo {
-  instanceName: string;
+  instanceName:     string;
   connectionStatus: ConnectionState;
-  ownerJid?: string;
-  profileName?: string;
-  profilePicUrl?: string;
+  ownerJid?:        string;
+  profileName?:     string;
+  profilePicUrl?:   string;
 }
 
 export interface QRCodeData {
-  code: string;        // string base64 do QR
-  base64: string;      // data:image/png;base64,...
-  count?: number;
+  code:    string;
+  base64:  string;   // já vem como data:image/png;base64,...
+  count?:  number;
 }
 
-// ── Helper de request ──────────────────────────────────────────────────────────
-async function evoFetch<T = unknown>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  if (!EVO_CONFIGURED) throw new Error('Evo Go não configurado.');
+// ── Helper fetch ───────────────────────────────────────────────────────────────
+async function evoFetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+  if (!EVO_CONFIGURED) throw new Error('EvoGo não configurado.');
   const res = await fetch(`${EVO_URL}${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': EVO_APIKEY,
-      ...options.headers,
-    },
+    headers: { 'Content-Type': 'application/json', 'apikey': EVO_APIKEY, ...options.headers },
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -70,75 +60,88 @@ async function evoFetch<T = unknown>(
 
 // ── Gerenciamento de instância ─────────────────────────────────────────────────
 
-/** Cria uma nova instância no Evo Go */
-export async function createInstance(name: string): Promise<{ instance: InstanceInfo; hash: { apikey: string } }> {
+/** Cria instância no EvoGo. name = nome da instância, token = chave de acesso */
+export async function createInstance(name: string, token: string): Promise<any> {
   return evoFetch('/instance/create', {
     method: 'POST',
-    body: JSON.stringify({
-      instanceName: name,
-      qrcode: true,
-      integration: 'WHATSAPP-BAILEYS',
-    }),
+    body: JSON.stringify({ name, token }),
   });
 }
 
-/** Lista todas as instâncias */
+/** Lista todas as instâncias (requer global key) */
 export async function fetchInstances(): Promise<InstanceInfo[]> {
-  const data = await evoFetch<{ instance: InstanceInfo }[]>('/instance/fetchInstances');
-  return data.map(d => d.instance);
+  const data = await evoFetch<{ data: any[]; message: string }>('/instance/all');
+  return (data.data ?? []).map(d => ({
+    instanceName:     d.name,
+    connectionStatus: d.connected ? 'open' : 'close',
+    ownerJid:         d.jid || undefined,
+    profileName:      d.name,
+  }));
 }
 
-/** Estado de conexão de uma instância */
+/** Status de conexão — { Connected, LoggedIn, Name } */
 export async function checkEvoStatus(instance = EVO_INSTANCE): Promise<ConnectionState> {
   if (!EVO_CONFIGURED) return 'error';
   try {
-    const data = await evoFetch<{ instance: { state: ConnectionState } }>(
-      `/instance/connectionState/${instance}`
+    const data = await evoFetch<{ data: { Connected: boolean; LoggedIn: boolean; Name: string }; message: string }>(
+      `/instance/status?instanceId=${instance}`
     );
-    return data?.instance?.state ?? 'error';
+    if (data?.data?.LoggedIn)   return 'open';
+    if (data?.data?.Connected)  return 'connecting';
+    return 'close';
   } catch {
     return 'error';
   }
 }
 
-/** Busca QR Code para conectar o WhatsApp */
+/** QR Code para conectar — resposta: { data: { Qrcode, Code } } */
 export async function fetchQRCode(instance = EVO_INSTANCE): Promise<QRCodeData | null> {
   try {
-    const data = await evoFetch<{ base64?: string; code?: string; qrcode?: QRCodeData }>(
-      `/instance/connect/${instance}`
+    const data = await evoFetch<{ data: { Qrcode: string; Code: string }; message: string }>(
+      `/instance/qr?instanceId=${instance}`
     );
-    // Evo Go pode retornar em formatos ligeiramente diferentes por versão
-    if (data?.base64)           return { base64: data.base64, code: data.code || '' };
-    if (data?.qrcode?.base64)   return data.qrcode;
+    if (data?.data?.Qrcode) {
+      return { base64: data.data.Qrcode, code: data.data.Code || '' };
+    }
     return null;
   } catch {
     return null;
   }
 }
 
-/** Desconecta (logout) uma instância */
+/** Desconecta (logout) a instância */
 export async function logoutInstance(instance = EVO_INSTANCE): Promise<void> {
-  await evoFetch(`/instance/logout/${instance}`, { method: 'DELETE' });
+  await evoFetch('/instance/disconnect', {
+    method: 'DELETE',
+    body: JSON.stringify({ instanceId: instance }),
+  });
 }
 
-/** Deleta uma instância */
+/** Deleta a instância */
 export async function deleteInstance(instance = EVO_INSTANCE): Promise<void> {
   await evoFetch(`/instance/delete/${instance}`, { method: 'DELETE' });
 }
 
-/** Info detalhada da instância (nome, foto, número) */
+/** Info da instância via status */
 export async function fetchInstanceInfo(instance = EVO_INSTANCE): Promise<InstanceInfo | null> {
   try {
-    const data = await evoFetch<{ instance: InstanceInfo }>(`/instance/fetchInstances?instanceName=${instance}`);
-    return Array.isArray(data) ? (data as any[])[0]?.instance ?? null : data?.instance ?? null;
+    const data = await evoFetch<{ data: { Connected: boolean; LoggedIn: boolean; Name: string }; message: string }>(
+      `/instance/status?instanceId=${instance}`
+    );
+    if (!data?.data) return null;
+    return {
+      instanceName:     instance,
+      connectionStatus: data.data.LoggedIn ? 'open' : data.data.Connected ? 'connecting' : 'close',
+      profileName:      data.data.Name || undefined,
+    };
   } catch {
     return null;
   }
 }
 
-// ── Mensagens ──────────────────────────────────────────────────────────────────
+// ── Envio de mensagens ─────────────────────────────────────────────────────────
 
-/** Normaliza número BR: remove formatação, garante DDI 55 */
+/** Normaliza número BR para formato internacional */
 export function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
   if (digits.startsWith('55') && digits.length >= 12) return digits;
@@ -146,23 +149,20 @@ export function normalizePhone(phone: string): string {
   return digits;
 }
 
-/** Envia mensagem de texto simples */
+/** Envia mensagem de texto — POST /send/text { instanceId, number, text } */
 export async function sendWhatsApp(
-  phone: string,
-  message: string,
-  instance = EVO_INSTANCE
+  phone:    string,
+  message:  string,
+  instance: string = EVO_INSTANCE
 ): Promise<WppStatus> {
-  if (!EVO_CONFIGURED) {
-    console.warn('[EvoGo] Não configurado — defina VITE_EVO_URL e VITE_EVO_APIKEY');
-    return 'not_configured';
-  }
+  if (!EVO_CONFIGURED) return 'not_configured';
   try {
-    await evoFetch(`/message/sendText/${instance}`, {
+    await evoFetch('/send/text', {
       method: 'POST',
       body: JSON.stringify({
-        number: normalizePhone(phone),
-        text:   message,
-        delay:  1200,
+        instanceId: instance,
+        number:     normalizePhone(phone),
+        text:       message,
       }),
     });
     return 'sent';
@@ -172,18 +172,15 @@ export async function sendWhatsApp(
   }
 }
 
-/** Configura webhook para receber eventos da instância */
-export async function setWebhook(
-  webhookUrl: string,
-  instance = EVO_INSTANCE
-): Promise<void> {
+/** Configura webhook da instância */
+export async function setWebhook(webhookUrl: string, instance = EVO_INSTANCE): Promise<void> {
   await evoFetch(`/webhook/set/${instance}`, {
     method: 'POST',
     body: JSON.stringify({
-      url:      webhookUrl,
-      enabled:  true,
-      events:   ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
-      webhook_by_events: false,
+      url:                webhookUrl,
+      enabled:            true,
+      events:             ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+      webhook_by_events:  false,
     }),
   });
 }
@@ -194,10 +191,10 @@ export interface ApptData {
   customerPhone:    string;
   serviceName:      string;
   professionalName: string;
-  date:  string;  // YYYY-MM-DD
-  time:  string;  // HH:MM
-  tenantName:   string;
-  tenantPhone?: string;
+  date:             string;
+  time:             string;
+  tenantName:       string;
+  tenantPhone?:     string;
 }
 
 export function formatDatePT(dateStr: string): string {

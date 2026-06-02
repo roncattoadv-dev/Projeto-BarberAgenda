@@ -25,20 +25,28 @@ export default function BookingPage() {
     if (!slug) { setNotFound(true); setLoading(false); return; }
 
     (async () => {
-      const t = await getTenantBySlug(slug);
-      if (!t) { setNotFound(true); setLoading(false); return; }
-      if (t.status === 'blocked') { setNotFound(true); setLoading(false); return; }
+      try {
+        const t = await getTenantBySlug(slug);
+        if (!t) { setNotFound(true); setLoading(false); return; }
+        if (t.status === 'blocked') { setNotFound(true); setLoading(false); return; }
 
-      setTenant(t);
-      const [svcs, profs, appts, custs] = await Promise.all([
-        getServices(t.id),
-        getProfessionals(t.id),
-        getAppointments(t.id, 500),
-        getCustomers(t.id),
-      ]);
-      setServices(svcs); setProfessionals(profs);
-      setAppointments(appts); setCustomers(custs);
-      setLoading(false);
+        setTenant(t);
+        const [svcs, profs, appts, custs] = await Promise.allSettled([
+          getServices(t.id),
+          getProfessionals(t.id),
+          getAppointments(t.id, 500),
+          getCustomers(t.id),
+        ]);
+        if (svcs.status   === 'fulfilled') setServices(svcs.value);
+        if (profs.status  === 'fulfilled') setProfessionals(profs.value);
+        if (appts.status  === 'fulfilled') setAppointments(appts.value);
+        if (custs.status  === 'fulfilled') setCustomers(custs.value);
+      } catch (err) {
+        console.error('[BookingPage] load error:', err);
+        setNotFound(true);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [slug]);
 
