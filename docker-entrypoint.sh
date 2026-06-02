@@ -20,6 +20,7 @@ window.__BARBER_CONFIG__ = {
   EVO_URL:           "${EVO_URL:-}",
   EVO_INSTANCE:      "${EVO_INSTANCE:-barberflow}",
   EVO_APIKEY:        "${EVO_APIKEY:-}",
+  EVO_GLOBAL_KEY:    "${EVO_GLOBAL_KEY:-}",
   API_URL:           "${API_URL:-}",
   SITE_URL:          "${SITE_URL:-}",
 };

@@ -46,6 +46,7 @@ services:
       EVO_URL: ${EVO_URL}
       EVO_INSTANCE: ${EVO_INSTANCE:-barberflow}
       EVO_APIKEY: ${EVO_APIKEY}
+      EVO_GLOBAL_KEY: ${EVO_GLOBAL_KEY}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
       interval: 30s

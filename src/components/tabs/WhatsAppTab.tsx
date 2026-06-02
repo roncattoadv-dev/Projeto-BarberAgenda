@@ -32,14 +32,15 @@ type ActiveView = 'connection' | 'templates' | 'dispatch' | 'config';
 
 // Lê/salva config local — prioridade: localStorage > window runtime > vazio
 const LS_KEY = 'barber_evo_config';
-interface EvoConfig { url: string; instance: string; apikey: string; }
+interface EvoConfig { url: string; instance: string; apikey: string; globalApiKey: string; }
 
 function getWindowDefaults(): EvoConfig {
   const w = (window as any).__BARBER_CONFIG__ || {};
   return {
-    url:      (w.EVO_URL      || EVO_URL      || '').replace(/\/$/, ''),
-    instance: (w.EVO_INSTANCE || EVO_INSTANCE || 'barberflow'),
-    apikey:   (w.EVO_APIKEY   || EVO_APIKEY   || ''),
+    url:          (w.EVO_URL        || EVO_URL      || '').replace(/\/$/, ''),
+    instance:     (w.EVO_INSTANCE  || EVO_INSTANCE || 'barberflow'),
+    apikey:       (w.EVO_APIKEY   || EVO_APIKEY   || ''),
+    globalApiKey: (w.EVO_GLOBAL_KEY || ''),
   };
 }
 
@@ -196,13 +197,27 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   };
 
   const handleLogout = async () => {
-    if (!window.confirm('Desconectar o WhatsApp desta instância?')) return;
+    if (!window.confirm('Desconectar o WhatsApp desta instância? A instância será deletada e recriada.')) return;
+    const globalKey = cfg.globalApiKey;
+    if (!globalKey) { toast.error('Chave Global não configurada. Vá em ⚙️ Config.'); return; }
     try {
-      await evoFetchDynamic(cfg, '/instance/disconnect', { method: 'POST', body: JSON.stringify({ instanceId: cfg.instance }) });
+      // 1. Buscar UUID da instância via /instance/all
+      const allRes = await evoFetchDynamic<{ data: any[]; message: string }>(
+        { ...cfg, apikey: globalKey }, '/instance/all'
+      );
+      const inst = (allRes.data ?? []).find((i: any) => i.name === cfg.instance);
+      if (inst?.id) {
+        await evoFetchDynamic({ ...cfg, apikey: globalKey }, `/instance/delete/${inst.id}`, { method: 'DELETE' });
+      }
+      // 2. Recriar a instância
+      await evoFetchDynamic({ ...cfg, apikey: globalKey }, '/instance/create', {
+        method: 'POST',
+        body: JSON.stringify({ name: cfg.instance, token: cfg.apikey }),
+      });
       setConnState('close');
       setInstanceInfo(null);
       setQrData(null);
-      toast.info('WhatsApp desconectado.');
+      toast.info('WhatsApp desconectado. Instância recriada — escaneie o QR para reconectar.');
     } catch (err: any) {
       toast.error('Erro ao desconectar: ' + err.message);
     }
@@ -652,11 +667,19 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
               </div>
 
               <div>
-                <label className="navy-label">GLOBAL_API_KEY <span style={{ color: '#fca5a5' }}>*</span></label>
-                <input type="password" placeholder="SUA_CHAVE_FORTE_AQUI" value={cfgDraft.apikey}
+                <label className="navy-label">Token da Instância <span style={{ color: '#fca5a5' }}>*</span></label>
+                <input type="password" placeholder="bf-token-2026" value={cfgDraft.apikey}
                   onChange={e => setCfgDraft(p => ({...p, apikey: e.target.value.trim()}))}
                   className="navy-input" style={{ fontFamily: 'monospace' }} />
-                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>A mesma chave definida em <code style={{ background: 'rgba(255,255,255,0.07)', padding: '1px 5px', borderRadius: 4 }}>GLOBAL_API_KEY</code> no .env do Evo Go</p>
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Token definido em <code>token</code> ao criar a instância no EvoGo.</p>
+              </div>
+
+              <div>
+                <label className="navy-label">Chave Global (Admin) <span style={{ color: '#fca5a5' }}>*</span></label>
+                <input type="password" placeholder="8f91c3d5-e2a7-4b60-..." value={cfgDraft.globalApiKey}
+                  onChange={e => setCfgDraft(p => ({...p, globalApiKey: e.target.value.trim()}))}
+                  className="navy-input" style={{ fontFamily: 'monospace' }} />
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>GLOBAL_API_KEY do .env do EvoGo — usada para desconectar e gerenciar instâncias.</p>
               </div>
 
               <button onClick={handleSaveConfig}
