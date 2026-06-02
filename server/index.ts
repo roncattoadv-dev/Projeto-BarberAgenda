@@ -405,6 +405,9 @@ app.post('/api/whatsapp/notify', async (req, res) => {
       body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
     });
 
+    // Marca como enviado para o job não reenviar
+    await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appointmentId);
+
     res.json({ ok: true });
   } catch (err: any) {
     console.error('[Notify]', err.message);
@@ -602,6 +605,42 @@ app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
     res.json({ ok: true });
   } catch (err: any) {
     console.error('[WhatsApp Send]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/cancel
+// Cancela agendamento publicamente (sem auth) — usa service key para bypasaar RLS.
+// Segurança: verifica que o appointmentId pertence ao slug informado.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/cancel', async (req, res) => {
+  const { slug, appointmentId } = req.body as { slug?: string; appointmentId?: string };
+  if (!slug || !appointmentId) {
+    res.status(400).json({ error: 'slug e appointmentId obrigatórios.' });
+    return;
+  }
+
+  try {
+    // Verifica que o agendamento pertence ao tenant com este slug
+    const { data: appt } = await supabase
+      .from('appointments')
+      .select('id, status, tenant_id, tenants(slug)')
+      .eq('id', appointmentId)
+      .maybeSingle();
+
+    if (!appt) { res.status(404).json({ error: 'Agendamento não encontrado.' }); return; }
+    if ((appt.tenants as any)?.slug !== slug) { res.status(403).json({ error: 'Acesso negado.' }); return; }
+    if (appt.status === 'cancelled')  { res.json({ ok: true, alreadyCancelled: true }); return; }
+    if (appt.status === 'attended' || appt.status === 'completed') {
+      res.status(400).json({ error: 'Agendamento já realizado, não pode ser cancelado.' });
+      return;
+    }
+
+    await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', appointmentId);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[Cancel]', err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -6,6 +6,11 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
+function getApiUrl() {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  return (w.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+}
+
 interface ApptInfo {
   id: string;
   customerName: string;
@@ -77,16 +82,16 @@ export default function CancelPage() {
     setCancelling(true);
     setError('');
     try {
-      const { error } = await supabase
-        .from('appointments')
-        .update({ status: 'cancelled' })
-        .eq('id', appt.id)
-        .eq('status', 'pending'); // só cancela se ainda estiver pendente
-
-      if (error) throw error;
+      const res  = await fetch(`${getApiUrl()}/api/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, appointmentId: appt.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao cancelar.');
       setCancelled(true);
-    } catch {
-      setError('Não foi possível cancelar. O agendamento pode já ter sido confirmado. Entre em contato com a barbearia.');
+    } catch (err: any) {
+      setError(err.message || 'Não foi possível cancelar. Entre em contato com a barbearia.');
     } finally {
       setCancelling(false);
     }
