@@ -266,6 +266,143 @@ app.post('/api/webhook/asaas', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Templates de notificação WhatsApp — padrões editáveis por tenant
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TPL_CONFIRM_DEFAULT = `Olá, {nome}
+o seu agendamento está confirmado em {salao}
+
+Serviço: {servico}
+Quando: {data} às {hora}
+Duração: {duracao} min
+Profissional: {profissional}
+Código: {codigo}
+
+Gostaríamos de lembrar que caso não compareça no horário reservado, será cobrado o valor do serviço agendado. Agradecemos pela compreensão e estamos à disposição para qualquer dúvida!
+
+Para mais informações ou cancelar o agendamento: {link}`;
+
+const TPL_REMIND_DEFAULT = `Olá, {nome}
+o seu agendamento está próximo em {salao}
+
+Serviço: {servico}
+Quando: {data} às {hora}
+Duração: {duracao} min
+Profissional: {profissional}
+Código: {codigo}
+
+Gostaríamos de lembrar que caso não compareça no horário reservado, será cobrado o valor do serviço agendado. Agradecemos pela compreensão e estamos à disposição para qualquer dúvida!
+
+Para mais informações ou cancelar o agendamento: {link}`;
+
+const DAYS_PT   = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+const MONTHS_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+
+function formatDatePT(dateStr: string, timeStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return `${DAYS_PT[dow]}, ${d} de ${MONTHS_PT[m - 1]} de ${y} às ${timeStr}`;
+}
+
+function bookingCode(id: string): string {
+  return id.replace(/-/g, '').slice(0, 8).toUpperCase();
+}
+
+function applyTemplate(tpl: string, vars: Record<string, string>): string {
+  return Object.entries(vars).reduce((msg, [k, v]) => msg.replaceAll(`{${k}}`, v), tpl);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/whatsapp/templates?tenantId=xxx
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data } = await supabase
+    .from('tenants')
+    .select('wpp_template_confirm, wpp_template_remind, wpp_booking_url')
+    .eq('id', tenantId)
+    .maybeSingle();
+  res.json({
+    ok: true,
+    confirm:    data?.wpp_template_confirm  ?? TPL_CONFIRM_DEFAULT,
+    remind:     data?.wpp_template_remind   ?? TPL_REMIND_DEFAULT,
+    bookingUrl: data?.wpp_booking_url       ?? '',
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/whatsapp/templates
+// ─────────────────────────────────────────────────────────────────────────────
+app.put('/api/whatsapp/templates', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { confirm, remind, bookingUrl } = req.body as { confirm?: string; remind?: string; bookingUrl?: string };
+  await supabase.from('tenants').update({
+    wpp_template_confirm: confirm ?? null,
+    wpp_template_remind:  remind  ?? null,
+    wpp_booking_url:      bookingUrl ?? null,
+  }).eq('id', tenantId);
+  res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/whatsapp/notify
+// Envia confirmação de agendamento via WhatsApp.
+// Chamado pelo frontend após criar um appointment.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/whatsapp/notify', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { appointmentId } = req.body as { appointmentId?: string };
+  if (!appointmentId) { res.status(400).json({ error: 'appointmentId obrigatório.' }); return; }
+
+  try {
+    const [apptRes, tenantRes] = await Promise.all([
+      supabase.from('appointments')
+        .select('*, services(name), professionals(name)')
+        .eq('id', appointmentId).eq('tenant_id', tenantId).maybeSingle(),
+      supabase.from('tenants')
+        .select('name, slug, wpp_template_confirm, wpp_booking_url')
+        .eq('id', tenantId).maybeSingle(),
+    ]);
+
+    const appt   = apptRes.data;
+    const tenant = tenantRes.data;
+    if (!appt || !tenant) { res.status(404).json({ error: 'Dados não encontrados.' }); return; }
+
+    const phone = appt.customer_phone?.replace(/\D/g, '');
+    if (!phone) { res.json({ ok: true, skipped: 'sem telefone' }); return; }
+
+    const code  = bookingCode(appt.id);
+    const link  = tenant.wpp_booking_url
+      ? tenant.wpp_booking_url.replace('{slug}', tenant.slug).replace('{codigo}', code)
+      : '';
+    const vars  = {
+      nome:          appt.customer_name    ?? '',
+      salao:         tenant.name           ?? '',
+      servico:       (appt.services as any)?.name      ?? '',
+      data:          formatDatePT(appt.scheduled_date, appt.scheduled_time?.slice(0,5) ?? ''),
+      hora:          appt.scheduled_time?.slice(0,5)   ?? '',
+      duracao:       String(appt.duration_minutes),
+      profissional:  (appt.professionals as any)?.name ?? '',
+      codigo:        code,
+      link,
+    };
+
+    const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
+    const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+
+    await evoInstance(instanceToken, '/send/text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+    });
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[Notify]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // WhatsApp / Evolution Go — helpers de servidor
 // O EVO_GLOBAL_KEY nunca é exposto ao frontend.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -490,6 +627,74 @@ async function cleanupStaleInstances(): Promise<void> {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Job a cada 5 min: envia lembrete 1h antes do atendimento
+// ─────────────────────────────────────────────────────────────────────────────
+async function sendReminders(): Promise<void> {
+  if (!EVO_URL || !EVO_GLOBAL_KEY) return;
+
+  // Janela: agendamentos que começam entre 55 e 65 minutos a partir de agora
+  const now  = new Date();
+  const lo   = new Date(now.getTime() + 55 * 60_000);
+  const hi   = new Date(now.getTime() + 65 * 60_000);
+
+  // Data e hora separados pois o banco guarda DATE + TIME
+  const loDate = lo.toISOString().split('T')[0];
+  const hiDate = hi.toISOString().split('T')[0];
+  const loTime = lo.toISOString().split('T')[1].slice(0, 5); // HH:MM
+  const hiTime = hi.toISOString().split('T')[1].slice(0, 5);
+
+  const { data: appts } = await supabase
+    .from('appointments')
+    .select('*, tenants(id, name, slug, wpp_template_remind, wpp_booking_url), services(name), professionals(name)')
+    .eq('wpp_reminder_sent', false)
+    .neq('status', 'cancelled')
+    .gte('scheduled_date', loDate).lte('scheduled_date', hiDate);
+
+  for (const appt of appts ?? []) {
+    // Filtra pela janela de hora (o banco não filtra TIME num range multi-dia facilmente)
+    const apptTime = appt.scheduled_time?.slice(0, 5) ?? '';
+    if (appt.scheduled_date === loDate && apptTime < loTime) continue;
+    if (appt.scheduled_date === hiDate && apptTime > hiTime) continue;
+
+    const tenant = (appt.tenants as any);
+    if (!tenant) continue;
+
+    const phone = appt.customer_phone?.replace(/\D/g, '');
+    if (!phone) continue;
+
+    try {
+      const code  = bookingCode(appt.id);
+      const link  = tenant.wpp_booking_url
+        ? tenant.wpp_booking_url.replace('{slug}', tenant.slug).replace('{codigo}', code)
+        : '';
+      const vars  = {
+        nome:         appt.customer_name             ?? '',
+        salao:        tenant.name                    ?? '',
+        servico:      (appt.services as any)?.name      ?? '',
+        data:         formatDatePT(appt.scheduled_date, apptTime),
+        hora:         apptTime,
+        duracao:      String(appt.duration_minutes),
+        profissional: (appt.professionals as any)?.name ?? '',
+        codigo:       code,
+        link,
+      };
+      const msg           = applyTemplate(tenant.wpp_template_remind ?? TPL_REMIND_DEFAULT, vars);
+      const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
+
+      await evoInstance(instanceToken, '/send/text', {
+        method: 'POST',
+        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+      });
+
+      await supabase.from('appointments').update({ wpp_reminder_sent: true }).eq('id', appt.id);
+      console.log(`[Reminder] Lembrete enviado: ${appt.customer_name} (${appt.scheduled_date} ${apptTime})`);
+    } catch (err: any) {
+      console.error(`[Reminder] Erro ao enviar para ${appt.customer_name}:`, err.message);
+    }
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`[Server] BarberFlow API rodando na porta ${PORT}`);
@@ -498,9 +703,12 @@ app.listen(PORT, () => {
   console.log(`[Server] Modo: ${process.env.ASAAS_SANDBOX === 'true' ? 'SANDBOX' : 'PRODUÇÃO'}`);
   console.log(`[Server] EvoGo: ${EVO_URL && EVO_GLOBAL_KEY ? '✓' : '✗ não configurado'}`);
 
-  // Roda o cleanup 1 min após o boot e depois a cada 24h
+  // Cleanup de instâncias: 1 min após boot, depois a cada 24h
   setTimeout(() => {
     cleanupStaleInstances();
     setInterval(cleanupStaleInstances, 24 * 60 * 60 * 1000);
   }, 60_000);
+
+  // Lembretes 1h antes: a cada 5 min
+  setInterval(sendReminders, 5 * 60_000);
 });

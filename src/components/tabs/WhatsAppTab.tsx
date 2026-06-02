@@ -24,6 +24,11 @@ interface Props {
 type SendState = 'idle' | 'sending' | 'done' | 'error';
 type ActiveView = 'connection' | 'templates' | 'dispatch';
 
+function getApiUrl() {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  return (w.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+}
+
 export default function WhatsAppTab({ activeTenant, myAppointments, myServices, myProfessionals }: Props) {
   const toast = useToast();
 
@@ -53,7 +58,45 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   const [sendStates,    setSendStates]    = useState<Record<string, SendState>>({});
   const [activePreview, setActivePreview] = useState<'confirmation' | 'reminder' | 'cancellation'>('confirmation');
 
-  // ── Templates ──────────────────────────────────────────────
+  // ── Templates automáticos (salvos no banco) ────────────────
+  const [autoConfirm,      setAutoConfirm]      = useState('');
+  const [autoRemind,       setAutoRemind]        = useState('');
+  const [bookingUrl,       setBookingUrl]        = useState('');
+  const [autoConfirmDraft, setAutoConfirmDraft]  = useState('');
+  const [autoRemindDraft,  setAutoRemindDraft]   = useState('');
+  const [bookingUrlDraft,  setBookingUrlDraft]   = useState('');
+  const [tplSaving,        setTplSaving]         = useState(false);
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${getApiUrl()}/api/whatsapp/templates?tenantId=${activeTenant.id}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    }).then(r => r.json()).then(d => {
+      if (d.ok) {
+        setAutoConfirm(d.confirm); setAutoConfirmDraft(d.confirm);
+        setAutoRemind(d.remind);   setAutoRemindDraft(d.remind);
+        setBookingUrl(d.bookingUrl); setBookingUrlDraft(d.bookingUrl);
+      }
+    }).catch(() => {});
+  }, [authToken, activeTenant.id]);
+
+  const handleSaveAutoTpls = async () => {
+    setTplSaving(true);
+    try {
+      await fetch(`${getApiUrl()}/api/whatsapp/templates`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ confirm: autoConfirmDraft, remind: autoRemindDraft, bookingUrl: bookingUrlDraft }),
+      });
+      setAutoConfirm(autoConfirmDraft);
+      setAutoRemind(autoRemindDraft);
+      setBookingUrl(bookingUrlDraft);
+      toast.success('Templates salvos!');
+    } catch { toast.error('Erro ao salvar templates.'); }
+    finally { setTplSaving(false); }
+  };
+
+  // ── Templates manuais (dispatch) ───────────────────────────
   const LS_TPL = `barber_wpp_tpl_${activeTenant.id}`;
   const defaultTpls = {
     confirm: 'Olá {cliente}! Seu agendamento de {servico} com {profissional} no dia {data} às {hora} está CONFIRMADO. — {salao}',
@@ -64,7 +107,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     try { const s = localStorage.getItem(LS_TPL); if (s) return JSON.parse(s); } catch {}
     return defaultTpls;
   };
-  const [tpls, setTpls]     = useState(loadTpls);
+  const [tpls, setTpls]         = useState(loadTpls);
   const [tplsDraft, setTplsDraft] = useState(loadTpls);
 
   // ── Agendamentos pendentes ─────────────────────────────────
@@ -448,9 +491,53 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
           VIEW: MODELOS DE MENSAGEM
       ══════════════════════════════════════════════════════ */}
       {activeView === 'templates' && (
+        <div className="space-y-6">
+
+        {/* ── Notificações automáticas ─────────────────────── */}
+        <div style={card} className="space-y-5">
+          <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>
+            Notificações Automáticas
+          </h4>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', fontFamily: 'monospace' }}>
+            {'Variáveis: {nome}  {salao}  {servico}  {data}  {hora}  {duracao}  {profissional}  {codigo}  {link}'}
+          </p>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', display: 'block', marginBottom: 6, color: 'rgba(255,255,255,0.65)' }}>
+              ✅ Confirmação (enviada ao agendar)
+            </label>
+            <textarea value={autoConfirmDraft} onChange={e => setAutoConfirmDraft(e.target.value)} rows={8}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 14px', color: 'rgba(255,255,255,0.88)', fontSize: 13, resize: 'vertical' as const, outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }} />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', display: 'block', marginBottom: 6, color: 'rgba(255,255,255,0.65)' }}>
+              ⏰ Lembrete (enviado 1h antes)
+            </label>
+            <textarea value={autoRemindDraft} onChange={e => setAutoRemindDraft(e.target.value)} rows={8}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 14px', color: 'rgba(255,255,255,0.88)', fontSize: 13, resize: 'vertical' as const, outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }} />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', display: 'block', marginBottom: 6, color: 'rgba(255,255,255,0.65)' }}>
+              🔗 URL de cancelamento (opcional)
+            </label>
+            <input type="url" value={bookingUrlDraft} onChange={e => setBookingUrlDraft(e.target.value)}
+              placeholder="https://seusite.com/{slug}/bookings/{codigo}"
+              style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, padding: '10px 14px', color: 'rgba(255,255,255,0.88)', fontSize: 13, outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' as const }} />
+            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Use {'{slug}'} e {'{codigo}'} como variáveis</p>
+          </div>
+
+          <button onClick={handleSaveAutoTpls} disabled={tplSaving}
+            style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: tplSaving ? 'wait' : 'pointer', opacity: tplSaving ? 0.7 : 1, fontFamily: 'Outfit, sans-serif' }}>
+            {tplSaving ? 'Salvando…' : 'Salvar Notificações Automáticas'}
+          </button>
+        </div>
+
+        {/* ── Modelos manuais (dispatch) ───────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div style={card} className="space-y-5">
-            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Modelos de Mensagem</h4>
+            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Modelos — Disparo Manual</h4>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', fontFamily: 'monospace' }}>
               Variáveis: {'{cliente}  {servico}  {profissional}  {data}  {hora}  {salao}'}
             </p>
@@ -503,6 +590,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
               </div>
             </div>
           </div>
+        </div>
         </div>
       )}
 
