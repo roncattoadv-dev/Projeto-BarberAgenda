@@ -59,13 +59,9 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   const [activePreview, setActivePreview] = useState<'confirmation' | 'reminder' | 'cancellation'>('confirmation');
 
   // ── Templates automáticos (salvos no banco) ────────────────
-  const [autoConfirm,      setAutoConfirm]      = useState('');
-  const [autoRemind,       setAutoRemind]        = useState('');
-  const [bookingUrl,       setBookingUrl]        = useState('');
-  const [autoConfirmDraft, setAutoConfirmDraft]  = useState('');
-  const [autoRemindDraft,  setAutoRemindDraft]   = useState('');
-  const [bookingUrlDraft,  setBookingUrlDraft]   = useState('');
-  const [tplSaving,        setTplSaving]         = useState(false);
+  const [autoConfirmDraft, setAutoConfirmDraft] = useState('');
+  const [autoRemindDraft,  setAutoRemindDraft]  = useState('');
+  const [tplSaving,        setTplSaving]        = useState(false);
 
   useEffect(() => {
     if (!authToken) return;
@@ -73,9 +69,8 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
       headers: { 'Authorization': `Bearer ${authToken}` },
     }).then(r => r.json()).then(d => {
       if (d.ok) {
-        setAutoConfirm(d.confirm); setAutoConfirmDraft(d.confirm);
-        setAutoRemind(d.remind);   setAutoRemindDraft(d.remind);
-        setBookingUrl(d.bookingUrl); setBookingUrlDraft(d.bookingUrl);
+        setAutoConfirmDraft(d.confirm);
+        setAutoRemindDraft(d.remind);
       }
     }).catch(() => {});
   }, [authToken, activeTenant.id]);
@@ -86,11 +81,8 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
       await fetch(`${getApiUrl()}/api/whatsapp/templates`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-        body: JSON.stringify({ confirm: autoConfirmDraft, remind: autoRemindDraft, bookingUrl: bookingUrlDraft }),
+        body: JSON.stringify({ confirm: autoConfirmDraft, remind: autoRemindDraft }),
       });
-      setAutoConfirm(autoConfirmDraft);
-      setAutoRemind(autoRemindDraft);
-      setBookingUrl(bookingUrlDraft);
       toast.success('Templates salvos!');
     } catch { toast.error('Erro ao salvar templates.'); }
     finally { setTplSaving(false); }
@@ -499,7 +491,10 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
             Notificações Automáticas
           </h4>
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', fontFamily: 'monospace' }}>
-            {'Variáveis: {nome}  {salao}  {servico}  {data}  {hora}  {duracao}  {profissional}  {codigo}  {link}'}
+            {'Variáveis: {nome}  {salao}  {servico}  {data}  {hora}  {duracao}  {profissional}  {codigo}'}
+            <br />
+            <span style={{ color: 'rgba(255,255,255,0.55)' }}>{'  {link}'}</span>
+            {' — link de cancelamento gerado automaticamente'}
           </p>
 
           <div>
@@ -516,16 +511,6 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
             </label>
             <textarea value={autoRemindDraft} onChange={e => setAutoRemindDraft(e.target.value)} rows={8}
               style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 14px', color: 'rgba(255,255,255,0.88)', fontSize: 13, resize: 'vertical' as const, outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }} />
-          </div>
-
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', display: 'block', marginBottom: 6, color: 'rgba(255,255,255,0.65)' }}>
-              🔗 URL de cancelamento (opcional)
-            </label>
-            <input type="url" value={bookingUrlDraft} onChange={e => setBookingUrlDraft(e.target.value)}
-              placeholder="https://seusite.com/{slug}/bookings/{codigo}"
-              style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, padding: '10px 14px', color: 'rgba(255,255,255,0.88)', fontSize: 13, outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' as const }} />
-            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Use {'{slug}'} e {'{codigo}'} como variáveis</p>
           </div>
 
           <button onClick={handleSaveAutoTpls} disabled={tplSaving}

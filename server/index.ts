@@ -315,11 +315,8 @@ function bookingCode(id: string): string {
   return id.replace(/-/g, '').slice(0, 8).toUpperCase();
 }
 
-function buildLink(tenant: { slug: string; wpp_booking_url?: string | null }, code: string): string {
-  const tpl = tenant.wpp_booking_url?.trim();
-  if (tpl) return tpl.replace('{slug}', tenant.slug).replace('{codigo}', code);
-  // URL padrão: página de agendamento do tenant no barberflow
-  return SITE_URL ? `${SITE_URL}/${tenant.slug}/agendamento` : '';
+function buildLink(tenant: { slug: string }, appointmentId: string): string {
+  return SITE_URL ? `${SITE_URL}/${tenant.slug}/cancelar/${appointmentId}` : '';
 }
 
 function applyTemplate(tpl: string, vars: Record<string, string>): string {
@@ -387,7 +384,7 @@ app.post('/api/whatsapp/notify', async (req, res) => {
     if (!phone) { res.json({ ok: true, skipped: 'sem telefone' }); return; }
 
     const code  = bookingCode(appt.id);
-    const link  = buildLink(tenant, code);
+    const link  = buildLink(tenant, appt.id);
     const vars  = {
       nome:          appt.customer_name    ?? '',
       salao:         tenant.name           ?? '',
@@ -664,7 +661,7 @@ async function sendConfirmations(): Promise<void> {
 
     try {
       const code = bookingCode(appt.id);
-      const link = buildLink(tenant, code);
+      const link = buildLink(tenant, appt.id);
       const vars = {
         nome:         appt.customer_name                  ?? '',
         salao:        tenant.name                         ?? '',
@@ -729,7 +726,7 @@ async function sendReminders(): Promise<void> {
 
     try {
       const code  = bookingCode(appt.id);
-      const link  = buildLink(tenant, code);
+      const link  = buildLink(tenant, appt.id);
       const vars  = {
         nome:         appt.customer_name             ?? '',
         salao:        tenant.name                    ?? '',

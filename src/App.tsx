@@ -8,6 +8,7 @@ import RegisterPage    from './pages/auth/RegisterPage';
 import SuperAdminPage  from './pages/admin/SuperAdminPage';
 import TenantAdminPage from './pages/admin/TenantAdminPage';
 import BookingPage     from './pages/booking/BookingPage';
+import CancelPage      from './pages/booking/CancelPage';
 
 // Redireciona para o painel correto após login
 function HomeRedirect() {
@@ -50,6 +51,10 @@ function AppRoutes() {
       {/* ── Agendamento público por slug ───────────── */}
       {/* ex: /barbeariaespacoreal/agendamento         */}
       <Route path="/:slug/agendamento" element={<BookingPage />} />
+
+      {/* ── Cancelamento de agendamento ────────────── */}
+      {/* ex: /barbeariaespacoreal/cancelar/UUID        */}
+      <Route path="/:slug/cancelar/:appointmentId" element={<CancelPage />} />
 
       {/* ── 404 ───────────────────────────────────── */}
       <Route path="*" element={
