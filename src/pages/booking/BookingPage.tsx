@@ -112,7 +112,11 @@ export default function BookingPage() {
           appointments={appointments}
           customers={customers}
           onAddAppointment={async a => {
-            const c = await createAppointment(a);
+            // Garante customer real no banco antes de inserir o agendamento
+            // (CustomerBookingFlow pode passar customerId fake para novos clientes)
+            const customer = await upsertCustomerByPhone(a.tenantId, a.customerPhone, a.customerName);
+            setCustomers(prev => prev.find(x => x.id === customer.id) ? prev : [customer, ...prev]);
+            const c = await createAppointment({ ...a, customerId: customer.id });
             setAppointments(p => [c, ...p]);
           }}
           onUpdateAppointmentStatus={async (id, status) => {
