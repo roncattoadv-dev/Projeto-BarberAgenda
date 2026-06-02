@@ -275,9 +275,9 @@ function evoInstanceToken(slug: string, tenantId: string): string {
   return slug + '-' + tenantId.replace(/-/g, '').slice(0, 8);
 }
 
-/** Fetch genérico contra o EvoGo usando a global key */
-async function evoFetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
-  if (!EVO_URL || !EVO_GLOBAL_KEY) throw new Error('EvoGo não configurado no servidor (EVO_URL / EVO_GLOBAL_KEY).');
+/** Operações admin (global key): /instance/all, /instance/create, /instance/delete */
+async function evoAdmin<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+  if (!EVO_URL || !EVO_GLOBAL_KEY) throw new Error('EvoGo não configurado (EVO_URL / EVO_GLOBAL_KEY).');
   const res = await fetch(`${EVO_URL}${path}`, {
     ...options,
     headers: { 'Content-Type': 'application/json', 'apikey': EVO_GLOBAL_KEY, ...(options.headers as object ?? {}) },
@@ -289,12 +289,26 @@ async function evoFetch<T = unknown>(path: string, options: RequestInit = {}): P
   return res.json() as Promise<T>;
 }
 
-/** Garante que a instância existe; cria se não existir */
+/** Operações de instância (token da instância): /instance/status, /instance/qr, /send/text */
+async function evoInstance<T = unknown>(instanceToken: string, path: string, options: RequestInit = {}): Promise<T> {
+  if (!EVO_URL) throw new Error('EvoGo não configurado (EVO_URL).');
+  const res = await fetch(`${EVO_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'apikey': instanceToken, ...(options.headers as object ?? {}) },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`[EvoGo ${res.status}] ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** Garante que a instância existe; usa /instance/all para verificar (global key) */
 async function ensureInstance(instanceName: string, token: string): Promise<void> {
-  try {
-    await evoFetch(`/instance/status?instanceId=${instanceName}`);
-  } catch {
-    await evoFetch('/instance/create', {
+  const all = await evoAdmin<{ data: any[] }>('/instance/all');
+  const exists = (all.data ?? []).some((i: any) => i.name === instanceName);
+  if (!exists) {
+    await evoAdmin('/instance/create', {
       method: 'POST',
       body: JSON.stringify({ name: instanceName, token }),
     });
@@ -345,9 +359,10 @@ app.get('/api/whatsapp/status', verifyTenant, async (req, res) => {
     return;
   }
 
+  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
   try {
-    const data = await evoFetch<{ data: { Connected: boolean; LoggedIn: boolean; Name: string } }>(
-      `/instance/status?instanceId=${tenant.slug}`
+    const data = await evoInstance<{ data: { Connected: boolean; LoggedIn: boolean; Name: string } }>(
+      instanceToken, `/instance/status?instanceId=${tenant.slug}`
     );
     res.json({ ok: true, connected: !!data?.data?.Connected, loggedIn: !!data?.data?.LoggedIn, name: data?.data?.Name || null });
   } catch {
@@ -374,8 +389,8 @@ app.get('/api/whatsapp/qr', verifyTenant, async (req, res) => {
 
   try {
     await ensureInstance(instanceName, instanceToken);
-    const data = await evoFetch<{ data: { Qrcode: string; Code: string } }>(
-      `/instance/qr?instanceId=${instanceName}`
+    const data = await evoInstance<{ data: { Qrcode: string; Code: string } }>(
+      instanceToken, `/instance/qr?instanceId=${instanceName}`
     );
     if (data?.data?.Qrcode) {
       res.json({ ok: true, qrcode: data.data.Qrcode, code: data.data.Code || '' });
@@ -402,12 +417,12 @@ app.post('/api/whatsapp/disconnect', verifyTenant, async (req, res) => {
   const instanceToken = evoInstanceToken(tenant.slug, tenantId);
 
   try {
-    const all = await evoFetch<{ data: any[] }>('/instance/all');
+    const all = await evoAdmin<{ data: any[] }>('/instance/all');
     const inst = (all.data ?? []).find((i: any) => i.name === instanceName);
     if (inst?.id) {
-      await evoFetch(`/instance/delete/${inst.id}`, { method: 'DELETE' });
+      await evoAdmin(`/instance/delete/${inst.id}`, { method: 'DELETE' });
     }
-    await evoFetch('/instance/create', {
+    await evoAdmin('/instance/create', {
       method: 'POST',
       body: JSON.stringify({ name: instanceName, token: instanceToken }),
     });
@@ -430,8 +445,9 @@ app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
   const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
   if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
 
+  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
   try {
-    await evoFetch('/send/text', {
+    await evoInstance(instanceToken, '/send/text', {
       method: 'POST',
       body: JSON.stringify({ instanceId: tenant.slug, number: phone, text: message }),
     });
