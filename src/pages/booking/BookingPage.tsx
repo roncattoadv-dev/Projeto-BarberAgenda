@@ -96,7 +96,12 @@ export default function BookingPage() {
           style={{ height: 32, objectFit: 'contain', marginRight: 4 }}
         />
         <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.18)', flexShrink: 0 }} />
-        <span style={{ fontSize: 20, flexShrink: 0 }}>{tenant.logo}</span>
+        {(tenant.logo?.startsWith('http') || tenant.logo?.startsWith('data:'))
+          ? <div style={{ width: 32, height: 32, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
+              <img src={tenant.logo} alt={tenant.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            </div>
+          : <span style={{ fontSize: 20, flexShrink: 0 }}>{tenant.logo}</span>
+        }
         <div>
           <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, lineHeight: 1.3 }}>{tenant.name}</p>
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{tenant.address}</p>

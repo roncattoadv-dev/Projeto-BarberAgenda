@@ -8,6 +8,8 @@ import { Calendar, Users, ShoppingBag, DollarSign, Plus, Scissors, MessageSquare
          ExternalLink, Trash, Check, X, RefreshCw, Smartphone, LayoutDashboard,
          Settings, CreditCard, ChevronRight, Menu, BookOpen } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
+import { uploadTenantLogo } from '../lib/db';
+import LogoCropModal from './LogoCropModal';
 import DashboardTab   from './tabs/DashboardTab';
 import FinanceiroTab  from './tabs/FinanceiroTab';
 import WhatsAppTab    from './tabs/WhatsAppTab';
@@ -28,7 +30,7 @@ interface ClientAdminPanelProps {
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onAddPayment: (pay: Omit<Payment, 'id'>) => void;
   onAddCustomer: (c: Omit<Customer, 'id'>) => void;
-  onUpdateTenantDetails: (tenantId: string, details: Partial<Tenant>) => void;
+  onUpdateTenantDetails: (tenantId: string, details: Partial<Tenant>) => void | Promise<void>;
   onSwitchToBookingFlow: (slug: string) => void;
 }
 
@@ -70,6 +72,8 @@ export default function ClientAdminPanel({
   const [custSearch, setCustSearch] = useState('');
 
   // ── Config state ──────────────────────────────────────────
+  const [uploadingLogo,   setUploadingLogo]   = useState(false);
+  const [cropSrc,         setCropSrc]         = useState<string | null>(null);
   const [tenantLogo,      setTenantLogo]      = useState(activeTenant.logo    || '💈');
   const [tenantName,      setTenantName]      = useState(activeTenant.name    || '');
   const [tenantPhone,     setTenantPhone]     = useState(activeTenant.phone   || '');
@@ -227,9 +231,31 @@ export default function ClientAdminPanel({
     textAlign: 'left' as const,
   });
 
+  const handleCropConfirm = async (blob: Blob) => {
+    setCropSrc(null);
+    setUploadingLogo(true);
+    try {
+      const file = new File([blob], 'logo.jpg', { type: 'image/jpeg' });
+      const url = await uploadTenantLogo(activeTenant.id, file);
+      setTenantLogo(url);
+      toast.success('Logo carregado!');
+    } catch {
+      toast.error('Falha ao enviar logo. Tente novamente.');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────
   return (
     <div style={{ backgroundColor: '#031D3C', minHeight: '100vh', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
+      {cropSrc && (
+        <LogoCropModal
+          imageSrc={cropSrc}
+          onConfirm={handleCropConfirm}
+          onCancel={() => setCropSrc(null)}
+        />
+      )}
 
       {/* ── Topbar ── */}
       <div style={{ background: '#021340', borderBottom: '1px solid rgba(255,255,255,0.07)', padding: '0 20px', height: 32, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'sticky', top: 0, zIndex: 50 }}>
@@ -639,12 +665,19 @@ export default function ClientAdminPanel({
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Branding */}
-                <form onSubmit={e => { e.preventDefault(); onUpdateTenantDetails(activeTenant.id, { name: tenantName, logo: tenantLogo, phone: tenantPhone, address: tenantAddress, instagram: tenantInstagram, businessDays: editedDays, businessHoursByDay: editedHoursByDay, businessHours: editedHoursByDay['seg'] || [] }); toast.success('Configurações salvas!'); }} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }} className="space-y-5">
+                <form onSubmit={async e => { e.preventDefault(); try { await onUpdateTenantDetails(activeTenant.id, { name: tenantName, logo: tenantLogo, phone: tenantPhone, address: tenantAddress, instagram: tenantInstagram, businessDays: editedDays, businessHoursByDay: editedHoursByDay, businessHours: editedHoursByDay['seg'] || [] }); toast.success('Configurações salvas!'); } catch { toast.error('Erro ao salvar. Tente novamente.'); } }} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }} className="space-y-5">
                   <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Identidade Visual</h4>
-                  <input ref={logoInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e => { if(e.target.files?.[0]) setTenantLogo(await fileToDataURL(e.target.files[0])); }} />
+                  <input ref={logoInputRef as any} type="file" className="hidden" accept="image/*" onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onloadend = () => setCropSrc(reader.result as string);
+                    reader.readAsDataURL(file);
+                    e.target.value = '';
+                  }} />
                   <div style={{ display: 'flex', gap: 12 }}>
-                    <button type="button" onClick={() => logoInputRef.current?.click()} style={{ width: 52, height: 52, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, cursor: 'pointer', flexShrink: 0 }}>
-                      {tenantLogo.startsWith('data:') ? <img src={tenantLogo} alt="logo" style={{ width: 42, height: 42, objectFit: 'cover', borderRadius: 10 }} /> : tenantLogo}
+                    <button type="button" onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo} style={{ width: 52, height: 52, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, cursor: uploadingLogo ? 'wait' : 'pointer', flexShrink: 0, opacity: uploadingLogo ? 0.6 : 1 }}>
+                      {uploadingLogo ? <RefreshCw style={{ width: 20, height: 20, color: 'rgba(255,255,255,0.55)', animation: 'spin 1s linear infinite' }} /> : (tenantLogo.startsWith('http') || tenantLogo.startsWith('data:')) ? <img src={tenantLogo} alt="logo" style={{ width: 42, height: 42, objectFit: 'cover', borderRadius: 10 }} /> : tenantLogo}
                     </button>
                     <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
                       {['💈','💅','✂️','💄','🧖','💇','🧔','🌟','👑','🔥'].map(em => (

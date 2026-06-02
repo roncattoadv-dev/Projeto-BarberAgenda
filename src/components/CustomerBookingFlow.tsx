@@ -366,28 +366,26 @@ export default function CustomerBookingFlow({
             {step === 1 && (
               <div className="flex flex-col items-center py-6 px-4 max-w-md mx-auto w-full transition-all animate-fade-in">
                 
-                {/* Circular Brand Initials + Scissors Ring Logo */}
-                <div className="relative w-32 h-32 rounded-full border border-blue-600 flex flex-col items-center justify-center mb-8 bg-white shadow-sm">
-                  {/* Scissors Icon floating on top-right trim */}
-                  <div className="absolute top-[8px] right-[8px] transform rotate-45 text-blue-600">
-                    <Scissors className="w-5 h-5 fill-current" />
-                  </div>
-
-                  {/* Brand Initials */}
-                  <span className="text-[38px] font-light leading-none tracking-tight text-blue-600 font-sans">
-                    {getInitials(activeTenant.name)}
-                  </span>
-
-                  {/* Tenant Capitalized text spaced */}
-                  <span className="text-[9px] font-bold text-blue-600 tracking-[0.2em] uppercase mt-2.5 text-center max-w-[110px] leading-tight">
-                    {activeTenant.name.replace(/barbearia|salao|studio|estetica/gi, '').trim()}
-                  </span>
-
-                  {/* Barber label */}
-                  <span className="text-[7px] font-semibold text-blue-405 tracking-[0.3em] uppercase mt-1 font-mono leading-none">
-                    BARBEARIA
-                  </span>
-                </div>
+                {/* Circular Brand Logo / Initials */}
+                {(activeTenant.logo?.startsWith('http') || activeTenant.logo?.startsWith('data:'))
+                  ? <div className="w-32 h-32 rounded-full overflow-hidden mb-8 shadow-sm border border-blue-100 flex-shrink-0">
+                      <img src={activeTenant.logo} alt={activeTenant.name} className="w-full h-full object-cover" />
+                    </div>
+                  : <div className="relative w-32 h-32 rounded-full border border-blue-600 flex flex-col items-center justify-center mb-8 bg-white shadow-sm">
+                      <div className="absolute top-[8px] right-[8px] transform rotate-45 text-blue-600">
+                        <Scissors className="w-5 h-5 fill-current" />
+                      </div>
+                      <span className="text-[38px] font-light leading-none tracking-tight text-blue-600 font-sans">
+                        {getInitials(activeTenant.name)}
+                      </span>
+                      <span className="text-[9px] font-bold text-blue-600 tracking-[0.2em] uppercase mt-2.5 text-center max-w-[110px] leading-tight">
+                        {activeTenant.name.replace(/barbearia|salao|studio|estetica/gi, '').trim()}
+                      </span>
+                      <span className="text-[7px] font-semibold text-blue-405 tracking-[0.3em] uppercase mt-1 font-mono leading-none">
+                        BARBEARIA
+                      </span>
+                    </div>
+                }
 
                 {/* History link button at top container of Step 1 */}
                 <div className="w-full flex justify-end mb-4">

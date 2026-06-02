@@ -155,6 +155,17 @@ export async function updateProductStock(id: string, stock: number) {
   if (error) throw error;
 }
 
+// ── TENANT LOGO STORAGE ────────────────────────────────────────────────────────
+export async function uploadTenantLogo(tenantId: string, file: File): Promise<string> {
+  const path = `${tenantId}/logo`;
+  const { error } = await supabase.storage
+    .from('tenant-logos')
+    .upload(path, file, { upsert: true, contentType: file.type });
+  if (error) throw error;
+  const { data } = supabase.storage.from('tenant-logos').getPublicUrl(path);
+  return data.publicUrl;
+}
+
 // ── AUDIT LOG ──────────────────────────────────────────────────────────────────
 export async function logAudit(action: string, details: string, tenantId: string | null, userName: string, userId?: string) {
   await supabase.from('audit_logs').insert({ action, details, tenant_id: tenantId, user_name: userName, user_id: userId ?? null, ip: null });
