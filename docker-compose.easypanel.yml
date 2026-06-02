@@ -73,9 +73,9 @@ services:
       ASAAS_API_KEY: ${ASAAS_API_KEY}
       ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_TOKEN}
       CORS_ORIGIN: https://barberflow-barberflow.i9inu5.easypanel.host
-      # Evolution Go — credenciais ficam apenas no servidor, nunca expostas ao browser
-      EVO_URL: ${EVO_URL}
-      EVO_GLOBAL_KEY: ${EVO_GLOBAL_KEY}
+      # Evolution Go — URL interna do EasyPanel (nunca exposta ao browser)
+      EVO_URL: http://evolutionapi_evogo:8080
+      EVO_GLOBAL_KEY: 8f91c3d5-e2a7-4b60-9d88-1c4e7f0b5a22
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
       interval: 30s
