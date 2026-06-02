@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CustomerBookingFlow from '../../components/CustomerBookingFlow';
 import { supabase } from '../../lib/supabase';
-import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, updateAppointmentStatus, upsertCustomerByPhone } from '../../lib/db';
+import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, updateAppointmentStatus, upsertCustomerByPhone, notifyAppointmentWhatsApp } from '../../lib/db';
 import type { Tenant, Service, Professional, Appointment, Customer } from '../../types';
 
 export default function BookingPage() {
@@ -118,6 +118,7 @@ export default function BookingPage() {
             setCustomers(prev => prev.find(x => x.id === customer.id) ? prev : [customer, ...prev]);
             const c = await createAppointment({ ...a, customerId: customer.id });
             setAppointments(p => [c, ...p]);
+            notifyAppointmentWhatsApp(a.tenantId, c.id, '').catch(() => {});
           }}
           onUpdateAppointmentStatus={async (id, status) => {
             await updateAppointmentStatus(id, status);

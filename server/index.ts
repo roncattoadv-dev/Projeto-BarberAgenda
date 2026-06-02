@@ -40,6 +40,12 @@ const supabasePublic = createClient(SUPABASE_URL, SUPABASE_KEY);
 const app = express();
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use(express.json());
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/api/whatsapp')) {
+    console.log(`[HTTP] ${req.method} ${req.path} auth=${req.headers.authorization?.slice(0,20)}...`);
+  }
+  next();
+});
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
@@ -348,10 +354,11 @@ app.put('/api/whatsapp/templates', verifyTenant, async (req, res) => {
 // POST /api/whatsapp/notify
 // Envia confirmação de agendamento via WhatsApp.
 // Chamado pelo frontend após criar um appointment.
+// Não exige JWT — segurança garantida pela validação tenantId+appointmentId no DB.
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/whatsapp/notify', verifyTenant, async (req, res) => {
-  const tenantId = (req as any).verifiedTenantId as string;
-  const { appointmentId } = req.body as { appointmentId?: string };
+app.post('/api/whatsapp/notify', async (req, res) => {
+  const { tenantId, appointmentId } = req.body as { tenantId?: string; appointmentId?: string };
+  if (!tenantId || !appointmentId) { res.status(400).json({ error: 'tenantId e appointmentId obrigatórios.' }); return; }
   if (!appointmentId) { res.status(400).json({ error: 'appointmentId obrigatório.' }); return; }
 
   try {

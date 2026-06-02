@@ -145,12 +145,7 @@ export default function TenantAdminPage() {
           onAddAppointment={async a => {
             const c = await createAppointment(a);
             setAppointments(p => [c, ...p]);
-            // Dispara confirmação WhatsApp em background (não bloqueia UI)
-            supabase.auth.getSession().then(({ data: { session } }) => {
-              if (session?.access_token) {
-                notifyAppointmentWhatsApp(a.tenantId, c.id, session.access_token).catch(() => {});
-              }
-            });
+            notifyAppointmentWhatsApp(a.tenantId, c.id, '').catch(() => {});
           }}
           onUpdateAppointmentStatus={async (id, status) => {
             await updateAppointmentStatus(id, status);

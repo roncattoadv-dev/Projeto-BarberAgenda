@@ -108,11 +108,11 @@ export async function createAppointment(a: Omit<Appointment, 'id'>): Promise<App
   return mapAppointment(data);
 }
 
-export async function notifyAppointmentWhatsApp(tenantId: string, appointmentId: string, token: string): Promise<void> {
+export async function notifyAppointmentWhatsApp(tenantId: string, appointmentId: string, _token?: string): Promise<void> {
   const apiUrl = ((window as any).__BARBER_CONFIG__?.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
   await fetch(`${apiUrl}/api/whatsapp/notify`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tenantId, appointmentId }),
   });
 }
