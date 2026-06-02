@@ -635,6 +635,59 @@ async function cleanupStaleInstances(): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Job a cada 1 min: envia confirmação para agendamentos novos ainda não notificados
+// ─────────────────────────────────────────────────────────────────────────────
+async function sendConfirmations(): Promise<void> {
+  if (!EVO_URL || !EVO_GLOBAL_KEY) return;
+
+  // Agendamentos criados nos últimos 10 minutos sem confirmação enviada
+  const since = new Date(Date.now() - 10 * 60_000).toISOString();
+  const { data: appts } = await supabase
+    .from('appointments')
+    .select('*, tenants(id, name, slug, wpp_template_confirm, wpp_booking_url), services(name), professionals(name)')
+    .eq('wpp_confirm_sent', false)
+    .neq('status', 'cancelled')
+    .gte('created_at', since);
+
+  for (const appt of appts ?? []) {
+    const tenant = (appt.tenants as any);
+    if (!tenant) continue;
+    const phone = appt.customer_phone?.replace(/\D/g, '');
+    if (!phone) continue;
+
+    try {
+      const code = bookingCode(appt.id);
+      const link = tenant.wpp_booking_url
+        ? tenant.wpp_booking_url.replace('{slug}', tenant.slug).replace('{codigo}', code)
+        : '';
+      const vars = {
+        nome:         appt.customer_name                  ?? '',
+        salao:        tenant.name                         ?? '',
+        servico:      (appt.services as any)?.name        ?? '',
+        data:         formatDatePT(appt.scheduled_date, appt.scheduled_time?.slice(0, 5) ?? ''),
+        hora:         appt.scheduled_time?.slice(0, 5)    ?? '',
+        duracao:      String(appt.duration_minutes),
+        profissional: (appt.professionals as any)?.name   ?? '',
+        codigo:       code,
+        link,
+      };
+      const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
+      const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
+
+      await evoInstance(instanceToken, '/send/text', {
+        method: 'POST',
+        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+      });
+
+      await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appt.id);
+      console.log(`[Confirm] Confirmação enviada: ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time?.slice(0,5)})`);
+    } catch (err: any) {
+      console.error(`[Confirm] Erro ao enviar para ${appt.customer_name}:`, err.message);
+    }
+  }
+}
+
 // Job a cada 5 min: envia lembrete 1h antes do atendimento
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendReminders(): Promise<void> {
@@ -715,6 +768,10 @@ app.listen(PORT, () => {
     cleanupStaleInstances();
     setInterval(cleanupStaleInstances, 24 * 60 * 60 * 1000);
   }, 60_000);
+
+  // Confirmações de agendamentos novos: a cada 1 min
+  sendConfirmations(); // roda imediatamente no boot
+  setInterval(sendConfirmations, 60_000);
 
   // Lembretes 1h antes: a cada 5 min
   setInterval(sendReminders, 5 * 60_000);
