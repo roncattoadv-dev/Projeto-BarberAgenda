@@ -364,7 +364,12 @@ app.get('/api/whatsapp/status', verifyTenant, async (req, res) => {
     const data = await evoInstance<{ data: { Connected: boolean; LoggedIn: boolean; Name: string } }>(
       instanceToken, `/instance/status?instanceId=${tenant.slug}`
     );
-    res.json({ ok: true, connected: !!data?.data?.Connected, loggedIn: !!data?.data?.LoggedIn, name: data?.data?.Name || null });
+    const loggedIn = !!data?.data?.LoggedIn;
+    // Reconectou → limpa o timestamp de desconexão
+    if (loggedIn) {
+      await supabase.from('tenants').update({ evo_disconnected_at: null }).eq('id', tenantId);
+    }
+    res.json({ ok: true, connected: !!data?.data?.Connected, loggedIn, name: data?.data?.Name || null });
   } catch {
     res.json({ ok: true, connected: false, loggedIn: false, name: null });
   }
@@ -420,6 +425,8 @@ app.post('/api/whatsapp/disconnect', verifyTenant, async (req, res) => {
       method: 'POST',
       body: JSON.stringify({ instanceId: tenant.slug }),
     });
+    // Registra quando foi desconectado para o job de limpeza de 30 dias
+    await supabase.from('tenants').update({ evo_disconnected_at: new Date().toISOString() }).eq('id', tenantId);
     res.json({ ok: true });
   } catch (err: any) {
     console.error('[WhatsApp Disconnect]', err.message);
@@ -452,6 +459,37 @@ app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Job diário: remove instâncias EvoGo desconectadas há mais de 30 dias
+// ─────────────────────────────────────────────────────────────────────────────
+async function cleanupStaleInstances(): Promise<void> {
+  if (!EVO_URL || !EVO_GLOBAL_KEY) return;
+
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: stale } = await supabase
+    .from('tenants')
+    .select('id, slug')
+    .not('evo_disconnected_at', 'is', null)
+    .lt('evo_disconnected_at', cutoff);
+
+  if (!stale?.length) { console.log('[Cleanup] Nenhuma instância para remover.'); return; }
+
+  const all = await evoAdmin<{ data: any[] }>('/instance/all').catch(() => ({ data: [] }));
+
+  for (const tenant of stale) {
+    try {
+      const inst = (all.data ?? []).find((i: any) => i.name === tenant.slug);
+      if (inst?.id) {
+        await evoAdmin(`/instance/delete/${inst.id}`, { method: 'DELETE' });
+        console.log(`[Cleanup] Instância "${tenant.slug}" removida (desconectada > 30 dias).`);
+      }
+      await supabase.from('tenants').update({ evo_disconnected_at: null }).eq('id', tenant.id);
+    } catch (err: any) {
+      console.error(`[Cleanup] Erro ao remover "${tenant.slug}":`, err.message);
+    }
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`[Server] BarberFlow API rodando na porta ${PORT}`);
@@ -459,4 +497,10 @@ app.listen(PORT, () => {
   console.log(`[Server] Asaas: ${process.env.ASAAS_API_KEY ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Modo: ${process.env.ASAAS_SANDBOX === 'true' ? 'SANDBOX' : 'PRODUÇÃO'}`);
   console.log(`[Server] EvoGo: ${EVO_URL && EVO_GLOBAL_KEY ? '✓' : '✗ não configurado'}`);
+
+  // Roda o cleanup 1 min após o boot e depois a cada 24h
+  setTimeout(() => {
+    cleanupStaleInstances();
+    setInterval(cleanupStaleInstances, 24 * 60 * 60 * 1000);
+  }, 60_000);
 });
