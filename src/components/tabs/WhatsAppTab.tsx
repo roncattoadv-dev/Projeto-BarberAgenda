@@ -30,31 +30,32 @@ interface Props {
 type SendState = 'idle' | 'sending' | 'done' | 'error';
 type ActiveView = 'connection' | 'templates' | 'dispatch' | 'config';
 
-// Lê/salva config local — prioridade: localStorage > window runtime > vazio
-const LS_KEY = 'barber_evo_config';
+// Lê/salva config local por tenant — prioridade: localStorage > window runtime > slug
 interface EvoConfig { url: string; instance: string; apikey: string; globalApiKey: string; }
 
-function getWindowDefaults(): EvoConfig {
+function getLsKey(tenantId: string) { return 'barber_evo_cfg_' + tenantId; }
+
+function getWindowDefaults(tenantSlug: string): EvoConfig {
   const w = (window as any).__BARBER_CONFIG__ || {};
   return {
-    url:          (w.EVO_URL        || EVO_URL      || '').replace(/\/$/, ''),
-    instance:     (w.EVO_INSTANCE  || EVO_INSTANCE || 'barberflow'),
-    apikey:       (w.EVO_APIKEY   || EVO_APIKEY   || ''),
+    url:          (w.EVO_URL         || EVO_URL    || '').replace(/\/$/, ''),
+    instance:     tenantSlug,   // cada barbearia usa seu slug como nome de instância
+    apikey:       '',            // admin define o token da instância no Config
     globalApiKey: (w.EVO_GLOBAL_KEY || ''),
   };
 }
 
-function loadConfig(): EvoConfig {
-  const defaults = getWindowDefaults();
+function loadConfig(tenantId: string, tenantSlug: string): EvoConfig {
+  const defaults = getWindowDefaults(tenantSlug);
   try {
-    const saved = localStorage.getItem(LS_KEY);
+    const saved = localStorage.getItem(getLsKey(tenantId));
     if (saved) return { ...defaults, ...JSON.parse(saved) };
   } catch {}
   return defaults;
 }
 
-function saveConfig(cfg: EvoConfig) {
-  localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+function saveConfig(tenantId: string, cfg: EvoConfig) {
+  localStorage.setItem(getLsKey(tenantId), JSON.stringify(cfg));
 }
 
 // Aplica config dinâmica sobrescrevendo as constantes do módulo para chamadas de fetch
@@ -79,8 +80,8 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   const toast = useToast();
 
   // ── Config Evo Go ──────────────────────────────────────────
-  const [cfg, setCfg] = useState<EvoConfig>(loadConfig);
-  const [cfgDraft, setCfgDraft] = useState<EvoConfig>(loadConfig);
+  const [cfg, setCfg] = useState<EvoConfig>(() => loadConfig(activeTenant.id, activeTenant.slug));
+  const [cfgDraft, setCfgDraft] = useState<EvoConfig>(() => loadConfig(activeTenant.id, activeTenant.slug));
   const isConfigured = !!(cfg.url && cfg.apikey);
 
   // ── Estado de conexão ──────────────────────────────────────
@@ -242,7 +243,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     if (!cfgDraft.url || !cfgDraft.apikey) { toast.error('URL e API Key são obrigatórios.'); return; }
     const cleaned = { ...cfgDraft, url: cfgDraft.url.replace(/\/$/, '') };
     setCfg(cleaned);
-    saveConfig(cleaned);
+    saveConfig(activeTenant.id, cleaned);
     toast.success('Configuração salva! Verificando conexão…');
     setTimeout(refreshStatus, 500);
   };
