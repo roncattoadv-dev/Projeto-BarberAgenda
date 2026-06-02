@@ -43,10 +43,6 @@ services:
       # URL pública da API Express
       API_URL: https://barberflow-api.i9inu5.easypanel.host
       SITE_URL: https://barberflow-barberflow.i9inu5.easypanel.host
-      EVO_URL: ${EVO_URL}
-      EVO_INSTANCE: ${EVO_INSTANCE:-barberflow}
-      EVO_APIKEY: ${EVO_APIKEY}
-      EVO_GLOBAL_KEY: ${EVO_GLOBAL_KEY}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
       interval: 30s
@@ -77,6 +73,9 @@ services:
       ASAAS_API_KEY: ${ASAAS_API_KEY}
       ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_TOKEN}
       CORS_ORIGIN: https://barberflow-barberflow.i9inu5.easypanel.host
+      # Evolution Go — credenciais ficam apenas no servidor, nunca expostas ao browser
+      EVO_URL: ${EVO_URL}
+      EVO_GLOBAL_KEY: ${EVO_GLOBAL_KEY}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
       interval: 30s

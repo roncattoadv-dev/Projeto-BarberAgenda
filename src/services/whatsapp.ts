@@ -185,6 +185,81 @@ export async function setWebhook(webhookUrl: string, instance = EVO_INSTANCE): P
   });
 }
 
+// ── Proxy de servidor (sem expor credenciais EvoGo ao browser) ────────────────
+
+function getApiUrl(): string {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  const env = (import.meta as any).env || {};
+  return (w.API_URL || env.VITE_API_URL || '').replace(/\/$/, '');
+}
+
+async function serverFetch<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(getApiUrl() + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      ...(options.headers as object ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`[${res.status}] ${text}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** Verifica status da instância via servidor */
+export async function checkStatusServer(tenantId: string, token: string): Promise<ConnectionState> {
+  try {
+    const data = await serverFetch<{ ok: boolean; connected: boolean; loggedIn: boolean }>(
+      `/api/whatsapp/status?tenantId=${tenantId}`, token
+    );
+    if (data.loggedIn)  return 'open';
+    if (data.connected) return 'connecting';
+    return 'close';
+  } catch {
+    return 'error';
+  }
+}
+
+/** Garante instância e retorna QR Code via servidor */
+export async function fetchQRCodeServer(tenantId: string, token: string): Promise<QRCodeData | null> {
+  const data = await serverFetch<{ ok: boolean; qrcode: string | null; code: string }>(
+    `/api/whatsapp/qr?tenantId=${tenantId}`, token
+  );
+  if (!data.qrcode) return null;
+  const base64 = data.qrcode.startsWith('data:') ? data.qrcode : `data:image/png;base64,${data.qrcode}`;
+  return { base64, code: data.code || '' };
+}
+
+/** Desconecta e recria instância via servidor */
+export async function disconnectServer(tenantId: string, token: string): Promise<void> {
+  await serverFetch('/api/whatsapp/disconnect', token, {
+    method: 'POST',
+    body: JSON.stringify({ tenantId }),
+  });
+}
+
+/** Envia mensagem de texto via servidor */
+export async function sendWhatsAppServer(
+  tenantId: string,
+  token:    string,
+  phone:    string,
+  message:  string,
+): Promise<WppStatus> {
+  try {
+    await serverFetch('/api/whatsapp/send', token, {
+      method: 'POST',
+      body: JSON.stringify({ tenantId, phone: normalizePhone(phone), message }),
+    });
+    return 'sent';
+  } catch (err) {
+    console.error('[WApp Server Send]', err);
+    return 'error';
+  }
+}
+
 // ── Templates de mensagem ──────────────────────────────────────────────────────
 export interface ApptData {
   customerName:     string;

@@ -17,10 +17,12 @@ import {
 } from './asaas';
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const PORT            = parseInt(process.env.SERVER_PORT || '4000');
+const PORT            = parseInt(process.env.PORT || process.env.SERVER_PORT || '4000');
 const SUPABASE_URL    = process.env.SUPABASE_URL    || '';
 const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY || ''; // service_role key (bypass RLS)
 const WEBHOOK_SECRET  = process.env.ASAAS_WEBHOOK_SECRET || '';
+const EVO_URL         = (process.env.EVO_URL || '').replace(/\/$/, '');
+const EVO_GLOBAL_KEY  = process.env.EVO_GLOBAL_KEY || process.env.EVO_APIKEY || '';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('[Server] SUPABASE_URL e SUPABASE_SERVICE_KEY são obrigatórios');
@@ -263,10 +265,188 @@ app.post('/api/webhook/asaas', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WhatsApp / Evolution Go — helpers de servidor
+// O EVO_GLOBAL_KEY nunca é exposto ao frontend.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Token determinístico por tenant: slug + primeiros 8 chars do id sem hífens */
+function evoInstanceToken(slug: string, tenantId: string): string {
+  return slug + '-' + tenantId.replace(/-/g, '').slice(0, 8);
+}
+
+/** Fetch genérico contra o EvoGo usando a global key */
+async function evoFetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+  if (!EVO_URL || !EVO_GLOBAL_KEY) throw new Error('EvoGo não configurado no servidor (EVO_URL / EVO_GLOBAL_KEY).');
+  const res = await fetch(`${EVO_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'apikey': EVO_GLOBAL_KEY, ...(options.headers as object ?? {}) },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`[EvoGo ${res.status}] ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** Garante que a instância existe; cria se não existir */
+async function ensureInstance(instanceName: string, token: string): Promise<void> {
+  try {
+    await evoFetch(`/instance/status?instanceId=${instanceName}`);
+  } catch {
+    await evoFetch('/instance/create', {
+      method: 'POST',
+      body: JSON.stringify({ name: instanceName, token }),
+    });
+  }
+}
+
+/** Middleware: verifica JWT Supabase e confirma acesso ao tenant solicitado */
+async function verifyTenant(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): Promise<void> {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Token de autenticação não fornecido.' });
+    return;
+  }
+  const { data: { user }, error } = await supabasePublic.auth.getUser(auth.slice(7));
+  if (error || !user) {
+    res.status(401).json({ error: 'Token inválido ou expirado.' });
+    return;
+  }
+  const tenantId = (req.query.tenantId as string) || (req.body?.tenantId as string);
+  if (!tenantId) {
+    res.status(400).json({ error: 'tenantId é obrigatório.' });
+    return;
+  }
+  const role         = user.user_metadata?.role as string | undefined;
+  const userTenantId = user.user_metadata?.tenant_id as string | undefined;
+  if (role !== 'super_admin' && userTenantId !== tenantId) {
+    res.status(403).json({ error: 'Sem permissão para este tenant.' });
+    return;
+  }
+  (req as any).verifiedTenantId = tenantId;
+  next();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/whatsapp/status?tenantId=xxx
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/whatsapp/status', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
+
+  if (!EVO_URL || !EVO_GLOBAL_KEY) {
+    res.json({ ok: true, connected: false, loggedIn: false, name: null });
+    return;
+  }
+
+  try {
+    const data = await evoFetch<{ data: { Connected: boolean; LoggedIn: boolean; Name: string } }>(
+      `/instance/status?instanceId=${tenant.slug}`
+    );
+    res.json({ ok: true, connected: !!data?.data?.Connected, loggedIn: !!data?.data?.LoggedIn, name: data?.data?.Name || null });
+  } catch {
+    res.json({ ok: true, connected: false, loggedIn: false, name: null });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/whatsapp/qr?tenantId=xxx
+// Auto-cria a instância se necessário e retorna o QR Code.
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/whatsapp/qr', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
+
+  if (!EVO_URL || !EVO_GLOBAL_KEY) {
+    res.status(503).json({ error: 'WhatsApp não configurado. Contate o suporte.' });
+    return;
+  }
+
+  const instanceName  = tenant.slug;
+  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+
+  try {
+    await ensureInstance(instanceName, instanceToken);
+    const data = await evoFetch<{ data: { Qrcode: string; Code: string } }>(
+      `/instance/qr?instanceId=${instanceName}`
+    );
+    if (data?.data?.Qrcode) {
+      res.json({ ok: true, qrcode: data.data.Qrcode, code: data.data.Code || '' });
+    } else {
+      // Já conectado — sem QR
+      res.json({ ok: true, qrcode: null, code: '' });
+    }
+  } catch (err: any) {
+    console.error('[WhatsApp QR]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/whatsapp/disconnect
+// Deleta e recria a instância (equivalente a desconectar).
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/whatsapp/disconnect', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
+
+  const instanceName  = tenant.slug;
+  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+
+  try {
+    const all = await evoFetch<{ data: any[] }>('/instance/all');
+    const inst = (all.data ?? []).find((i: any) => i.name === instanceName);
+    if (inst?.id) {
+      await evoFetch(`/instance/delete/${inst.id}`, { method: 'DELETE' });
+    }
+    await evoFetch('/instance/create', {
+      method: 'POST',
+      body: JSON.stringify({ name: instanceName, token: instanceToken }),
+    });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[WhatsApp Disconnect]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/whatsapp/send
+// Envia mensagem de texto via instância do tenant.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { phone, message } = req.body as { phone?: string; message?: string };
+  if (!phone || !message) { res.status(400).json({ error: 'phone e message são obrigatórios.' }); return; }
+
+  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
+
+  try {
+    await evoFetch('/send/text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId: tenant.slug, number: phone, text: message }),
+    });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[WhatsApp Send]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`[Server] BarberFlow API rodando na porta ${PORT}`);
   console.log(`[Server] Supabase: ${SUPABASE_URL ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Asaas: ${process.env.ASAAS_API_KEY ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Modo: ${process.env.ASAAS_SANDBOX === 'true' ? 'SANDBOX' : 'PRODUÇÃO'}`);
+  console.log(`[Server] EvoGo: ${EVO_URL && EVO_GLOBAL_KEY ? '✓' : '✗ não configurado'}`);
 });
