@@ -35,18 +35,20 @@ interface EvoConfig { url: string; instance: string; apikey: string; globalApiKe
 
 function getLsKey(tenantId: string) { return 'barber_evo_cfg_' + tenantId; }
 
-function getWindowDefaults(tenantSlug: string): EvoConfig {
+function getWindowDefaults(tenantId: string, tenantSlug: string): EvoConfig {
   const w = (window as any).__BARBER_CONFIG__ || {};
+  // Token gerado deterministicamente: slug + primeiros 8 chars do tenantId
+  const autoToken = tenantSlug + '-' + tenantId.replace(/-/g, '').slice(0, 8);
   return {
     url:          (w.EVO_URL         || EVO_URL    || '').replace(/\/$/, ''),
-    instance:     tenantSlug,   // cada barbearia usa seu slug como nome de instância
-    apikey:       '',            // admin define o token da instância no Config
+    instance:     tenantSlug,
+    apikey:       autoToken,
     globalApiKey: (w.EVO_GLOBAL_KEY || ''),
   };
 }
 
 function loadConfig(tenantId: string, tenantSlug: string): EvoConfig {
-  const defaults = getWindowDefaults(tenantSlug);
+  const defaults = getWindowDefaults(tenantId, tenantSlug);
   try {
     const saved = localStorage.getItem(getLsKey(tenantId));
     if (saved) return { ...defaults, ...JSON.parse(saved) };
@@ -688,7 +690,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
                 style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                 Salvar e Verificar Conexão
               </button>
-              <button onClick={() => { setCfgDraft(getWindowDefaults()); }}
+              <button onClick={() => { setCfgDraft(getWindowDefaults(activeTenant.id, activeTenant.slug)); }}
                 style={{ width: '100%', padding: '11px', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', fontWeight: 600, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                 Restaurar valores das variáveis de ambiente
               </button>
