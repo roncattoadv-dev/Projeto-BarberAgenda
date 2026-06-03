@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Plus, Check, X, RefreshCw, MessageSquare, Clock, MessageCircle, Bell } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Check, X, RefreshCw, MessageSquare, Clock } from 'lucide-react';
 import { Appointment, Service, Professional, Customer } from '../../types';
 
 interface Props {
@@ -168,15 +168,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                           <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.88)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.customerName}</span>
                           <span style={{ fontSize: 10, fontFamily: 'monospace', color: sc.text, marginLeft: 'auto', flexShrink: 0 }}>{appt.time}</span>
                         </div>
-                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{srv?.name} · {prof?.name}</span>
-                          <span title={appt.wppConfirmSent ? 'Confirmação enviada' : 'Confirmação não enviada'} style={{ flexShrink: 0 }}>
-                            <MessageCircle size={10} style={{ color: appt.wppConfirmSent ? '#4ade80' : 'rgba(255,255,255,0.2)' }} />
-                          </span>
-                          <span title={appt.wppReminderSent ? 'Lembrete enviado' : 'Lembrete não enviado'} style={{ flexShrink: 0 }}>
-                            <Bell size={10} style={{ color: appt.wppReminderSent ? '#4ade80' : 'rgba(255,255,255,0.2)' }} />
-                          </span>
-                        </div>
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{srv?.name} · {prof?.name}</div>
 
                         {/* Hover actions */}
                         <AnimatePresence>
