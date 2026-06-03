@@ -22,7 +22,7 @@ import WhatsAppTab     from './tabs/WhatsAppTab';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Tab = 'agenda' | 'agendamentos' | 'clientes' | 'automacoes' | 'configuracoes';
-type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro';
+type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro' | 'assinatura' | 'conta';
 
 interface Props {
   activeTenant: Tenant;
@@ -532,7 +532,7 @@ export default function ClientAdminPanel({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                   {/* Sub-nav */}
                   <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0, overflowX: 'auto' }} className="no-scrollbar">
-                    {([['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro']] as [CfgTab, string][]).map(([id, label]) => (
+                    {([['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro'], ['assinatura','Assinatura'], ['conta','Conta']] as [CfgTab, string][]).map(([id, label]) => (
                       <button key={id} onClick={() => setCfgTab(id)}
                         style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: cfgTab === id ? '2px solid #ffffff' : '2px solid transparent', color: cfgTab === id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', marginBottom: -1, whiteSpace: 'nowrap', transition: 'color 150ms' }}>
                         {label}
@@ -997,66 +997,129 @@ export default function ClientAdminPanel({
                       {cfgTab === 'financeiro' && (
                         <FinanceiroTab activeTenant={activeTenant} myPayments={myPayments} myProfessionals={myProfessionals} myAppointments={myAppointments} myServices={myServices} onAddPayment={onAddPayment} />
                       )}
+
+                      {cfgTab === 'assinatura' && (() => {
+                        const isTrial = activeTenant.plan === 'trial';
+                        const isActive = activeTenant.status === 'active';
+                        const endDate = isTrial ? activeTenant.trialEndsAt : activeTenant.subscriptionEndsAt;
+                        const daysLeft = endDate ? Math.ceil((new Date(endDate).getTime() - new Date().setHours(0,0,0,0)) / 86400000) : null;
+                        const fmtDate = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+                        const planLabel: Record<string, string> = { trial: 'Período de Teste', mensal: 'Mensal', semestral: 'Semestral', anual: 'Anual' };
+                        const statusColor = activeTenant.status === 'active' ? '#22c55e' : activeTenant.status === 'trial' ? '#f59e0b' : '#ef4444';
+                        const statusLabel = activeTenant.status === 'active' ? 'Ativo' : activeTenant.status === 'trial' ? 'Período de Teste' : 'Suspenso';
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {/* Status card */}
+                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 6px' }}>Plano atual</p>
+                                  <p style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{planLabel[activeTenant.plan] ?? activeTenant.plan}</p>
+                                </div>
+                                <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44` }}>
+                                  {statusLabel}
+                                </span>
+                              </div>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '14px 16px' }}>
+                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>{isTrial ? 'Trial encerra em' : 'Próxima renovação'}</p>
+                                  <p style={{ fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{fmtDate(endDate)}</p>
+                                  {daysLeft !== null && (
+                                    <p style={{ fontSize: 11, color: daysLeft <= 5 ? '#f59e0b' : 'rgba(255,255,255,0.35)', margin: '4px 0 0', fontWeight: 600 }}>
+                                      {daysLeft > 0 ? `${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}` : 'Vence hoje'}
+                                    </p>
+                                  )}
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '14px 16px' }}>
+                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>Valor mensal</p>
+                                  <p style={{ fontSize: 16, fontWeight: 700, color: '#4ade80', margin: 0 }}>
+                                    {activeTenant.mrr > 0 ? `R$ ${Number(activeTenant.mrr).toFixed(2).replace('.', ',')}` : isTrial ? 'Grátis' : '—'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {isTrial && (
+                                <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '14px 16px' }}>
+                                  <p style={{ fontSize: 13, color: '#fcd34d', margin: 0, lineHeight: 1.6 }}>
+                                    Você está no período de teste gratuito. Após o término, será necessário assinar um plano para continuar usando o BarberFlow.
+                                  </p>
+                                </div>
+                              )}
+
+                              {isActive && !isTrial && (
+                                <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.18)', borderRadius: 12, padding: '14px 16px' }}>
+                                  <p style={{ fontSize: 13, color: '#86efac', margin: 0, lineHeight: 1.6 }}>
+                                    Sua assinatura está ativa. O pagamento é processado automaticamente via Asaas.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {cfgTab === 'conta' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 16, padding: 24 }}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(239,68,68,0.15)', paddingBottom: 12, margin: '0 0 16px' }}>Excluir Conta</h4>
+
+                            {deleteStep === 'idle' && (
+                              <div>
+                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7, margin: '0 0 12px' }}>
+                                  Em conformidade com a <strong style={{ color: 'rgba(255,255,255,0.7)' }}>LGPD (Lei 13.709/2018)</strong>, você pode solicitar a exclusão permanente de todos os seus dados, incluindo agendamentos, clientes, serviços, profissionais e histórico financeiro.
+                                </p>
+                                <p style={{ fontSize: 12, color: 'rgba(239,68,68,0.8)', margin: '0 0 16px' }}>⚠️ Esta ação é irreversível e não pode ser desfeita.</p>
+                                <button onClick={() => setDeleteStep('confirm')}
+                                  style={{ padding: '8px 20px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                  Solicitar exclusão de dados
+                                </button>
+                              </div>
+                            )}
+
+                            {deleteStep === 'confirm' && (
+                              <div>
+                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.7, margin: '0 0 8px' }}>Ao confirmar, serão excluídos permanentemente:</p>
+                                <ul style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.9, margin: '0 0 20px', paddingLeft: 20 }}>
+                                  <li>Todos os agendamentos e histórico</li>
+                                  <li>Cadastro de clientes</li>
+                                  <li>Serviços e profissionais</li>
+                                  <li>Dados financeiros</li>
+                                  <li>Assinatura e conta de acesso</li>
+                                </ul>
+                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', margin: '0 0 10px' }}>
+                                  Digite <strong style={{ color: '#fca5a5' }}>EXCLUIR</strong> para confirmar:
+                                </p>
+                                <div style={{ display: 'flex', gap: 10 }}>
+                                  <input value={deleteInput} onChange={e => setDeleteInput(e.target.value)}
+                                    placeholder="EXCLUIR" className="navy-input" style={{ flex: 1 }} />
+                                  <button disabled={deleteInput !== 'EXCLUIR'}
+                                    onClick={async () => {
+                                      if (deleteInput !== 'EXCLUIR') return;
+                                      setDeleteStep('deleting');
+                                      try { await onDeleteAccount(); }
+                                      catch { setDeleteStep('confirm'); }
+                                    }}
+                                    style={{ padding: '0 20px', background: deleteInput === 'EXCLUIR' ? '#ef4444' : 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: deleteInput === 'EXCLUIR' ? 'pointer' : 'not-allowed', fontFamily: 'Outfit, sans-serif', opacity: deleteInput === 'EXCLUIR' ? 1 : 0.4, transition: 'all 200ms' }}>
+                                    Excluir tudo
+                                  </button>
+                                </div>
+                                <button onClick={() => { setDeleteStep('idle'); setDeleteInput(''); }}
+                                  style={{ marginTop: 12, background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                  Cancelar
+                                </button>
+                              </div>
+                            )}
+
+                            {deleteStep === 'deleting' && (
+                              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Excluindo todos os dados… aguarde.</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </motion.div>
                   </AnimatePresence>
-
-                  {/* ── Exclusão de conta (LGPD) ── */}
-                  <div style={{ marginTop: 24, background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 16, padding: 24 }}>
-                    <h4 style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(239,68,68,0.15)', paddingBottom: 12, margin: '0 0 16px' }}>Excluir Conta</h4>
-
-                    {deleteStep === 'idle' && (
-                      <div>
-                        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7, margin: '0 0 12px' }}>
-                          Em conformidade com a <strong style={{ color: 'rgba(255,255,255,0.7)' }}>LGPD (Lei 13.709/2018)</strong>, você pode solicitar a exclusão permanente de todos os seus dados, incluindo agendamentos, clientes, serviços, profissionais e histórico financeiro.
-                        </p>
-                        <p style={{ fontSize: 12, color: 'rgba(239,68,68,0.8)', margin: '0 0 16px' }}>⚠️ Esta ação é irreversível e não pode ser desfeita.</p>
-                        <button onClick={() => setDeleteStep('confirm')}
-                          style={{ padding: '8px 20px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                          Solicitar exclusão de dados
-                        </button>
-                      </div>
-                    )}
-
-                    {deleteStep === 'confirm' && (
-                      <div>
-                        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.7, margin: '0 0 8px' }}>Ao confirmar, serão excluídos permanentemente:</p>
-                        <ul style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.9, margin: '0 0 20px', paddingLeft: 20 }}>
-                          <li>Todos os agendamentos e histórico</li>
-                          <li>Cadastro de clientes</li>
-                          <li>Serviços e profissionais</li>
-                          <li>Dados financeiros</li>
-                          <li>Assinatura e conta de acesso</li>
-                        </ul>
-                        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', margin: '0 0 10px' }}>
-                          Digite <strong style={{ color: '#fca5a5' }}>EXCLUIR</strong> para confirmar:
-                        </p>
-                        <div style={{ display: 'flex', gap: 10 }}>
-                          <input value={deleteInput} onChange={e => setDeleteInput(e.target.value)}
-                            placeholder="EXCLUIR" className="navy-input" style={{ flex: 1 }} />
-                          <button
-                            disabled={deleteInput !== 'EXCLUIR'}
-                            onClick={async () => {
-                              if (deleteInput !== 'EXCLUIR') return;
-                              setDeleteStep('deleting');
-                              try { await onDeleteAccount(); }
-                              catch { setDeleteStep('confirm'); }
-                            }}
-                            style={{ padding: '0 20px', background: deleteInput === 'EXCLUIR' ? '#ef4444' : 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: deleteInput === 'EXCLUIR' ? 'pointer' : 'not-allowed', fontFamily: 'Outfit, sans-serif', opacity: deleteInput === 'EXCLUIR' ? 1 : 0.4, transition: 'all 200ms' }}>
-                            Excluir tudo
-                          </button>
-                        </div>
-                        <button onClick={() => { setDeleteStep('idle'); setDeleteInput(''); }}
-                          style={{ marginTop: 12, background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                          Cancelar
-                        </button>
-                      </div>
-                    )}
-
-                    {deleteStep === 'deleting' && (
-                      <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Excluindo todos os dados… aguarde.</p>
-                    )}
-                  </div>
-
                 </div>
               )}
 
