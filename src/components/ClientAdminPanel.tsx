@@ -8,7 +8,7 @@ import {
   Calendar, Users, MessageSquare, Settings, List,
   Plus, Search, ExternalLink, ChevronLeft, ChevronRight,
   Check, X, RefreshCw, Scissors, CreditCard, Package,
-  Menu, Bell, User, ChevronDown, Zap,
+  Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck,
 } from 'lucide-react';
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
@@ -22,7 +22,7 @@ import WhatsAppTab     from './tabs/WhatsAppTab';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Tab = 'agenda' | 'agendamentos' | 'clientes' | 'automacoes' | 'configuracoes';
-type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro';
+type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro' | 'assinatura' | 'conta';
 
 interface Props {
   activeTenant: Tenant;
@@ -41,9 +41,10 @@ interface Props {
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onAddPayment: (pay: Omit<Payment, 'id'>) => void;
-  onAddCustomer: (c: Omit<Customer, 'id'>) => void;
+  onAddCustomer: (c: Omit<Customer, 'id'>) => Promise<Customer>;
   onUpdateTenantDetails: (tenantId: string, details: Partial<Tenant>) => void | Promise<void>;
   onSwitchToBookingFlow: (slug: string) => void;
+  onDeleteAccount: () => Promise<void>;
 }
 
 // ── Motion presets ─────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ export default function ClientAdminPanel({
   onAddService, onUpdateService, onDeleteService,
   onAddProfessional, onAddProduct, onUpdateProductStock,
   onAddAppointment, onUpdateAppointmentStatus, onAddPayment, onAddCustomer,
-  onUpdateTenantDetails, onSwitchToBookingFlow,
+  onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
 }: Props) {
   const toast = useToast();
 
@@ -97,6 +98,17 @@ export default function ClientAdminPanel({
   const todayAppts = myAppointments.filter(a => a.date === today && a.status !== 'cancelled');
   const pendingCount = myAppointments.filter(a => a.status === 'pending').length;
 
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [deleteStep,  setDeleteStep]  = useState<'idle' | 'confirm' | 'deleting'>('idle');
+  const [deleteInput, setDeleteInput] = useState('');
+  const handleCopyLink = () => {
+    const url = `${window.location.origin}/${activeTenant.slug}/agendamento`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  };
+
   // ── Agenda form state ─────────────────────────────────────────────────────
   const [apptSrvId,  setApptSrvId]  = useState('');
   const [apptProfId, setApptProfId] = useState('');
@@ -105,6 +117,9 @@ export default function ClientAdminPanel({
   const [apptTime,   setApptTime]   = useState('09:00');
   const [apptNotes,  setApptNotes]  = useState('');
   const [showApptForm, setShowApptForm] = useState(false);
+  const [apptNewClient,      setApptNewClient]      = useState(false);
+  const [apptNewClientName,  setApptNewClientName]  = useState('');
+  const [apptNewClientPhone, setApptNewClientPhone] = useState('');
 
   // ── Clientes state ────────────────────────────────────────────────────────
   const [custSearch,  setCustSearch]  = useState('');
@@ -115,7 +130,7 @@ export default function ClientAdminPanel({
   // ── Config state ──────────────────────────────────────────────────────────
   const [uploadingLogo,    setUploadingLogo]    = useState(false);
   const [cropSrc,          setCropSrc]          = useState<string | null>(null);
-  const [tenantLogo,       setTenantLogo]       = useState(activeTenant.logo     || '💈');
+  const [tenantLogo,       setTenantLogo]       = useState(activeTenant.logo     || '');
   const [tenantName,       setTenantName]       = useState(activeTenant.name     || '');
   const [tenantPhone,      setTenantPhone]      = useState(activeTenant.phone    || '');
   const [tenantAddress,    setTenantAddress]    = useState(activeTenant.address  || '');
@@ -160,7 +175,7 @@ export default function ClientAdminPanel({
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setTenantLogo(activeTenant.logo || '💈');
+    setTenantLogo(activeTenant.logo || '');
     setTenantName(activeTenant.name || '');
     setTenantPhone(activeTenant.phone || '');
     setTenantAddress(activeTenant.address || '');
@@ -203,16 +218,26 @@ export default function ClientAdminPanel({
     toast.success(`${appt.customerName} concluído — R$ ${appt.price.toFixed(2)} registrado.`);
   };
 
-  const handleManualAppointment = (e: React.FormEvent) => {
+  const handleManualAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!apptSrvId || !apptProfId || !apptCustId) { toast.error('Selecione serviço, profissional e cliente.'); return; }
-    const srv  = myServices.find(s => s.id === apptSrvId);
-    const cust = myCustomers.find(c => c.id === apptCustId);
-    if (!srv || !cust) return;
+    if (!apptSrvId || !apptProfId) { toast.error('Selecione serviço e profissional.'); return; }
+    if (!apptNewClient && !apptCustId) { toast.error('Selecione um cliente ou crie um novo.'); return; }
+    if (apptNewClient && !apptNewClientName.trim()) { toast.error('Informe o nome do cliente.'); return; }
+    const srv = myServices.find(s => s.id === apptSrvId);
+    if (!srv) return;
     const conflict = myAppointments.some(a => a.date === apptDate && a.time === apptTime && a.professionalId === apptProfId && a.status !== 'cancelled');
     if (conflict) { toast.error(`Conflito: profissional já ocupado em ${apptDate} às ${apptTime}.`); return; }
-    onAddAppointment({ tenantId: activeTenant.id, serviceId: apptSrvId, professionalId: apptProfId, customerId: apptCustId, customerName: cust.name, customerPhone: cust.phone, date: apptDate, time: apptTime, durationMinutes: srv.durationMinutes, price: srv.price, status: 'confirmed', notes: apptNotes });
-    setApptNotes(''); setShowApptForm(false);
+    let custId: string, custName: string, custPhone: string;
+    if (apptNewClient) {
+      const created = await onAddCustomer({ tenantId: activeTenant.id, name: apptNewClientName.trim(), phone: apptNewClientPhone.trim(), email: '' });
+      custId = created.id; custName = created.name; custPhone = created.phone;
+    } else {
+      const cust = myCustomers.find(c => c.id === apptCustId);
+      if (!cust) return;
+      custId = cust.id; custName = cust.name; custPhone = cust.phone;
+    }
+    onAddAppointment({ tenantId: activeTenant.id, serviceId: apptSrvId, professionalId: apptProfId, customerId: custId, customerName: custName, customerPhone: custPhone, date: apptDate, time: apptTime, durationMinutes: srv.durationMinutes, price: srv.price, status: 'confirmed', notes: apptNotes });
+    setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setShowApptForm(false);
     toast.success('Agendamento criado!');
   };
 
@@ -229,9 +254,11 @@ export default function ClientAdminPanel({
     setUploadingLogo(true);
     try {
       const file = new File([blob], 'logo.jpg', { type: 'image/jpeg' });
-      const url = await uploadTenantLogo(activeTenant.id, file);
+      const baseUrl = await uploadTenantLogo(activeTenant.id, file);
+      const url = `${baseUrl}?t=${Date.now()}`;
       setTenantLogo(url);
-      toast.success('Logo carregado!');
+      await onUpdateTenantDetails(activeTenant.id, { logo: url });
+      toast.success('Logo atualizado!');
     } catch { toast.error('Falha ao enviar logo.'); }
     finally { setUploadingLogo(false); }
   };
@@ -306,7 +333,7 @@ export default function ClientAdminPanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, overflow: 'hidden' }}>
           {(tenantLogo?.startsWith('http') || tenantLogo?.startsWith('data:'))
             ? <div style={{ width: 22, height: 22, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}><img src={tenantLogo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></div>
-            : <span style={{ fontSize: 16, flexShrink: 0 }}>{tenantLogo}</span>
+            : <Scissors size={14} style={{ color: 'rgba(255,255,255,0.35)', flexShrink: 0 }} />
           }
           <span style={{ fontWeight: 700, color: 'rgba(255,255,255,0.38)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '1.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTenant.name}</span>
           <ChevronRight size={12} style={{ color: 'rgba(255,255,255,0.18)', flexShrink: 0 }} />
@@ -339,6 +366,10 @@ export default function ClientAdminPanel({
         <button onClick={() => onSwitchToBookingFlow(activeTenant.slug)}
           style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
           Link <ExternalLink size={11} />
+        </button>
+        <button onClick={handleCopyLink} title="Copiar link de agendamento"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: linkCopied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)', border: `1px solid ${linkCopied ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 8, color: linkCopied ? '#4ade80' : 'rgba(255,255,255,0.55)', cursor: 'pointer', transition: 'all 200ms' }}>
+          {linkCopied ? <CheckCheck size={13} /> : <Copy size={13} />}
         </button>
       </header>
 
@@ -422,7 +453,25 @@ export default function ClientAdminPanel({
                         <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 14px' }}>Novo Agendamento</p>
                         <form onSubmit={handleManualAppointment}>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
-                            <select value={apptCustId} onChange={e => setApptCustId(e.target.value)} required className="navy-select"><option value="">Cliente</option>{myCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '1.5px' }}>Cliente</span>
+                                <button type="button" onClick={() => { setApptNewClient(v => !v); setApptCustId(''); setApptNewClientName(''); setApptNewClientPhone(''); }}
+                                  style={{ fontSize: 10, fontWeight: 700, color: apptNewClient ? '#fcd34d' : 'rgba(255,255,255,0.45)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                                  {apptNewClient ? '← Existente' : '+ Novo'}
+                                </button>
+                              </div>
+                              {!apptNewClient
+                                ? <select value={apptCustId} onChange={e => setApptCustId(e.target.value)} className="navy-select"><option value="">Selecionar…</option>{myCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                                : <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                    <input placeholder="Nome *" value={apptNewClientName} onChange={e => setApptNewClientName(e.target.value)} className="navy-input" style={{ fontSize: 12 }} />
+                                    <div style={{ position: 'relative' }}>
+                                      <input placeholder="Telefone (opcional)" value={apptNewClientPhone} onChange={e => setApptNewClientPhone(e.target.value)} className="navy-input" style={{ fontSize: 12, width: '100%', boxSizing: 'border-box' as const }} />
+                                      {!apptNewClientPhone && <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: 'rgba(255,255,255,0.3)', pointerEvents: 'none' as const, whiteSpace: 'nowrap' }}>sem tel = sem msg</span>}
+                                    </div>
+                                  </div>
+                              }
+                            </div>
                             <select value={apptSrvId} onChange={e => setApptSrvId(e.target.value)} required className="navy-select"><option value="">Serviço</option>{myServices.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
                             <select value={apptProfId} onChange={e => setApptProfId(e.target.value)} required className="navy-select"><option value="">Profissional</option>{myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
                             <input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)} className="navy-input" />
@@ -514,7 +563,7 @@ export default function ClientAdminPanel({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                   {/* Sub-nav */}
                   <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0, overflowX: 'auto' }} className="no-scrollbar">
-                    {([['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro']] as [CfgTab, string][]).map(([id, label]) => (
+                    {([['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro'], ['assinatura','Assinatura'], ['conta','Conta']] as [CfgTab, string][]).map(([id, label]) => (
                       <button key={id} onClick={() => setCfgTab(id)}
                         style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: cfgTab === id ? '2px solid #ffffff' : '2px solid transparent', color: cfgTab === id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', marginBottom: -1, whiteSpace: 'nowrap', transition: 'color 150ms' }}>
                         {label}
@@ -533,13 +582,9 @@ export default function ClientAdminPanel({
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             <button type="button" onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo}
                               style={{ width: 56, height: 56, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, cursor: 'pointer', flexShrink: 0, opacity: uploadingLogo ? 0.6 : 1 }}>
-                              {uploadingLogo ? <RefreshCw size={20} style={{ color: 'rgba(255,255,255,0.4)', animation: 'spin 1s linear infinite' }} /> : (tenantLogo?.startsWith('http') || tenantLogo?.startsWith('data:')) ? <div style={{ width: 42, height: 42, borderRadius: 10, overflow: 'hidden' }}><img src={tenantLogo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></div> : tenantLogo}
+                              {uploadingLogo ? <RefreshCw size={20} style={{ color: 'rgba(255,255,255,0.4)', animation: 'spin 1s linear infinite' }} /> : (tenantLogo?.startsWith('http') || tenantLogo?.startsWith('data:')) ? <div style={{ width: 42, height: 42, borderRadius: 10, overflow: 'hidden' }}><img src={tenantLogo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></div> : <Scissors size={20} style={{ color: 'rgba(255,255,255,0.4)' }} />}
                             </button>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                              {['💈','💅','✂️','💄','🧖','💇','🧔','🌟','👑','🔥'].map(em => (
-                                <button key={em} type="button" onClick={() => setTenantLogo(em)} style={{ width: 34, height: 34, fontSize: 16, borderRadius: 8, border: `1px solid ${tenantLogo === em ? '#ffffff' : 'rgba(255,255,255,0.09)'}`, background: tenantLogo === em ? '#ffffff' : 'rgba(255,255,255,0.04)', cursor: 'pointer' }}>{em}</button>
-                              ))}
-                            </div>
+                            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>Clique para enviar a logo do salão</span>
                           </div>
                           <input value={tenantName} onChange={e => setTenantName(e.target.value)} placeholder="Nome do salão" className="navy-input" />
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -982,6 +1027,127 @@ export default function ClientAdminPanel({
                       {/* Financeiro */}
                       {cfgTab === 'financeiro' && (
                         <FinanceiroTab activeTenant={activeTenant} myPayments={myPayments} myProfessionals={myProfessionals} myAppointments={myAppointments} myServices={myServices} onAddPayment={onAddPayment} />
+                      )}
+
+                      {cfgTab === 'assinatura' && (() => {
+                        const isTrial = activeTenant.plan === 'trial';
+                        const isActive = activeTenant.status === 'active';
+                        const endDate = isTrial ? activeTenant.trialEndsAt : activeTenant.subscriptionEndsAt;
+                        const daysLeft = endDate ? Math.ceil((new Date(endDate).getTime() - new Date().setHours(0,0,0,0)) / 86400000) : null;
+                        const fmtDate = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+                        const planLabel: Record<string, string> = { trial: 'Período de Teste', mensal: 'Mensal', semestral: 'Semestral', anual: 'Anual' };
+                        const statusColor = activeTenant.status === 'active' ? '#22c55e' : activeTenant.status === 'trial' ? '#f59e0b' : '#ef4444';
+                        const statusLabel = activeTenant.status === 'active' ? 'Ativo' : activeTenant.status === 'trial' ? 'Período de Teste' : 'Suspenso';
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {/* Status card */}
+                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 6px' }}>Plano atual</p>
+                                  <p style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{planLabel[activeTenant.plan] ?? activeTenant.plan}</p>
+                                </div>
+                                <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44` }}>
+                                  {statusLabel}
+                                </span>
+                              </div>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '14px 16px' }}>
+                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>{isTrial ? 'Trial encerra em' : 'Próxima renovação'}</p>
+                                  <p style={{ fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{fmtDate(endDate)}</p>
+                                  {daysLeft !== null && (
+                                    <p style={{ fontSize: 11, color: daysLeft <= 5 ? '#f59e0b' : 'rgba(255,255,255,0.35)', margin: '4px 0 0', fontWeight: 600 }}>
+                                      {daysLeft > 0 ? `${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}` : 'Vence hoje'}
+                                    </p>
+                                  )}
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '14px 16px' }}>
+                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>Valor mensal</p>
+                                  <p style={{ fontSize: 16, fontWeight: 700, color: '#4ade80', margin: 0 }}>
+                                    {activeTenant.mrr > 0 ? `R$ ${Number(activeTenant.mrr).toFixed(2).replace('.', ',')}` : isTrial ? 'Grátis' : '—'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {isTrial && (
+                                <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '14px 16px' }}>
+                                  <p style={{ fontSize: 13, color: '#fcd34d', margin: 0, lineHeight: 1.6 }}>
+                                    Você está no período de teste gratuito. Após o término, será necessário assinar um plano para continuar usando o BarberFlow.
+                                  </p>
+                                </div>
+                              )}
+
+                              {isActive && !isTrial && (
+                                <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.18)', borderRadius: 12, padding: '14px 16px' }}>
+                                  <p style={{ fontSize: 13, color: '#86efac', margin: 0, lineHeight: 1.6 }}>
+                                    Sua assinatura está ativa. O pagamento é processado automaticamente via Asaas.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {cfgTab === 'conta' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 16, padding: 24 }}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(239,68,68,0.15)', paddingBottom: 12, margin: '0 0 16px' }}>Excluir Conta</h4>
+
+                            {deleteStep === 'idle' && (
+                              <div>
+                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7, margin: '0 0 12px' }}>
+                                  Em conformidade com a <strong style={{ color: 'rgba(255,255,255,0.7)' }}>LGPD (Lei 13.709/2018)</strong>, você pode solicitar a exclusão permanente de todos os seus dados, incluindo agendamentos, clientes, serviços, profissionais e histórico financeiro.
+                                </p>
+                                <p style={{ fontSize: 12, color: 'rgba(239,68,68,0.8)', margin: '0 0 16px' }}>⚠️ Esta ação é irreversível e não pode ser desfeita.</p>
+                                <button onClick={() => setDeleteStep('confirm')}
+                                  style={{ padding: '8px 20px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                  Solicitar exclusão de dados
+                                </button>
+                              </div>
+                            )}
+
+                            {deleteStep === 'confirm' && (
+                              <div>
+                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.7, margin: '0 0 8px' }}>Ao confirmar, serão excluídos permanentemente:</p>
+                                <ul style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.9, margin: '0 0 20px', paddingLeft: 20 }}>
+                                  <li>Todos os agendamentos e histórico</li>
+                                  <li>Cadastro de clientes</li>
+                                  <li>Serviços e profissionais</li>
+                                  <li>Dados financeiros</li>
+                                  <li>Assinatura e conta de acesso</li>
+                                </ul>
+                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', margin: '0 0 10px' }}>
+                                  Digite <strong style={{ color: '#fca5a5' }}>EXCLUIR</strong> para confirmar:
+                                </p>
+                                <div style={{ display: 'flex', gap: 10 }}>
+                                  <input value={deleteInput} onChange={e => setDeleteInput(e.target.value)}
+                                    placeholder="EXCLUIR" className="navy-input" style={{ flex: 1 }} />
+                                  <button disabled={deleteInput !== 'EXCLUIR'}
+                                    onClick={async () => {
+                                      if (deleteInput !== 'EXCLUIR') return;
+                                      setDeleteStep('deleting');
+                                      try { await onDeleteAccount(); }
+                                      catch { setDeleteStep('confirm'); }
+                                    }}
+                                    style={{ padding: '0 20px', background: deleteInput === 'EXCLUIR' ? '#ef4444' : 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: deleteInput === 'EXCLUIR' ? 'pointer' : 'not-allowed', fontFamily: 'Outfit, sans-serif', opacity: deleteInput === 'EXCLUIR' ? 1 : 0.4, transition: 'all 200ms' }}>
+                                    Excluir tudo
+                                  </button>
+                                </div>
+                                <button onClick={() => { setDeleteStep('idle'); setDeleteInput(''); }}
+                                  style={{ marginTop: 12, background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                  Cancelar
+                                </button>
+                              </div>
+                            )}
+
+                            {deleteStep === 'deleting' && (
+                              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Excluindo todos os dados… aguarde.</p>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </motion.div>
                   </AnimatePresence>

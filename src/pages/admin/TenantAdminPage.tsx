@@ -128,7 +128,7 @@ import {
   updateTenant, createService, updateService, deleteService,
   createProfessional, createProduct,
   updateProductStock, createAppointment, updateAppointmentStatus,
-  createPayment, upsertCustomerByPhone, logAudit, notifyAppointmentWhatsApp,
+  createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours,
 } from '../../lib/db';
 import { supabase } from '../../lib/supabase';
@@ -316,8 +316,11 @@ export default function TenantAdminPage() {
             setPayments(prev => [c, ...prev]);
           }}
           onAddCustomer={async c => {
-            const created = await upsertCustomerByPhone(c.tenantId, c.phone, c.name, c.email);
+            const created = c.phone
+              ? await upsertCustomerByPhone(c.tenantId, c.phone, c.name, c.email)
+              : await createCustomerDirect(c.tenantId, c.name, undefined, c.email);
             setCustomers(prev => prev.find(x => x.id === created.id) ? prev : [created, ...prev]);
+            return created;
           }}
           onUpdateTenantDetails={async (id, details) => {
             await updateTenant(id, details);

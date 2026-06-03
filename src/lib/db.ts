@@ -109,6 +109,16 @@ export async function upsertCustomerByPhone(tenantId: string, phone: string, nam
   return mapCustomer(row);
 }
 
+export async function createCustomerDirect(tenantId: string, name: string, phone?: string, email?: string): Promise<Customer> {
+  const { data, error } = await supabase
+    .from('customers')
+    .insert({ tenant_id: tenantId, name, phone: phone || '', email: email || '' })
+    .select()
+    .single();
+  if (error) throw error;
+  return mapCustomer(data);
+}
+
 // ── APPOINTMENTS ───────────────────────────────────────────────────────────────
 export async function getAppointments(tenantId: string, limit = 200): Promise<Appointment[]> {
   const { data, error } = await supabase.from('appointments')
