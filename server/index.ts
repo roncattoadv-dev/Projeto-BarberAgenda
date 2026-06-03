@@ -13,6 +13,7 @@ import {
   createAsaasCustomer,
   createSubscription,
   cancelSubscription,
+  getPendingPaymentLink,
   type AsaasWebhookPayload,
 } from './asaas';
 
@@ -74,12 +75,17 @@ app.post('/api/register', async (req, res) => {
     const { data: existing } = await supabase.from('tenants').select('id').eq('slug', slug).maybeSingle();
     if (existing) return res.status(409).json({ error: 'Este endereço já está em uso. Escolha outro.' });
 
-    // 2. Calcula datas do trial (10 dias)
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + 10);
-    const trialDate = trialEndsAt.toISOString().split('T')[0];
+    // 2. Verifica se o email já usou trial (anti-abuso)
+    const { data: usedTrial } = await supabasePublic.from('used_trials').select('email').eq('email', email).maybeSingle();
 
-    // 3. Cria o tenant no Supabase
+    // 3. Calcula datas do trial (10 dias apenas para novos; emails com trial anterior iniciam bloqueados)
+    const trialEndsAt = new Date();
+    if (!usedTrial) trialEndsAt.setDate(trialEndsAt.getDate() + 10);
+    const trialDate = trialEndsAt.toISOString().split('T')[0];
+    const initialStatus = usedTrial ? 'blocked' : 'trial';
+    const initialPlan   = 'trial';
+
+    // 4. Cria o tenant no Supabase
     const { data: tenant, error: tenantErr } = await supabase
       .from('tenants')
       .insert({
@@ -87,8 +93,8 @@ app.post('/api/register', async (req, res) => {
         slug: slug.toLowerCase().trim(),
         phone: phone || '',
         address: '',
-        status:  'trial',
-        plan:    'trial',
+        status:  initialStatus,
+        plan:    initialPlan,
         trial_ends_at: trialDate,
         mrr: 0,
       })
@@ -167,6 +173,230 @@ app.post('/api/register', async (req, res) => {
 
   } catch (err: any) {
     console.error('[Register] Error:', err);
+    return res.status(500).json({ error: 'Erro interno ao processar cadastro. Tente novamente.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/billing/payment-link
+// Retorna o link de pagamento Asaas para o tenant reativar a assinatura
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/billing/payment-link', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Token obrigatório.' });
+
+  const { data: { user }, error: userErr } = await supabasePublic.auth.getUser(token);
+  if (userErr || !user) return res.status(401).json({ error: 'Token inválido.' });
+
+  const tenantId = req.query.tenantId as string;
+  if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório.' });
+
+  try {
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('id, name, asaas_customer_id, asaas_subscription_id, status')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
+
+    // Se já tem assinatura, busca o link do boleto pendente
+    if (tenant.asaas_subscription_id) {
+      try {
+        const url = await getPendingPaymentLink(tenant.asaas_subscription_id);
+        if (url) return res.json({ url });
+      } catch {}
+    }
+
+    // Se não tem assinatura, cria cliente + assinatura no Asaas agora
+    let customerId = tenant.asaas_customer_id;
+    if (!customerId) {
+      const customer = await createAsaasCustomer({ name: tenant.name, email: user.email! });
+      customerId = customer.id;
+    }
+
+    const subscription = await createSubscription(customerId, 0); // 0 dias de trial = cobrança imediata
+    await supabase.from('tenants').update({
+      asaas_customer_id:     customerId,
+      asaas_subscription_id: subscription.id,
+    }).eq('id', tenantId);
+
+    const url = await getPendingPaymentLink(subscription.id);
+    return res.json({ url: url ?? `https://www.asaas.com/c/${customerId}` });
+
+  } catch (err: any) {
+    console.error('[PaymentLink] Error:', err);
+    return res.status(500).json({ error: 'Erro ao buscar link de pagamento.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/account
+// Exclui a conta do tenant: cancela Asaas, remove dados e usuário
+// Requer: Authorization: Bearer <access_token>  +  ?tenantId=<uuid>
+// ─────────────────────────────────────────────────────────────────────────────
+app.delete('/api/account', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Token de autenticação obrigatório.' });
+
+  const { data: { user }, error: userErr } = await supabasePublic.auth.getUser(token);
+  if (userErr || !user) return res.status(401).json({ error: 'Token inválido ou expirado.' });
+
+  const tenantId = req.query.tenantId as string;
+  if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório.' });
+
+  try {
+    // Verifica que o usuário é dono deste tenant
+    const { data: tenant } = await supabase
+      .from('tenants').select('id, asaas_subscription_id').eq('id', tenantId).maybeSingle();
+    if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
+
+    const { data: profile } = await supabasePublic
+      .from('profiles').select('tenant_id').eq('id', user.id).maybeSingle();
+    if (profile?.tenant_id !== tenantId) {
+      return res.status(403).json({ error: 'Acesso negado.' });
+    }
+
+    // Registra email em used_trials ANTES de deletar (impede abuso de trial)
+    const email = user.email ?? '';
+    if (email) {
+      await supabasePublic.from('used_trials').upsert({ email, deleted_at: new Date().toISOString() });
+    }
+
+    // Cancela assinatura Asaas se existir
+    if (tenant.asaas_subscription_id) {
+      try { await cancelSubscription(tenant.asaas_subscription_id); } catch {}
+    }
+
+    // Deleta tenant — CASCADE remove appointments, professionals, services, etc.
+    await supabase.from('tenants').delete().eq('id', tenantId);
+
+    // Deleta profile público
+    await supabasePublic.from('profiles').delete().eq('id', user.id);
+
+    // Deleta usuário do auth (remove sessões e identidades OAuth)
+    await supabasePublic.auth.admin.deleteUser(user.id);
+
+    console.log(`[DeleteAccount] Conta excluída: tenant=${tenantId} user=${user.id} email=${email}`);
+    return res.status(200).json({ ok: true });
+
+  } catch (err: any) {
+    console.error('[DeleteAccount] Error:', err);
+    return res.status(500).json({ error: 'Erro interno ao excluir conta.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/register-google
+// Completa cadastro de usuário que autenticou via Google OAuth (sem senha)
+// Requer: Authorization: Bearer <access_token>
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/register-google', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Token de autenticação obrigatório.' });
+
+  // Verifica o JWT e obtém o usuário
+  const { data: { user }, error: userErr } = await supabasePublic.auth.getUser(token);
+  if (userErr || !user) return res.status(401).json({ error: 'Token inválido ou expirado.' });
+
+  const { name, slug, phone } = req.body;
+
+  if (!name || !slug) return res.status(400).json({ error: 'name e slug são obrigatórios.' });
+  if (!/^[a-z0-9-]+$/.test(slug)) return res.status(400).json({ error: 'Slug deve conter apenas letras minúsculas, números e hífens.' });
+
+  const email = user.email || '';
+
+  try {
+    // Verifica se o usuário já tem um tenant (cadastro duplicado)
+    const { data: existingProfile } = await supabasePublic
+      .from('profiles').select('tenant_id').eq('id', user.id).maybeSingle();
+    if (existingProfile?.tenant_id) {
+      return res.status(409).json({ error: 'Esta conta Google já está associada a uma barbearia.' });
+    }
+
+    // Verifica se slug já existe
+    const { data: existingSlug } = await supabase.from('tenants').select('id').eq('slug', slug).maybeSingle();
+    if (existingSlug) return res.status(409).json({ error: 'Este endereço já está em uso. Escolha outro.' });
+
+    // Verifica se o email já usou trial (anti-abuso)
+    const { data: usedTrial } = await supabasePublic.from('used_trials').select('email').eq('email', email).maybeSingle();
+
+    // Calcula datas do trial (10 dias apenas para novos; emails com trial anterior iniciam bloqueados)
+    const trialEndsAt = new Date();
+    if (!usedTrial) trialEndsAt.setDate(trialEndsAt.getDate() + 10);
+    const trialDate    = trialEndsAt.toISOString().split('T')[0];
+    const initialStatus = usedTrial ? 'blocked' : 'trial';
+    const initialPlan   = 'trial';
+
+    // Cria o tenant
+    const { data: tenant, error: tenantErr } = await supabase
+      .from('tenants')
+      .insert({
+        name,
+        slug: slug.toLowerCase().trim(),
+        phone: phone || '',
+        address: '',
+        status:  initialStatus,
+        plan:    initialPlan,
+        trial_ends_at: trialDate,
+        mrr: 0,
+      })
+      .select()
+      .single();
+
+    if (tenantErr) throw tenantErr;
+
+    // Atualiza user_metadata com role e tenant_id
+    await supabasePublic.auth.admin.updateUserById(user.id, {
+      user_metadata: {
+        name:      name,
+        role:      'tenant_admin',
+        tenant_id: tenant.id,
+      },
+    });
+
+    // Upsert do profile
+    await supabasePublic.from('profiles').upsert({
+      id:        user.id,
+      name,
+      email,
+      role:      'tenant_admin',
+      tenant_id: tenant.id,
+    });
+
+    // Cria cliente e assinatura no Asaas (não bloqueia o cadastro se falhar)
+    let asaasSubscriptionId = null;
+    try {
+      const asaasCustomer   = await createAsaasCustomer({ name, email, phone });
+      const subscription    = await createSubscription(asaasCustomer.id, 10);
+      asaasSubscriptionId   = subscription.id;
+      await supabase.from('tenants').update({
+        asaas_customer_id:     asaasCustomer.id,
+        asaas_subscription_id: asaasSubscriptionId,
+      }).eq('id', tenant.id);
+    } catch (asaasErr) {
+      console.error('[RegisterGoogle] Asaas error (non-fatal):', asaasErr);
+    }
+
+    // Audit log
+    await supabase.from('audit_logs').insert({
+      tenant_id: tenant.id,
+      user_id:   user.id,
+      user_name: name,
+      action:    'Cadastro via Google OAuth',
+      details:   `Trial de 10 dias iniciado. Asaas subscription: ${asaasSubscriptionId ?? 'pendente'}`,
+    });
+
+    return res.status(201).json({
+      ok:       true,
+      tenantId: tenant.id,
+      slug:     tenant.slug,
+      trialEndsAt: trialDate,
+      message:  'Cadastro realizado! Acesse o painel para configurar sua barbearia.',
+    });
+
+  } catch (err: any) {
+    console.error('[RegisterGoogle] Error:', err);
     return res.status(500).json({ error: 'Erro interno ao processar cadastro. Tente novamente.' });
   }
 });

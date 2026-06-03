@@ -88,6 +88,18 @@ export async function cancelSubscription(subscriptionId: string): Promise<void> 
   await asaasFetch(`/subscriptions/${subscriptionId}`, { method: 'DELETE' });
 }
 
+export async function getPendingPaymentLink(subscriptionId: string): Promise<string | null> {
+  const data = await asaasFetch<{ data: Array<{ status: string; invoiceUrl?: string; bankSlipUrl?: string }> }>(
+    `/payments?subscription=${subscriptionId}&limit=5`
+  );
+  // Prioriza o boleto/cobrança mais recente que ainda não foi pago
+  const pending = data.data?.find(p => ['PENDING', 'OVERDUE'].includes(p.status));
+  if (pending) return pending.invoiceUrl || pending.bankSlipUrl || null;
+  // Se não há cobrança pendente, retorna a da assinatura mais recente
+  const latest = data.data?.[0];
+  return latest?.invoiceUrl || latest?.bankSlipUrl || null;
+}
+
 export async function getSubscription(subscriptionId: string): Promise<AsaasSubscription> {
   return asaasFetch(`/subscriptions/${subscriptionId}`);
 }

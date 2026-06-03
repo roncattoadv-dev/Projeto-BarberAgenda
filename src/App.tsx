@@ -12,15 +12,15 @@ import CancelPage      from './pages/booking/CancelPage';
 
 // Redireciona para o painel correto após login
 function HomeRedirect() {
-  const { profile, loading } = useAuth();
+  const { profile, loading, needsOnboarding } = useAuth();
   if (loading) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
     </div>
   );
-  if (!profile) return <Navigate to="/login" replace />;
-  if (profile.role === 'super_admin')  return <Navigate to="/admin/super"  replace />;
-  if (profile.role === 'tenant_admin') return <Navigate to="/admin/painel" replace />;
+  if (needsOnboarding)              return <Navigate to="/cadastro" replace />;
+  if (profile?.role === 'super_admin')  return <Navigate to="/admin/super"  replace />;
+  if (profile?.role === 'tenant_admin') return <Navigate to="/admin/painel" replace />;
   return <Navigate to="/login" replace />;
 }
 
