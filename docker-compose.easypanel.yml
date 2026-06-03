@@ -72,9 +72,8 @@ services:
       SUPABASE_SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q
       ASAAS_API_KEY: ${ASAAS_API_KEY}
       ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_TOKEN}
-      ASAAS_SANDBOX: ${ASAAS_SANDBOX:-false}
       CORS_ORIGIN: https://barberflow-barberflow.i9inu5.easypanel.host
-      # Evolution Go — somente no servidor, nunca exposto ao browser
+      # Evolution Go — URL interna do EasyPanel (nunca exposta ao browser)
       EVO_URL: http://evolutionapi_evogo:8080
       EVO_GLOBAL_KEY: 8f91c3d5-e2a7-4b60-9d88-1c4e7f0b5a22
     healthcheck:
