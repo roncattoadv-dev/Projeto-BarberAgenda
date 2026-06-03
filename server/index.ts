@@ -382,14 +382,15 @@ app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { data } = await supabase
     .from('tenants')
-    .select('wpp_template_confirm, wpp_template_remind, wpp_booking_url')
+    .select('wpp_template_confirm, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes')
     .eq('id', tenantId)
     .maybeSingle();
   res.json({
     ok: true,
-    confirm:    data?.wpp_template_confirm  ?? TPL_CONFIRM_DEFAULT,
-    remind:     data?.wpp_template_remind   ?? TPL_REMIND_DEFAULT,
-    bookingUrl: data?.wpp_booking_url       ?? '',
+    confirm:         data?.wpp_template_confirm   ?? TPL_CONFIRM_DEFAULT,
+    remind:          data?.wpp_template_remind    ?? TPL_REMIND_DEFAULT,
+    bookingUrl:      data?.wpp_booking_url        ?? '',
+    reminderMinutes: data?.wpp_reminder_minutes   ?? 60,
   });
 });
 
@@ -398,11 +399,12 @@ app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.put('/api/whatsapp/templates', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
-  const { confirm, remind, bookingUrl } = req.body as { confirm?: string; remind?: string; bookingUrl?: string };
+  const { confirm, remind, bookingUrl, reminderMinutes } = req.body as { confirm?: string; remind?: string; bookingUrl?: string; reminderMinutes?: number };
   await supabase.from('tenants').update({
-    wpp_template_confirm: confirm ?? null,
-    wpp_template_remind:  remind  ?? null,
-    wpp_booking_url:      bookingUrl ?? null,
+    wpp_template_confirm:  confirm          ?? null,
+    wpp_template_remind:   remind           ?? null,
+    wpp_booking_url:       bookingUrl       ?? null,
+    wpp_reminder_minutes:  reminderMinutes  ?? 60,
   }).eq('id', tenantId);
   res.json({ ok: true });
 });
@@ -780,36 +782,38 @@ async function sendConfirmations(): Promise<void> {
   }
 }
 
-// Job a cada 5 min: envia lembrete 1h antes do atendimento
+// Job a cada 5 min: envia lembrete antes do atendimento (tempo configurável por tenant)
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendReminders(): Promise<void> {
   if (!EVO_URL || !EVO_GLOBAL_KEY) return;
 
-  // Janela: agendamentos que começam entre 55 e 65 minutos a partir de agora
-  const now  = new Date();
-  const lo   = new Date(now.getTime() + 55 * 60_000);
-  const hi   = new Date(now.getTime() + 65 * 60_000);
-
-  // Data e hora separados pois o banco guarda DATE + TIME
-  const loDate = lo.toISOString().split('T')[0];
-  const hiDate = hi.toISOString().split('T')[0];
-  const loTime = lo.toISOString().split('T')[1].slice(0, 5); // HH:MM
-  const hiTime = hi.toISOString().split('T')[1].slice(0, 5);
-
+  // Busca todos os tenants com WhatsApp configurável para calcular janela por tenant
   const { data: appts } = await supabase
     .from('appointments')
-    .select('*, tenants(id, name, slug, wpp_template_remind, wpp_booking_url), services(name), professionals(name)')
+    .select('*, tenants(id, name, slug, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes), services(name), professionals(name)')
     .eq('wpp_reminder_sent', false)
     .neq('status', 'cancelled')
-    .gte('scheduled_date', loDate).lte('scheduled_date', hiDate);
+    .gte('scheduled_date', new Date().toISOString().split('T')[0]);
+
+  const now = new Date();
 
   for (const appt of appts ?? []) {
-    // Filtra pela janela de hora (o banco não filtra TIME num range multi-dia facilmente)
+    const tenant = appt.tenants as any;
+    // Janela ±5 min em torno do tempo configurado pelo tenant (padrão 60 min)
+    const reminderMin = Number(tenant?.wpp_reminder_minutes ?? 60);
+    const lo = new Date(now.getTime() + (reminderMin - 5) * 60_000);
+    const hi = new Date(now.getTime() + (reminderMin + 5) * 60_000);
+    const loDate = lo.toISOString().split('T')[0];
+    const hiDate = hi.toISOString().split('T')[0];
+    const loTime = lo.toISOString().split('T')[1].slice(0, 5);
+    const hiTime = hi.toISOString().split('T')[1].slice(0, 5);
+
+    // Filtra pela janela de hora do tenant
     const apptTime = appt.scheduled_time?.slice(0, 5) ?? '';
+    if (appt.scheduled_date < loDate || appt.scheduled_date > hiDate) continue;
     if (appt.scheduled_date === loDate && apptTime < loTime) continue;
     if (appt.scheduled_date === hiDate && apptTime > hiTime) continue;
 
-    const tenant = (appt.tenants as any);
     if (!tenant) continue;
 
     const phone = appt.customer_phone?.replace(/\D/g, '');

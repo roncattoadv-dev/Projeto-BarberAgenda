@@ -59,9 +59,10 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   const [activePreview, setActivePreview] = useState<'confirmation' | 'reminder' | 'cancellation'>('confirmation');
 
   // ── Templates automáticos (salvos no banco) ────────────────
-  const [autoConfirmDraft, setAutoConfirmDraft] = useState('');
-  const [autoRemindDraft,  setAutoRemindDraft]  = useState('');
-  const [tplSaving,        setTplSaving]        = useState(false);
+  const [autoConfirmDraft,   setAutoConfirmDraft]   = useState('');
+  const [autoRemindDraft,    setAutoRemindDraft]    = useState('');
+  const [reminderMinutes,    setReminderMinutes]    = useState(60);
+  const [tplSaving,          setTplSaving]          = useState(false);
 
   useEffect(() => {
     if (!authToken) return;
@@ -71,6 +72,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
       if (d.ok) {
         setAutoConfirmDraft(d.confirm);
         setAutoRemindDraft(d.remind);
+        if (d.reminderMinutes) setReminderMinutes(d.reminderMinutes);
       }
     }).catch(() => {});
   }, [authToken, activeTenant.id]);
@@ -81,7 +83,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
       await fetch(`${getApiUrl()}/api/whatsapp/templates`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-        body: JSON.stringify({ confirm: autoConfirmDraft, remind: autoRemindDraft }),
+        body: JSON.stringify({ confirm: autoConfirmDraft, remind: autoRemindDraft, reminderMinutes }),
       });
       toast.success('Templates salvos!');
     } catch { toast.error('Erro ao salvar templates.'); }
@@ -506,9 +508,25 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
           </div>
 
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', display: 'block', marginBottom: 6, color: 'rgba(255,255,255,0.65)' }}>
-              ⏰ Lembrete (enviado 1h antes)
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', color: 'rgba(255,255,255,0.65)' }}>
+                ⏰ Lembrete automático
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>Enviar</span>
+                <select value={reminderMinutes} onChange={e => setReminderMinutes(Number(e.target.value))}
+                  style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'rgba(255,255,255,0.88)', fontSize: 13, fontWeight: 600, padding: '5px 10px', fontFamily: 'Outfit, sans-serif', cursor: 'pointer', outline: 'none' }}>
+                  <option value={15}>15 min antes</option>
+                  <option value={30}>30 min antes</option>
+                  <option value={60}>1h antes</option>
+                  <option value={120}>2h antes</option>
+                  <option value={180}>3h antes</option>
+                  <option value={360}>6h antes</option>
+                  <option value={720}>12h antes</option>
+                  <option value={1440}>24h antes</option>
+                </select>
+              </div>
+            </div>
             <textarea value={autoRemindDraft} onChange={e => setAutoRemindDraft(e.target.value)} rows={8}
               style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 14px', color: 'rgba(255,255,255,0.88)', fontSize: 13, resize: 'vertical' as const, outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }} />
           </div>
