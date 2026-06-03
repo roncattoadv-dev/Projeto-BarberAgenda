@@ -325,6 +325,15 @@ export default function TenantAdminPage() {
           onSwitchToBookingFlow={slug => {
             window.open(`/${slug}/agendamento`, '_blank');
           }}
+          onDeleteAccount={async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            const r = await fetch(`${getApiUrl()}/api/account?tenantId=${tenant!.id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${session?.access_token}` },
+            });
+            if (!r.ok) { const e = await r.json(); throw new Error(e.error); }
+            await signOut();
+          }}
         />
       )}
     </div>

@@ -273,6 +273,58 @@ app.post('/api/webhook/asaas', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/account
+// Exclui todos os dados do tenant (LGPD) — irreversível
+// ─────────────────────────────────────────────────────────────────────────────
+app.delete('/api/account', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+
+  try {
+    const { data: tenant } = await supabase
+      .from('tenants').select('id, slug, asaas_subscription_id').eq('id', tenantId).maybeSingle();
+
+    if (!tenant) return res.status(404).json({ error: 'Tenant não encontrado.' });
+
+    // 1. Cancela assinatura no Asaas (non-fatal)
+    if (tenant.asaas_subscription_id) {
+      try { await cancelSubscription(tenant.asaas_subscription_id); } catch {}
+    }
+
+    // 2. Remove instância WhatsApp no EvoGo (non-fatal)
+    if (EVO_URL && EVO_GLOBAL_KEY) {
+      try {
+        await fetch(`${EVO_URL}/instance/delete/${tenant.slug}`, {
+          method: 'DELETE',
+          headers: { apikey: EVO_GLOBAL_KEY },
+        });
+      } catch {}
+    }
+
+    // 3. Deleta dados do tenant em cascata (FK ON DELETE CASCADE cobre a maioria)
+    // Deleta explicitamente audit_logs (sem FK para tenant)
+    await supabasePublic.from('audit_logs').delete().eq('tenant_id', tenantId);
+
+    // 4. Deleta o tenant (cascade: appointments, customers, services, professionals, etc.)
+    await supabase.from('tenants').delete().eq('id', tenantId);
+
+    // 5. Deleta usuários do auth vinculados ao tenant
+    const { data: profiles } = await supabasePublic
+      .from('profiles').select('id').eq('tenant_id', tenantId);
+
+    for (const profile of profiles ?? []) {
+      try { await supabasePublic.auth.admin.deleteUser(profile.id); } catch {}
+    }
+
+    console.log(`[Account] Tenant ${tenantId} (${tenant.slug}) excluído por solicitação LGPD.`);
+    return res.json({ ok: true });
+
+  } catch (err: any) {
+    console.error('[Account] Delete error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Templates de notificação WhatsApp — padrões editáveis por tenant
 // ─────────────────────────────────────────────────────────────────────────────
 
