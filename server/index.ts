@@ -357,10 +357,10 @@ Para mais informações ou cancelar o agendamento: {link}`;
 const DAYS_PT   = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
 const MONTHS_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 
-function formatDatePT(dateStr: string, timeStr: string): string {
+function formatDatePT(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dow = new Date(y, m - 1, d).getDay();
-  return `${DAYS_PT[dow]}, ${d} de ${MONTHS_PT[m - 1]} de ${y} às ${timeStr}`;
+  return `${DAYS_PT[dow]}, ${d} de ${MONTHS_PT[m - 1]} de ${y}`;
 }
 
 function bookingCode(id: string): string {
@@ -441,7 +441,7 @@ app.post('/api/whatsapp/notify', async (req, res) => {
       nome:          appt.customer_name    ?? '',
       salao:         tenant.name           ?? '',
       servico:       (appt.services as any)?.name      ?? '',
-      data:          formatDatePT(appt.scheduled_date, appt.scheduled_time?.slice(0,5) ?? ''),
+      data:          formatDatePT(appt.scheduled_date),
       hora:          appt.scheduled_time?.slice(0,5)   ?? '',
       duracao:       String(appt.duration_minutes),
       profissional:  (appt.professionals as any)?.name ?? '',
@@ -757,7 +757,7 @@ async function sendConfirmations(): Promise<void> {
         nome:         appt.customer_name                  ?? '',
         salao:        tenant.name                         ?? '',
         servico:      (appt.services as any)?.name        ?? '',
-        data:         formatDatePT(appt.scheduled_date, appt.scheduled_time?.slice(0, 5) ?? ''),
+        data:         formatDatePT(appt.scheduled_date),
         hora:         appt.scheduled_time?.slice(0, 5)    ?? '',
         duracao:      String(appt.duration_minutes),
         profissional: (appt.professionals as any)?.name   ?? '',
@@ -822,7 +822,7 @@ async function sendReminders(): Promise<void> {
         nome:         appt.customer_name             ?? '',
         salao:        tenant.name                    ?? '',
         servico:      (appt.services as any)?.name      ?? '',
-        data:         formatDatePT(appt.scheduled_date, apptTime),
+        data:         formatDatePT(appt.scheduled_date),
         hora:         apptTime,
         duracao:      String(appt.duration_minutes),
         profissional: (appt.professionals as any)?.name ?? '',
