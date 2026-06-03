@@ -129,6 +129,7 @@ import {
   createProfessional, createProduct,
   updateProductStock, createAppointment, updateAppointmentStatus,
   createPayment, upsertCustomerByPhone, logAudit, notifyAppointmentWhatsApp,
+  syncProfessionalsHours,
 } from '../../lib/db';
 import { supabase } from '../../lib/supabase';
 import type { Tenant, Service, Professional, Product, Customer, Appointment, Payment } from '../../types';
@@ -320,6 +321,11 @@ export default function TenantAdminPage() {
           }}
           onUpdateTenantDetails={async (id, details) => {
             await updateTenant(id, details);
+            // Sincroniza horários para todos os profissionais quando os horários do salão mudam
+            if (details.businessHoursByDay && details.businessDays) {
+              await syncProfessionalsHours(id, details.businessDays, details.businessHoursByDay);
+              setProfessionals(prev => prev.map(p => ({ ...p, businessDays: details.businessDays!, businessHoursByDay: details.businessHoursByDay! })));
+            }
             setTenant(t => t ? { ...t, ...details } : t);
           }}
           onSwitchToBookingFlow={slug => {

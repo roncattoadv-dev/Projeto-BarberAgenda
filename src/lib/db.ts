@@ -82,6 +82,12 @@ export async function createProfessional(p: Omit<Professional, 'id'>, serviceIds
   return { ...mapProfessional(data), services: serviceIds };
 }
 
+export async function syncProfessionalsHours(tenantId: string, businessDays: string[], businessHoursByDay: Record<string, string[]>): Promise<void> {
+  await supabase.from('professionals')
+    .update({ business_days: businessDays, business_hours_by_day: businessHoursByDay })
+    .eq('tenant_id', tenantId);
+}
+
 // ── CUSTOMERS ──────────────────────────────────────────────────────────────────
 export async function getCustomers(tenantId: string): Promise<Customer[]> {
   const { data, error } = await supabase.from('customers')
