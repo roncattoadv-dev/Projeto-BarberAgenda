@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Plus, Check, X, RefreshCw, MessageSquare, Clock } from 'lucide-react';
 import { Appointment, Service, Professional, Customer } from '../../types';
@@ -14,7 +14,7 @@ interface Props {
   tenantId: string;
 }
 
-type ViewMode = 'day' | 'week';
+type ViewMode = 'day' | 'week' | 'month';
 
 const STATUS_COLOR: Record<string, { bg: string; border: string; text: string; dot: string }> = {
   confirmed:  { bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.35)',  text: '#86efac', dot: '#22c55e' },
@@ -28,6 +28,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const HOURS = Array.from({ length: 13 }, (_, i) => `${String(i + 8).padStart(2, '0')}:00`);
+const HOUR_HEIGHT = 72;  // minHeight de cada linha — deve bater com o grid
+const FIRST_HOUR  = 8;
 const DAYS_PT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTHS_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
@@ -43,23 +45,94 @@ function startOfWeek(d: Date) {
   r.setDate(r.getDate() - (day === 0 ? 6 : day - 1));
   return r;
 }
+function addMonths(d: Date, n: number) {
+  const r = new Date(d);
+  r.setDate(1);
+  r.setMonth(r.getMonth() + n);
+  return r;
+}
+function monthGrid(d: Date): Date[] {
+  const year = d.getFullYear(), month = d.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay  = new Date(year, month + 1, 0);
+  // Começa na segunda-feira da semana do primeiro dia
+  const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+  const start = addDays(firstDay, -startOffset);
+  // Termina no domingo da semana do último dia
+  const endOffset = lastDay.getDay() === 0 ? 0 : 7 - lastDay.getDay();
+  const total = startOffset + lastDay.getDate() + endOffset;
+  return Array.from({ length: total }, (_, i) => addDays(start, i));
+}
 
 export default function AgendaTab({ myAppointments, myServices, myProfessionals, myCustomers, onUpdateAppointmentStatus, onAddAppointment, onCompleteAppointment, tenantId }: Props) {
-  const [view, setView] = useState<ViewMode>('day');
+  const [view, setView] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem('bf_agenda_view');
+    return (saved === 'day' || saved === 'week' || saved === 'month') ? saved : 'day';
+  });
   const [baseDate, setBaseDate] = useState(new Date());
   const [hoveredAppt, setHoveredAppt] = useState<string | null>(null);
   const [expandedAppt, setExpandedAppt] = useState<string | null>(null);
+  const [now, setNow] = useState(new Date());
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const today = formatDateKey(new Date());
 
+  // Atualiza o horário a cada minuto para mover a barra
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Auto-scroll para o horário atual ao mudar de view ou carregar
+  useEffect(() => {
+    if (view === 'month') return;
+    const h = now.getHours(), m = now.getMinutes();
+    if (h < FIRST_HOUR || h >= FIRST_HOUR + HOURS.length) return;
+    const offset = ((h - FIRST_HOUR) + m / 60) * HOUR_HEIGHT;
+    scrollRef.current?.scrollTo({ top: Math.max(0, offset - 120), behavior: 'smooth' });
+  }, [view]);
+
+  // Posição da barra vermelha (null = fora do range visível)
+  const timeLineTop = (() => {
+    const h = now.getHours(), m = now.getMinutes();
+    if (h < FIRST_HOUR || h >= FIRST_HOUR + HOURS.length) return null;
+    return ((h - FIRST_HOUR) + m / 60) * HOUR_HEIGHT;
+  })();
+
   const navigate = (dir: number) => {
-    setBaseDate(d => addDays(d, view === 'day' ? dir : dir * 7));
+    if (view === 'day')   setBaseDate(d => addDays(d, dir));
+    if (view === 'week')  setBaseDate(d => addDays(d, dir * 7));
+    if (view === 'month') setBaseDate(d => addMonths(d, dir));
   };
 
   const weekDays = useMemo(() => {
-    const start = view === 'week' ? startOfWeek(baseDate) : baseDate;
-    return view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(start, i)) : [baseDate];
+    if (view === 'week') {
+      const start = startOfWeek(baseDate);
+      return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+    }
+    return [baseDate];
   }, [view, baseDate]);
+
+  const monthDays = useMemo(() => view === 'month' ? monthGrid(baseDate) : [], [view, baseDate]);
+
+  // Hoje está visível na view atual?
+  const isTodayVisible = view === 'day'
+    ? formatDateKey(baseDate) === today
+    : weekDays.some(d => formatDateKey(d) === today);
+
+  // Índice da coluna de hoje na view semana (0-6), -1 se hoje não está visível
+  const todayColIndex = view === 'week'
+    ? weekDays.findIndex(d => formatDateKey(d) === today)
+    : -1;
+
+  const apptsByDate = useMemo(() => {
+    const map: Record<string, Appointment[]> = {};
+    myAppointments.filter(a => a.status !== 'cancelled').forEach(a => {
+      if (!map[a.date]) map[a.date] = [];
+      map[a.date].push(a);
+    });
+    return map;
+  }, [myAppointments]);
 
   const apptsByDateHour = useMemo(() => {
     const map: Record<string, Appointment[]> = {};
@@ -74,7 +147,9 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
 
   const headerLabel = view === 'day'
     ? `${baseDate.getDate()} de ${MONTHS_PT[baseDate.getMonth()]} de ${baseDate.getFullYear()}`
-    : `${weekDays[0].getDate()} ${MONTHS_PT[weekDays[0].getMonth()]} – ${weekDays[6].getDate()} ${MONTHS_PT[weekDays[6].getMonth()]} ${weekDays[6].getFullYear()}`;
+    : view === 'week'
+    ? `${weekDays[0].getDate()} ${MONTHS_PT[weekDays[0].getMonth()]} – ${weekDays[6].getDate()} ${MONTHS_PT[weekDays[6].getMonth()]} ${weekDays[6].getFullYear()}`
+    : `${MONTHS_PT[baseDate.getMonth()]} ${baseDate.getFullYear()}`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -96,10 +171,10 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
         </div>
         {/* View toggle */}
         <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
-          {(['day', 'week'] as ViewMode[]).map(v => (
-            <button key={v} onClick={() => setView(v)}
+          {([['day', 'Dia'], ['week', 'Semana'], ['month', 'Mês']] as [ViewMode, string][]).map(([v, label]) => (
+            <button key={v} onClick={() => { setView(v); localStorage.setItem('bf_agenda_view', v); }}
               style={{ padding: '6px 14px', fontSize: 12, fontWeight: 700, background: view === v ? 'rgba(255,255,255,0.12)' : 'transparent', color: view === v ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.38)', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 150ms' }}>
-              {v === 'day' ? 'Dia' : 'Semana'}
+              {label}
             </button>
           ))}
         </div>
@@ -107,13 +182,69 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
 
       {/* ── Calendar grid ── */}
       <motion.div
+        ref={scrollRef}
         key={view + formatDateKey(baseDate)}
         initial={{ opacity: 0, x: 12 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
-        style={{ flex: 1, overflowY: 'auto', borderRadius: 16, border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.02)' }}
+        style={{ flex: 1, overflowY: 'auto', borderRadius: 16, border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.02)', position: 'relative' }}
         className="no-scrollbar"
       >
+        {/* ── Month grid ── */}
+        {view === 'month' && (() => {
+          const currentMonth = baseDate.getMonth();
+          const weeks: Date[][] = [];
+          for (let i = 0; i < monthDays.length; i += 7) weeks.push(monthDays.slice(i, i + 7));
+          return (
+            <>
+              {/* Day-of-week header */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid rgba(255,255,255,0.07)', position: 'sticky', top: 0, background: '#021340', zIndex: 2 }}>
+                {['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => (
+                  <div key={d} style={{ padding: '8px 0', textAlign: 'center', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.35)' }}>{d}</div>
+                ))}
+              </div>
+              {/* Weeks */}
+              {weeks.map((week, wi) => (
+                <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  {week.map(d => {
+                    const key = formatDateKey(d);
+                    const isToday = key === today;
+                    const isCurrentMonth = d.getMonth() === currentMonth;
+                    const dayAppts = apptsByDate[key] ?? [];
+                    return (
+                      <div key={key} style={{ minHeight: 90, padding: '6px 8px', borderLeft: '1px solid rgba(255,255,255,0.04)', opacity: isCurrentMonth ? 1 : 0.3 }}>
+                        {/* Day number */}
+                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: '50%', background: isToday ? '#ffffff' : 'transparent', color: isToday ? '#021340' : 'rgba(255,255,255,0.65)', fontWeight: isToday ? 800 : 600, fontSize: 12, marginBottom: 4 }}>
+                          {d.getDate()}
+                        </div>
+                        {/* Appointments (max 3 + overflow) */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {dayAppts.slice(0, 3).map(appt => {
+                            const sc = STATUS_COLOR[appt.status] ?? STATUS_COLOR.pending;
+                            return (
+                              <div key={appt.id} style={{ background: sc.bg, border: `1px solid ${sc.border}`, borderRadius: 4, padding: '2px 5px', display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+                                <span style={{ width: 5, height: 5, borderRadius: '50%', background: sc.dot, flexShrink: 0 }} />
+                                <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                  {appt.time.substring(0,5)} {appt.customerName}
+                                </span>
+                                {appt.wppConfirmSent && <MessageSquare size={7} color="#86efac" title="Confirmação enviada" style={{ flexShrink: 0 }} />}
+                                {appt.wppReminderSent && <Clock size={7} color="#fcd34d" title="Lembrete enviado" style={{ flexShrink: 0 }} />}
+                              </div>
+                            );
+                          })}
+                          {dayAppts.length > 3 && (
+                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.38)', fontWeight: 700, paddingLeft: 4 }}>+{dayAppts.length - 3} mais</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </>
+          );
+        })()}
+
         {/* Day headers (week view) */}
         {view === 'week' && (
           <div style={{ display: 'grid', gridTemplateColumns: '56px repeat(7, 1fr)', borderBottom: '1px solid rgba(255,255,255,0.07)', position: 'sticky', top: 0, background: '#021340', zIndex: 2 }}>
@@ -133,8 +264,9 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
           </div>
         )}
 
-        {/* Time rows */}
-        {HOURS.map(hour => (
+
+        {/* Time rows (dia e semana) */}
+        {view !== 'month' && HOURS.map(hour => (
           <div key={hour} style={{ display: 'grid', gridTemplateColumns: `56px repeat(${weekDays.length}, 1fr)`, minHeight: 72, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
             {/* Hour label */}
             <div style={{ padding: '8px 10px 0', fontSize: 11, fontFamily: 'monospace', color: 'rgba(255,255,255,0.25)', fontWeight: 600, textAlign: 'right', flexShrink: 0 }}>{hour}</div>
@@ -142,8 +274,21 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
             {weekDays.map(d => {
               const dateKey = formatDateKey(d);
               const cellAppts = apptsByDateHour[`${dateKey}__${hour}`] ?? [];
+              // Indicador de hora atual: dentro da célula do dia atual, na hora correta
+              const isCurrentHourCell = isTodayVisible
+                && dateKey === today
+                && timeLineTop !== null
+                && now.getHours() === parseInt(hour);
+              const minutePct = `${(now.getMinutes() / 60) * 100}%`;
               return (
                 <div key={dateKey} style={{ borderLeft: '1px solid rgba(255,255,255,0.04)', padding: '4px 6px', display: 'flex', flexDirection: 'column', gap: 3, position: 'relative' }}>
+                  {/* ── Barra vermelha da hora atual ── */}
+                  {isCurrentHourCell && (
+                    <div style={{ position: 'absolute', top: minutePct, left: -1, right: 0, zIndex: 10, pointerEvents: 'none', display: 'flex', alignItems: 'center', transform: 'translateY(-50%)' }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', flexShrink: 0, marginLeft: -5 }} />
+                      <div style={{ flex: 1, height: 2, background: '#ef4444' }} />
+                    </div>
+                  )}
                   {cellAppts.map(appt => {
                     const srv  = myServices.find(s => s.id === appt.serviceId);
                     const prof = myProfessionals.find(p => p.id === appt.professionalId);
@@ -169,6 +314,22 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                           <span style={{ fontSize: 10, fontFamily: 'monospace', color: sc.text, marginLeft: 'auto', flexShrink: 0 }}>{appt.time}</span>
                         </div>
                         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{srv?.name} · {prof?.name}</div>
+
+                        {/* Indicadores de mensagens automáticas */}
+                        {(appt.wppConfirmSent || appt.wppReminderSent) && (
+                          <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                            {appt.wppConfirmSent && (
+                              <span title="Confirmação enviada" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 5px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', color: '#86efac', fontSize: 9, fontWeight: 700 }}>
+                                <MessageSquare size={8} /> Confirmação
+                              </span>
+                            )}
+                            {appt.wppReminderSent && (
+                              <span title="Lembrete enviado" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 5px', borderRadius: 4, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', color: '#fcd34d', fontSize: 9, fontWeight: 700 }}>
+                                <Clock size={8} /> Lembrete
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         {/* Hover actions */}
                         <AnimatePresence>

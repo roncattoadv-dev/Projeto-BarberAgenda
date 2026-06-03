@@ -1118,23 +1118,32 @@ async function sendConfirmations(): Promise<void> {
 
 // Job a cada 5 min: envia lembrete antes do atendimento (tempo configurável por tenant)
 // ─────────────────────────────────────────────────────────────────────────────
+// Brasília = UTC-3
+const BRASILIA_MS = -3 * 60 * 60 * 1000;
+function nowBrasilia(): Date { return new Date(Date.now() + BRASILIA_MS); }
+function toBrasiliaStr(d: Date) { return new Date(d.getTime() + BRASILIA_MS).toISOString(); }
+
 async function sendReminders(): Promise<void> {
   if (!EVO_URL || !EVO_GLOBAL_KEY) return;
 
-  // Busca todos os tenants com WhatsApp configurável para calcular janela por tenant
+  // Data de hoje em horário de Brasília
+  const todayBrasilia = toBrasiliaStr(new Date()).split('T')[0];
+
   const { data: appts } = await supabase
     .from('appointments')
     .select('*, tenants(id, name, slug, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes), services(name), professionals(name)')
     .eq('wpp_reminder_sent', false)
     .neq('status', 'cancelled')
-    .gte('scheduled_date', new Date().toISOString().split('T')[0]);
+    .gte('scheduled_date', todayBrasilia);
 
-  const now = new Date();
+  // "Agora" em horário de Brasília
+  const now = nowBrasilia();
 
   for (const appt of appts ?? []) {
     const tenant = appt.tenants as any;
     // Janela ±5 min em torno do tempo configurado pelo tenant (padrão 60 min)
     const reminderMin = Number(tenant?.wpp_reminder_minutes ?? 60);
+    // lo/hi já estão em Brasília (comparação direta com scheduled_time)
     const lo = new Date(now.getTime() + (reminderMin - 5) * 60_000);
     const hi = new Date(now.getTime() + (reminderMin + 5) * 60_000);
     const loDate = lo.toISOString().split('T')[0];
