@@ -43,10 +43,6 @@ services:
       # URL pública da API Express
       API_URL: https://barberflow-api.i9inu5.easypanel.host
       SITE_URL: https://barberflow-barberflow.i9inu5.easypanel.host
-      EVO_URL: ${EVO_URL}
-      EVO_INSTANCE: ${EVO_INSTANCE:-barberflow}
-      EVO_APIKEY: ${EVO_APIKEY}
-      EVO_GLOBAL_KEY: ${EVO_GLOBAL_KEY}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
       interval: 30s
@@ -76,7 +72,11 @@ services:
       SUPABASE_SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q
       ASAAS_API_KEY: ${ASAAS_API_KEY}
       ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_TOKEN}
+      ASAAS_SANDBOX: ${ASAAS_SANDBOX:-false}
       CORS_ORIGIN: https://barberflow-barberflow.i9inu5.easypanel.host
+      # Evolution Go — somente no servidor, nunca exposto ao browser
+      EVO_URL: http://evolutionapi_evogo:8080
+      EVO_GLOBAL_KEY: 8f91c3d5-e2a7-4b60-9d88-1c4e7f0b5a22
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
       interval: 30s

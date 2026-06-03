@@ -43,6 +43,22 @@ export async function createService(s: Omit<Service, 'id'>): Promise<Service> {
   return mapService(data);
 }
 
+export async function updateService(id: string, s: Partial<Omit<Service, 'id'>>): Promise<void> {
+  const payload: any = {};
+  if (s.name         !== undefined) payload.name             = s.name;
+  if (s.price        !== undefined) payload.price            = s.price;
+  if (s.durationMinutes !== undefined) payload.duration_minutes = s.durationMinutes;
+  if (s.category     !== undefined) payload.category         = s.category;
+  const { error } = await supabase.from('services').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteService(id: string): Promise<void> {
+  // Soft-delete: marca is_active = false para preservar histórico de agendamentos
+  const { error } = await supabase.from('services').update({ is_active: false }).eq('id', id);
+  if (error) throw error;
+}
+
 // ── PROFESSIONALS ──────────────────────────────────────────────────────────────
 export async function getProfessionals(tenantId: string): Promise<Professional[]> {
   const { data, error } = await supabase.from('professionals')
@@ -75,13 +91,16 @@ export async function getCustomers(tenantId: string): Promise<Customer[]> {
 }
 
 export async function upsertCustomerByPhone(tenantId: string, phone: string, name: string, email?: string): Promise<Customer> {
-  const { data: existing } = await supabase.from('customers')
-    .select('*').eq('tenant_id', tenantId).eq('phone', phone).maybeSingle();
-  if (existing) return mapCustomer(existing);
-  const { data, error } = await supabase.from('customers')
-    .insert({ tenant_id: tenantId, name, phone, email: email ?? null }).select().single();
+  const { data, error } = await supabase.rpc('upsert_customer', {
+    p_tenant_id: tenantId,
+    p_phone:     phone,
+    p_name:      name,
+    p_email:     email ?? null,
+  });
   if (error) throw error;
-  return mapCustomer(data);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('upsert_customer retornou vazio');
+  return mapCustomer(row);
 }
 
 // ── APPOINTMENTS ───────────────────────────────────────────────────────────────
@@ -106,6 +125,15 @@ export async function createAppointment(a: Omit<Appointment, 'id'>): Promise<App
   const { data, error } = await supabase.from('appointments').insert(dbAppointment(a)).select().single();
   if (error) throw error;
   return mapAppointment(data);
+}
+
+export async function notifyAppointmentWhatsApp(tenantId: string, appointmentId: string, _token?: string): Promise<void> {
+  const apiUrl = ((window as any).__BARBER_CONFIG__?.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+  await fetch(`${apiUrl}/api/whatsapp/notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tenantId, appointmentId }),
+  });
 }
 
 export async function updateAppointmentStatus(id: string, status: Appointment['status']) {
@@ -144,6 +172,17 @@ export async function createProduct(p: Omit<Product, 'id'>): Promise<Product> {
 export async function updateProductStock(id: string, stock: number) {
   const { error } = await supabase.from('products').update({ stock }).eq('id', id);
   if (error) throw error;
+}
+
+// ── TENANT LOGO STORAGE ────────────────────────────────────────────────────────
+export async function uploadTenantLogo(tenantId: string, file: File): Promise<string> {
+  const path = `${tenantId}/logo`;
+  const { error } = await supabase.storage
+    .from('tenant-logos')
+    .upload(path, file, { upsert: true, contentType: file.type });
+  if (error) throw error;
+  const { data } = supabase.storage.from('tenant-logos').getPublicUrl(path);
+  return data.publicUrl;
 }
 
 // ── AUDIT LOG ──────────────────────────────────────────────────────────────────
@@ -186,6 +225,7 @@ function mapTenant(r: any): Tenant {
     businessHours: r.business_hours ?? [],
     businessDays: r.business_days ?? [],
     businessHoursByDay: r.business_hours_by_day ?? {},
+    blockedDates: r.blocked_dates ?? [],
   };
 }
 function mapService(r: any): Service {
@@ -198,7 +238,7 @@ function mapCustomer(r: any): Customer {
   return { id: r.id, tenantId: r.tenant_id, name: r.name, email: r.email ?? '', phone: r.phone, notes: r.notes, createdAt: r.created_at };
 }
 function mapAppointment(r: any): Appointment {
-  return { id: r.id, tenantId: r.tenant_id, serviceId: r.service_id, professionalId: r.professional_id, customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone, date: r.scheduled_date, time: r.scheduled_time?.substring(0,5) ?? '', durationMinutes: r.duration_minutes, price: Number(r.price), status: r.status, notes: r.notes };
+  return { id: r.id, tenantId: r.tenant_id, serviceId: r.service_id, professionalId: r.professional_id, customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone, date: r.scheduled_date, time: r.scheduled_time?.substring(0,5) ?? '', durationMinutes: r.duration_minutes, price: Number(r.price), status: r.status, notes: r.notes, wppConfirmSent: r.wpp_confirm_sent ?? false, wppReminderSent: r.wpp_reminder_sent ?? false };
 }
 function mapPayment(r: any): Payment {
   return { id: r.id, tenantId: r.tenant_id, appointmentId: r.appointment_id, amount: Number(r.amount), method: r.method, status: r.status, date: r.paid_at, description: r.description ?? '' };
@@ -227,6 +267,7 @@ function dbTenant(t: Partial<Tenant>): any {
     ...(t.businessDays      !== undefined && { business_days: t.businessDays }),
     ...(t.businessHours     !== undefined && { business_hours: t.businessHours }),
     ...(t.businessHoursByDay !== undefined && { business_hours_by_day: t.businessHoursByDay }),
+    ...(t.blockedDates      !== undefined && { blocked_dates: t.blockedDates }),
   };
 }
 function dbService(s: Omit<Service, 'id'>): any {

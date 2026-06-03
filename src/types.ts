@@ -18,8 +18,9 @@ export interface Tenant {
   subscriptionEndsAt: string;
   mrr: number;
   businessHours?: string[];
-  businessDays?: string[]; // e.g. ['seg', 'ter', 'qua', 'qui', 'sex', 'sab']
+  businessDays?: string[];
   businessHoursByDay?: Record<string, string[]>;
+  blockedDates?: string[]; // YYYY-MM-DD — férias, feriados, folgas
 }
 
 export interface User {
@@ -89,6 +90,8 @@ export interface Appointment {
   price: number;
   status: 'pending' | 'confirmed' | 'cancelled' | 'attended';
   notes?: string;
+  wppConfirmSent?: boolean;
+  wppReminderSent?: boolean;
 }
 
 export interface Payment {

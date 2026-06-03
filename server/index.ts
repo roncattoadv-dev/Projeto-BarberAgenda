@@ -17,10 +17,13 @@ import {
 } from './asaas';
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const PORT            = parseInt(process.env.SERVER_PORT || '4000');
+const PORT            = parseInt(process.env.PORT || process.env.SERVER_PORT || '4000');
 const SUPABASE_URL    = process.env.SUPABASE_URL    || '';
 const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY || ''; // service_role key (bypass RLS)
 const WEBHOOK_SECRET  = process.env.ASAAS_WEBHOOK_SECRET || '';
+const EVO_URL         = (process.env.EVO_URL || '').replace(/\/$/, '');
+const EVO_GLOBAL_KEY  = process.env.EVO_GLOBAL_KEY || process.env.EVO_APIKEY || '';
+const SITE_URL        = (process.env.SITE_URL || process.env.CORS_ORIGIN || '').replace(/\/$/, '');
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('[Server] SUPABASE_URL e SUPABASE_SERVICE_KEY são obrigatórios');
@@ -38,6 +41,12 @@ const supabasePublic = createClient(SUPABASE_URL, SUPABASE_KEY);
 const app = express();
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use(express.json());
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/api/whatsapp')) {
+    console.log(`[HTTP] ${req.method} ${req.path} auth=${req.headers.authorization?.slice(0,20)}...`);
+  }
+  next();
+});
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
@@ -206,18 +215,19 @@ app.post('/api/webhook/asaas', async (req, res) => {
     switch (event) {
       case 'PAYMENT_RECEIVED':
       case 'PAYMENT_CONFIRMED': {
-        // Pagamento confirmado → ativa e calcula próxima renovação
-        const nextRenewal = new Date();
-        nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+        // Próxima renovação = dueDate do pagamento + 30 dias (cobre antecipados e atrasados)
+        const base = payment?.dueDate ? new Date(payment.dueDate + 'T12:00:00Z') : new Date();
+        base.setMonth(base.getMonth() + 1);
+        const subscriptionEndsAt = base.toISOString().split('T')[0];
         await supabase.from('tenants').update({
           status: 'active',
           plan:   'mensal',
           mrr:    89.90,
-          subscription_ends_at: nextRenewal.toISOString().split('T')[0],
+          subscription_ends_at: subscriptionEndsAt,
         }).eq('id', tenant.id);
         newStatus  = 'active';
         logAction  = 'Pagamento confirmado';
-        logDetails = `Asaas payment ${payment?.id} — R$ ${payment?.value?.toFixed(2)}. Plano ativo até ${nextRenewal.toISOString().split('T')[0]}.`;
+        logDetails = `Asaas payment ${payment?.id} — R$ ${payment?.value?.toFixed(2)}. Plano ativo até ${subscriptionEndsAt}.`;
         break;
       }
 
@@ -263,10 +273,661 @@ app.post('/api/webhook/asaas', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/billing/verify-payment
+// Consulta o Asaas e ativa o tenant se houver pagamento confirmado recente
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase
+    .from('tenants').select('asaas_subscription_id, asaas_customer_id, status').eq('id', tenantId).maybeSingle();
+
+  if (!tenant?.asaas_customer_id && !tenant?.asaas_subscription_id) {
+    return res.status(404).json({ error: 'Assinatura não encontrada.' });
+  }
+
+  try {
+    const asaasUrl = process.env.ASAAS_SANDBOX === 'true'
+      ? 'https://sandbox.asaas.com/api/v3'
+      : 'https://api.asaas.com/v3';
+    const key = process.env.ASAAS_API_KEY || '';
+
+    const [rSub, rCust] = await Promise.all([
+      tenant.asaas_subscription_id
+        ? fetch(`${asaasUrl}/payments?subscription=${tenant.asaas_subscription_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json())
+        : { data: [] },
+      tenant.asaas_customer_id
+        ? fetch(`${asaasUrl}/payments?customer=${tenant.asaas_customer_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json())
+        : { data: [] },
+    ]);
+
+    const allPayments = [...(rSub?.data ?? []), ...(rCust?.data ?? [])];
+    const seen = new Set();
+    const unique = allPayments.filter((p: any) => !seen.has(p.id) && seen.add(p.id));
+
+    const confirmed = unique.find((p: any) => p.status === 'RECEIVED' || p.status === 'CONFIRMED');
+
+    if (!confirmed) {
+      return res.json({ activated: false, message: 'Nenhum pagamento confirmado encontrado.' });
+    }
+
+    // Ativa o tenant com base na dueDate do pagamento confirmado
+    const base = confirmed.dueDate ? new Date(confirmed.dueDate + 'T12:00:00Z') : new Date();
+    base.setMonth(base.getMonth() + 1);
+    const subscriptionEndsAt = base.toISOString().split('T')[0];
+    await supabase.from('tenants').update({
+      status: 'active',
+      plan:   'mensal',
+      mrr:    89.90,
+      subscription_ends_at: subscriptionEndsAt,
+    }).eq('id', tenantId);
+
+    await supabase.from('audit_logs').insert({
+      tenant_id: tenantId,
+      user_name: 'Billing Verify',
+      action:    'Pagamento verificado manualmente',
+      details:   `Payment ${confirmed.id} — R$ ${confirmed.value?.toFixed(2)}. Tenant ativado.`,
+    });
+
+    return res.json({ activated: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/billing/payment-link
+// Retorna o link de pagamento da cobrança pendente/vencida do tenant
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/billing/payment-link', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase
+    .from('tenants').select('asaas_subscription_id, asaas_customer_id, plan').eq('id', tenantId).maybeSingle();
+
+  if (!tenant?.asaas_subscription_id && !tenant?.asaas_customer_id) {
+    return res.status(404).json({ error: 'Assinatura não encontrada.' });
+  }
+
+  try {
+    const asaasUrl = process.env.ASAAS_SANDBOX === 'true'
+      ? 'https://sandbox.asaas.com/api/v3'
+      : 'https://api.asaas.com/v3';
+    const key = process.env.ASAAS_API_KEY || '';
+
+    // Busca por assinatura primeiro (cobranças automáticas)
+    const [rSub, rCust] = await Promise.all([
+      fetch(`${asaasUrl}/payments?subscription=${tenant.asaas_subscription_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json()),
+      fetch(`${asaasUrl}/payments?customer=${tenant.asaas_customer_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json()),
+    ]);
+
+    const allPayments = [
+      ...(rSub?.data ?? []),
+      ...(rCust?.data ?? []),
+    ];
+
+    // Remove duplicatas pelo ID e pega pendente/vencido mais recente
+    const seen = new Set();
+    const unique = allPayments.filter((p: any) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+
+    // Prioridade: vencida → pendente → qualquer futura não paga → mais recente paga (fallback)
+    const priority = ['OVERDUE', 'PENDING'];
+    let payment = unique.find((p: any) => priority.includes(p.status));
+    if (!payment) {
+      // Fallback: pagamento mais recente (para redirecionar ao portal do Asaas)
+      payment = unique.sort((a: any, b: any) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())[0];
+    }
+
+    if (!payment?.invoiceUrl) return res.status(404).json({ error: 'Nenhuma cobrança encontrada.' });
+
+    return res.json({ url: payment.invoiceUrl, dueDate: payment.dueDate, value: payment.value });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Templates de notificação WhatsApp — padrões editáveis por tenant
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TPL_CONFIRM_DEFAULT = `Olá, {nome}
+o seu agendamento está confirmado em {salao}
+
+Serviço: {servico}
+Quando: {data} às {hora}
+Duração: {duracao} min
+Profissional: {profissional}
+Código: {codigo}
+
+Gostaríamos de lembrar que caso não compareça no horário reservado, será cobrado o valor do serviço agendado. Agradecemos pela compreensão e estamos à disposição para qualquer dúvida!
+
+Para mais informações ou cancelar o agendamento: {link}`;
+
+const TPL_REMIND_DEFAULT = `Olá, {nome}
+o seu agendamento está próximo em {salao}
+
+Serviço: {servico}
+Quando: {data} às {hora}
+Duração: {duracao} min
+Profissional: {profissional}
+Código: {codigo}
+
+Gostaríamos de lembrar que caso não compareça no horário reservado, será cobrado o valor do serviço agendado. Agradecemos pela compreensão e estamos à disposição para qualquer dúvida!
+
+Para mais informações ou cancelar o agendamento: {link}`;
+
+const DAYS_PT   = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+const MONTHS_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+
+function formatDatePT(dateStr: string, timeStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return `${DAYS_PT[dow]}, ${d} de ${MONTHS_PT[m - 1]} de ${y} às ${timeStr}`;
+}
+
+function bookingCode(id: string): string {
+  return id.replace(/-/g, '').slice(0, 8).toUpperCase();
+}
+
+function buildLink(tenant: { slug: string }, appointmentId: string): string {
+  return SITE_URL ? `${SITE_URL}/${tenant.slug}/cancelar/${appointmentId}` : '';
+}
+
+function applyTemplate(tpl: string, vars: Record<string, string>): string {
+  return Object.entries(vars).reduce((msg, [k, v]) => msg.replaceAll(`{${k}}`, v), tpl);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/whatsapp/templates?tenantId=xxx
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data } = await supabase
+    .from('tenants')
+    .select('wpp_template_confirm, wpp_template_remind, wpp_booking_url')
+    .eq('id', tenantId)
+    .maybeSingle();
+  res.json({
+    ok: true,
+    confirm:    data?.wpp_template_confirm  ?? TPL_CONFIRM_DEFAULT,
+    remind:     data?.wpp_template_remind   ?? TPL_REMIND_DEFAULT,
+    bookingUrl: data?.wpp_booking_url       ?? '',
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/whatsapp/templates
+// ─────────────────────────────────────────────────────────────────────────────
+app.put('/api/whatsapp/templates', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { confirm, remind, bookingUrl } = req.body as { confirm?: string; remind?: string; bookingUrl?: string };
+  await supabase.from('tenants').update({
+    wpp_template_confirm: confirm ?? null,
+    wpp_template_remind:  remind  ?? null,
+    wpp_booking_url:      bookingUrl ?? null,
+  }).eq('id', tenantId);
+  res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/whatsapp/notify
+// Envia confirmação de agendamento via WhatsApp.
+// Chamado pelo frontend após criar um appointment.
+// Não exige JWT — segurança garantida pela validação tenantId+appointmentId no DB.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/whatsapp/notify', async (req, res) => {
+  const { tenantId, appointmentId } = req.body as { tenantId?: string; appointmentId?: string };
+  if (!tenantId || !appointmentId) { res.status(400).json({ error: 'tenantId e appointmentId obrigatórios.' }); return; }
+  if (!appointmentId) { res.status(400).json({ error: 'appointmentId obrigatório.' }); return; }
+
+  try {
+    const [apptRes, tenantRes] = await Promise.all([
+      supabase.from('appointments')
+        .select('*, services(name), professionals(name)')
+        .eq('id', appointmentId).eq('tenant_id', tenantId).maybeSingle(),
+      supabase.from('tenants')
+        .select('name, slug, wpp_template_confirm, wpp_booking_url')
+        .eq('id', tenantId).maybeSingle(),
+    ]);
+
+    const appt   = apptRes.data;
+    const tenant = tenantRes.data;
+    if (!appt || !tenant) { res.status(404).json({ error: 'Dados não encontrados.' }); return; }
+
+    const phone = appt.customer_phone?.replace(/\D/g, '');
+    if (!phone) { res.json({ ok: true, skipped: 'sem telefone' }); return; }
+
+    const code  = bookingCode(appt.id);
+    const link  = buildLink(tenant, appt.id);
+    const vars  = {
+      nome:          appt.customer_name    ?? '',
+      salao:         tenant.name           ?? '',
+      servico:       (appt.services as any)?.name      ?? '',
+      data:          formatDatePT(appt.scheduled_date, appt.scheduled_time?.slice(0,5) ?? ''),
+      hora:          appt.scheduled_time?.slice(0,5)   ?? '',
+      duracao:       String(appt.duration_minutes),
+      profissional:  (appt.professionals as any)?.name ?? '',
+      codigo:        code,
+      link,
+    };
+
+    const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
+    const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+
+    await evoInstance(instanceToken, '/send/text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+    });
+
+    // Marca como enviado para o job não reenviar
+    await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appointmentId);
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[Notify]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WhatsApp / Evolution Go — helpers de servidor
+// O EVO_GLOBAL_KEY nunca é exposto ao frontend.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Token determinístico por tenant: slug + primeiros 8 chars do id sem hífens */
+function evoInstanceToken(slug: string, tenantId: string): string {
+  return slug + '-' + tenantId.replace(/-/g, '').slice(0, 8);
+}
+
+/** Operações admin (global key): /instance/all, /instance/create, /instance/delete */
+async function evoAdmin<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+  if (!EVO_URL || !EVO_GLOBAL_KEY) throw new Error('EvoGo não configurado (EVO_URL / EVO_GLOBAL_KEY).');
+  const res = await fetch(`${EVO_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'apikey': EVO_GLOBAL_KEY, ...(options.headers as object ?? {}) },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`[EvoGo ${res.status}] ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** Operações de instância (token da instância): /instance/status, /instance/qr, /send/text */
+async function evoInstance<T = unknown>(instanceToken: string, path: string, options: RequestInit = {}): Promise<T> {
+  if (!EVO_URL) throw new Error('EvoGo não configurado (EVO_URL).');
+  const res = await fetch(`${EVO_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'apikey': instanceToken, ...(options.headers as object ?? {}) },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`[EvoGo ${res.status}] ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** Garante que a instância existe; usa /instance/all para verificar (global key) */
+async function ensureInstance(instanceName: string, token: string): Promise<void> {
+  const all = await evoAdmin<{ data: any[] }>('/instance/all');
+  const exists = (all.data ?? []).some((i: any) => i.name === instanceName);
+  if (!exists) {
+    await evoAdmin('/instance/create', {
+      method: 'POST',
+      body: JSON.stringify({ name: instanceName, token }),
+    });
+  }
+}
+
+/** Middleware: verifica JWT Supabase e confirma acesso ao tenant solicitado */
+async function verifyTenant(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): Promise<void> {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Token de autenticação não fornecido.' });
+    return;
+  }
+  const { data: { user }, error } = await supabasePublic.auth.getUser(auth.slice(7));
+  if (error || !user) {
+    res.status(401).json({ error: 'Token inválido ou expirado.' });
+    return;
+  }
+  const tenantId = (req.query.tenantId as string) || (req.body?.tenantId as string);
+  if (!tenantId) {
+    res.status(400).json({ error: 'tenantId é obrigatório.' });
+    return;
+  }
+  const role         = user.user_metadata?.role as string | undefined;
+  const userTenantId = user.user_metadata?.tenant_id as string | undefined;
+  if (role !== 'super_admin' && userTenantId !== tenantId) {
+    res.status(403).json({ error: 'Sem permissão para este tenant.' });
+    return;
+  }
+  (req as any).verifiedTenantId = tenantId;
+  next();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/whatsapp/status?tenantId=xxx
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/whatsapp/status', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
+
+  if (!EVO_URL || !EVO_GLOBAL_KEY) {
+    res.json({ ok: true, connected: false, loggedIn: false, name: null });
+    return;
+  }
+
+  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+  try {
+    const data = await evoInstance<{ data: { Connected: boolean; LoggedIn: boolean; Name: string } }>(
+      instanceToken, `/instance/status?instanceId=${tenant.slug}`
+    );
+    const loggedIn = !!data?.data?.LoggedIn;
+    // Reconectou → limpa o timestamp de desconexão
+    if (loggedIn) {
+      await supabase.from('tenants').update({ evo_disconnected_at: null }).eq('id', tenantId);
+    }
+    res.json({ ok: true, connected: !!data?.data?.Connected, loggedIn, name: data?.data?.Name || null });
+  } catch {
+    res.json({ ok: true, connected: false, loggedIn: false, name: null });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/whatsapp/qr?tenantId=xxx
+// Auto-cria a instância se necessário e retorna o QR Code.
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/whatsapp/qr', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
+
+  if (!EVO_URL || !EVO_GLOBAL_KEY) {
+    res.status(503).json({ error: 'WhatsApp não configurado. Contate o suporte.' });
+    return;
+  }
+
+  const instanceName  = tenant.slug;
+  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+
+  try {
+    await ensureInstance(instanceName, instanceToken);
+    const data = await evoInstance<{ data: { Qrcode: string; Code: string } }>(
+      instanceToken, `/instance/qr?instanceId=${instanceName}`
+    );
+    if (data?.data?.Qrcode) {
+      res.json({ ok: true, qrcode: data.data.Qrcode, code: data.data.Code || '' });
+    } else {
+      // Já conectado — sem QR
+      res.json({ ok: true, qrcode: null, code: '' });
+    }
+  } catch (err: any) {
+    console.error('[WhatsApp QR]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/whatsapp/disconnect
+// Faz logout do WhatsApp mantendo a instância no EvoGo.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/whatsapp/disconnect', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
+
+  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+
+  try {
+    await evoInstance(instanceToken, '/instance/disconnect', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId: tenant.slug }),
+    });
+    // Registra quando foi desconectado para o job de limpeza de 30 dias
+    await supabase.from('tenants').update({ evo_disconnected_at: new Date().toISOString() }).eq('id', tenantId);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[WhatsApp Disconnect]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/whatsapp/send
+// Envia mensagem de texto via instância do tenant.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { phone, message } = req.body as { phone?: string; message?: string };
+  if (!phone || !message) { res.status(400).json({ error: 'phone e message são obrigatórios.' }); return; }
+
+  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
+
+  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+  try {
+    await evoInstance(instanceToken, '/send/text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId: tenant.slug, number: phone, text: message }),
+    });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[WhatsApp Send]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/cancel
+// Cancela agendamento publicamente (sem auth) — usa service key para bypasaar RLS.
+// Segurança: verifica que o appointmentId pertence ao slug informado.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/cancel', async (req, res) => {
+  const { slug, appointmentId } = req.body as { slug?: string; appointmentId?: string };
+  if (!slug || !appointmentId) {
+    res.status(400).json({ error: 'slug e appointmentId obrigatórios.' });
+    return;
+  }
+
+  try {
+    // Verifica que o agendamento pertence ao tenant com este slug
+    const { data: appt } = await supabase
+      .from('appointments')
+      .select('id, status, tenant_id, tenants(slug)')
+      .eq('id', appointmentId)
+      .maybeSingle();
+
+    if (!appt) { res.status(404).json({ error: 'Agendamento não encontrado.' }); return; }
+    if ((appt.tenants as any)?.slug !== slug) { res.status(403).json({ error: 'Acesso negado.' }); return; }
+    if (appt.status === 'cancelled')  { res.json({ ok: true, alreadyCancelled: true }); return; }
+    if (appt.status === 'attended' || appt.status === 'completed') {
+      res.status(400).json({ error: 'Agendamento já realizado, não pode ser cancelado.' });
+      return;
+    }
+
+    await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', appointmentId);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[Cancel]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Job diário: remove instâncias EvoGo desconectadas há mais de 30 dias
+// ─────────────────────────────────────────────────────────────────────────────
+async function cleanupStaleInstances(): Promise<void> {
+  if (!EVO_URL || !EVO_GLOBAL_KEY) return;
+
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: stale } = await supabase
+    .from('tenants')
+    .select('id, slug')
+    .not('evo_disconnected_at', 'is', null)
+    .lt('evo_disconnected_at', cutoff);
+
+  if (!stale?.length) { console.log('[Cleanup] Nenhuma instância para remover.'); return; }
+
+  const all = await evoAdmin<{ data: any[] }>('/instance/all').catch(() => ({ data: [] }));
+
+  for (const tenant of stale) {
+    try {
+      const inst = (all.data ?? []).find((i: any) => i.name === tenant.slug);
+      if (inst?.id) {
+        await evoAdmin(`/instance/delete/${inst.id}`, { method: 'DELETE' });
+        console.log(`[Cleanup] Instância "${tenant.slug}" removida (desconectada > 30 dias).`);
+      }
+      await supabase.from('tenants').update({ evo_disconnected_at: null }).eq('id', tenant.id);
+    } catch (err: any) {
+      console.error(`[Cleanup] Erro ao remover "${tenant.slug}":`, err.message);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Job a cada 1 min: envia confirmação para agendamentos novos ainda não notificados
+// ─────────────────────────────────────────────────────────────────────────────
+async function sendConfirmations(): Promise<void> {
+  if (!EVO_URL || !EVO_GLOBAL_KEY) return;
+
+  // Agendamentos criados nos últimos 10 minutos sem confirmação enviada
+  const since = new Date(Date.now() - 10 * 60_000).toISOString();
+  const { data: appts } = await supabase
+    .from('appointments')
+    .select('*, tenants(id, name, slug, wpp_template_confirm, wpp_booking_url), services(name), professionals(name)')
+    .eq('wpp_confirm_sent', false)
+    .neq('status', 'cancelled')
+    .gte('created_at', since);
+
+  for (const appt of appts ?? []) {
+    const tenant = (appt.tenants as any);
+    if (!tenant) continue;
+    const phone = appt.customer_phone?.replace(/\D/g, '');
+    if (!phone) continue;
+
+    try {
+      const code = bookingCode(appt.id);
+      const link = buildLink(tenant, appt.id);
+      const vars = {
+        nome:         appt.customer_name                  ?? '',
+        salao:        tenant.name                         ?? '',
+        servico:      (appt.services as any)?.name        ?? '',
+        data:         formatDatePT(appt.scheduled_date, appt.scheduled_time?.slice(0, 5) ?? ''),
+        hora:         appt.scheduled_time?.slice(0, 5)    ?? '',
+        duracao:      String(appt.duration_minutes),
+        profissional: (appt.professionals as any)?.name   ?? '',
+        codigo:       code,
+        link,
+      };
+      const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
+      const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
+
+      await evoInstance(instanceToken, '/send/text', {
+        method: 'POST',
+        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+      });
+
+      await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appt.id);
+      console.log(`[Confirm] Confirmação enviada: ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time?.slice(0,5)})`);
+    } catch (err: any) {
+      console.error(`[Confirm] Erro ao enviar para ${appt.customer_name}:`, err.message);
+    }
+  }
+}
+
+// Job a cada 5 min: envia lembrete 1h antes do atendimento
+// ─────────────────────────────────────────────────────────────────────────────
+async function sendReminders(): Promise<void> {
+  if (!EVO_URL || !EVO_GLOBAL_KEY) return;
+
+  // Janela: agendamentos que começam entre 55 e 65 minutos a partir de agora
+  const now  = new Date();
+  const lo   = new Date(now.getTime() + 55 * 60_000);
+  const hi   = new Date(now.getTime() + 65 * 60_000);
+
+  // Data e hora separados pois o banco guarda DATE + TIME
+  const loDate = lo.toISOString().split('T')[0];
+  const hiDate = hi.toISOString().split('T')[0];
+  const loTime = lo.toISOString().split('T')[1].slice(0, 5); // HH:MM
+  const hiTime = hi.toISOString().split('T')[1].slice(0, 5);
+
+  const { data: appts } = await supabase
+    .from('appointments')
+    .select('*, tenants(id, name, slug, wpp_template_remind, wpp_booking_url), services(name), professionals(name)')
+    .eq('wpp_reminder_sent', false)
+    .neq('status', 'cancelled')
+    .gte('scheduled_date', loDate).lte('scheduled_date', hiDate);
+
+  for (const appt of appts ?? []) {
+    // Filtra pela janela de hora (o banco não filtra TIME num range multi-dia facilmente)
+    const apptTime = appt.scheduled_time?.slice(0, 5) ?? '';
+    if (appt.scheduled_date === loDate && apptTime < loTime) continue;
+    if (appt.scheduled_date === hiDate && apptTime > hiTime) continue;
+
+    const tenant = (appt.tenants as any);
+    if (!tenant) continue;
+
+    const phone = appt.customer_phone?.replace(/\D/g, '');
+    if (!phone) continue;
+
+    try {
+      const code  = bookingCode(appt.id);
+      const link  = buildLink(tenant, appt.id);
+      const vars  = {
+        nome:         appt.customer_name             ?? '',
+        salao:        tenant.name                    ?? '',
+        servico:      (appt.services as any)?.name      ?? '',
+        data:         formatDatePT(appt.scheduled_date, apptTime),
+        hora:         apptTime,
+        duracao:      String(appt.duration_minutes),
+        profissional: (appt.professionals as any)?.name ?? '',
+        codigo:       code,
+        link,
+      };
+      const msg           = applyTemplate(tenant.wpp_template_remind ?? TPL_REMIND_DEFAULT, vars);
+      const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
+
+      await evoInstance(instanceToken, '/send/text', {
+        method: 'POST',
+        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+      });
+
+      await supabase.from('appointments').update({ wpp_reminder_sent: true }).eq('id', appt.id);
+      console.log(`[Reminder] Lembrete enviado: ${appt.customer_name} (${appt.scheduled_date} ${apptTime})`);
+    } catch (err: any) {
+      console.error(`[Reminder] Erro ao enviar para ${appt.customer_name}:`, err.message);
+    }
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`[Server] BarberFlow API rodando na porta ${PORT}`);
   console.log(`[Server] Supabase: ${SUPABASE_URL ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Asaas: ${process.env.ASAAS_API_KEY ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Modo: ${process.env.ASAAS_SANDBOX === 'true' ? 'SANDBOX' : 'PRODUÇÃO'}`);
+  console.log(`[Server] EvoGo: ${EVO_URL && EVO_GLOBAL_KEY ? '✓' : '✗ não configurado'}`);
+
+  // Cleanup de instâncias: 1 min após boot, depois a cada 24h
+  setTimeout(() => {
+    cleanupStaleInstances();
+    setInterval(cleanupStaleInstances, 24 * 60 * 60 * 1000);
+  }, 60_000);
+
+  // Confirmações de agendamentos novos: a cada 1 min
+  sendConfirmations(); // roda imediatamente no boot
+  setInterval(sendConfirmations, 60_000);
+
+  // Lembretes 1h antes: a cada 5 min
+  setInterval(sendReminders, 5 * 60_000);
 });

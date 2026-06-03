@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CustomerBookingFlow from '../../components/CustomerBookingFlow';
 import { supabase } from '../../lib/supabase';
-import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, updateAppointmentStatus, upsertCustomerByPhone } from '../../lib/db';
+import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, updateAppointmentStatus, upsertCustomerByPhone, notifyAppointmentWhatsApp } from '../../lib/db';
 import type { Tenant, Service, Professional, Appointment, Customer } from '../../types';
 
 export default function BookingPage() {
@@ -90,13 +90,12 @@ export default function BookingPage() {
           gap: 12,
         }}
       >
-        <img
-          src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%201%20de%20jun.%20de%202026,%2011_34_59%20(1).png"
-          alt="BarberFlow"
-          style={{ height: 32, objectFit: 'contain', marginRight: 4 }}
-        />
-        <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.18)', flexShrink: 0 }} />
-        <span style={{ fontSize: 20, flexShrink: 0 }}>{tenant.logo}</span>
+        {(tenant.logo?.startsWith('http') || tenant.logo?.startsWith('data:'))
+          ? <div style={{ width: 36, height: 36, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
+              <img src={tenant.logo} alt={tenant.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            </div>
+          : <span style={{ fontSize: 22, flexShrink: 0 }}>{tenant.logo}</span>
+        }
         <div>
           <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, lineHeight: 1.3 }}>{tenant.name}</p>
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{tenant.address}</p>
@@ -118,6 +117,7 @@ export default function BookingPage() {
             setCustomers(prev => prev.find(x => x.id === customer.id) ? prev : [customer, ...prev]);
             const c = await createAppointment({ ...a, customerId: customer.id });
             setAppointments(p => [c, ...p]);
+            notifyAppointmentWhatsApp(a.tenantId, c.id, '').catch(() => {});
           }}
           onUpdateAppointmentStatus={async (id, status) => {
             await updateAppointmentStatus(id, status);
@@ -137,9 +137,7 @@ export default function BookingPage() {
       </div>
 
       {/* Powered by footer */}
-      <div className="text-center pb-8 pt-4">
-        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)' }}>Agendamento online por <span style={{ fontWeight: 600 }}>BarberFlow</span></p>
-      </div>
+      <div className="pb-8" />
     </div>
   );
 }

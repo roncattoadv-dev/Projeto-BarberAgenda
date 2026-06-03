@@ -1,23 +1,17 @@
 /**
- * WhatsAppTab — Painel completo de integração Evolution Go
- * Funcionalidades:
- *  - Status live da instância com polling
- *  - QR Code embutido para conectar o WhatsApp sem sair do SaaS
- *  - Gestão de instância (criar, conectar, logout)
- *  - Templates editáveis com preview dark
- *  - Dispatch de mensagens por agendamento (confirmar / lembrete / cancelar)
- *  - Configuração das variáveis Evo Go direto na interface
+ * WhatsAppTab — Painel de integração WhatsApp
+ * A conexão com o provedor (instância, credenciais) é gerenciada
+ * pelo servidor — o usuário vê apenas status + QR Code.
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Appointment, Service, Professional, Tenant } from '../../types';
 import { useToast } from '../../hooks/useToast';
+import { supabase } from '../../lib/supabase';
 import {
-  sendWhatsApp, checkEvoStatus, fetchQRCode, logoutInstance,
-  createInstance, fetchInstanceInfo,
+  checkStatusServer, fetchQRCodeServer, disconnectServer, sendWhatsAppServer,
   buildConfirmationMsg, buildReminderMsg, buildCancellationMsg, buildCustomMsg,
   normalizePhone, formatDatePT,
-  EVO_URL, EVO_INSTANCE, EVO_APIKEY, EVO_CONFIGURED,
-  type ConnectionState, type WppStatus, type QRCodeData, type InstanceInfo, type ApptData,
+  type ConnectionState, type WppStatus, type QRCodeData, type ApptData,
 } from '../../services/whatsapp';
 
 interface Props {
@@ -28,78 +22,73 @@ interface Props {
 }
 
 type SendState = 'idle' | 'sending' | 'done' | 'error';
-type ActiveView = 'connection' | 'templates' | 'dispatch' | 'config';
+type ActiveView = 'connection' | 'templates' | 'dispatch';
 
-// Lê/salva config local por tenant — prioridade: localStorage > window runtime > slug
-interface EvoConfig { url: string; instance: string; apikey: string; globalApiKey: string; }
-
-function getLsKey(tenantId: string) { return 'barber_evo_cfg_' + tenantId; }
-
-function getWindowDefaults(tenantId: string, tenantSlug: string): EvoConfig {
+function getApiUrl() {
   const w = (window as any).__BARBER_CONFIG__ || {};
-  // Token gerado deterministicamente: slug + primeiros 8 chars do tenantId
-  const autoToken = tenantSlug + '-' + tenantId.replace(/-/g, '').slice(0, 8);
-  return {
-    url:          (w.EVO_URL         || EVO_URL    || '').replace(/\/$/, ''),
-    instance:     tenantSlug,
-    apikey:       autoToken,
-    globalApiKey: (w.EVO_GLOBAL_KEY || ''),
-  };
-}
-
-function loadConfig(tenantId: string, tenantSlug: string): EvoConfig {
-  const defaults = getWindowDefaults(tenantId, tenantSlug);
-  try {
-    const saved = localStorage.getItem(getLsKey(tenantId));
-    if (saved) return { ...defaults, ...JSON.parse(saved) };
-  } catch {}
-  return defaults;
-}
-
-function saveConfig(tenantId: string, cfg: EvoConfig) {
-  localStorage.setItem(getLsKey(tenantId), JSON.stringify(cfg));
-}
-
-// Aplica config dinâmica sobrescrevendo as constantes do módulo para chamadas de fetch
-// Usamos um wrapper que aceita cfg como parâmetro
-async function evoFetchDynamic<T>(
-  cfg: EvoConfig, path: string, options: RequestInit = {}
-): Promise<T> {
-  const url = cfg.url.replace(/\/$/, '') + path;
-  const res  = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': cfg.apikey,
-      ...options.headers,
-    },
-  });
-  if (!res.ok) { const t = await res.text().catch(() => res.statusText); throw new Error(`[${res.status}] ${t}`); }
-  return res.json();
+  return (w.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
 }
 
 export default function WhatsAppTab({ activeTenant, myAppointments, myServices, myProfessionals }: Props) {
   const toast = useToast();
 
-  // ── Config Evo Go ──────────────────────────────────────────
-  const [cfg, setCfg] = useState<EvoConfig>(() => loadConfig(activeTenant.id, activeTenant.slug));
-  const [cfgDraft, setCfgDraft] = useState<EvoConfig>(() => loadConfig(activeTenant.id, activeTenant.slug));
-  const isConfigured = !!(cfg.url && cfg.apikey);
+  // ── Auth token (para chamadas ao servidor) ─────────────────
+  const [authToken, setAuthToken] = useState<string>('');
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthToken(session?.access_token || '');
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setAuthToken(session?.access_token || '');
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   // ── Estado de conexão ──────────────────────────────────────
-  const [connState, setConnState] = useState<ConnectionState>('checking');
-  const [instanceInfo, setInstanceInfo] = useState<InstanceInfo | null>(null);
-  const [qrData,    setQrData]    = useState<QRCodeData | null>(null);
-  const [qrLoading, setQrLoading] = useState(false);
+  const [connState, setConnState]   = useState<ConnectionState>('checking');
+  const [connName,  setConnName]    = useState<string | null>(null);
+  const [qrData,    setQrData]      = useState<QRCodeData | null>(null);
+  const [qrLoading, setQrLoading]   = useState(false);
   const [qrRefreshCount, setQrRefreshCount] = useState(0);
   const qrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── UI ─────────────────────────────────────────────────────
-  const [activeView, setActiveView] = useState<ActiveView>('connection');
-  const [sendStates, setSendStates] = useState<Record<string, SendState>>({});
+  const [activeView,    setActiveView]    = useState<ActiveView>('connection');
+  const [sendStates,    setSendStates]    = useState<Record<string, SendState>>({});
   const [activePreview, setActivePreview] = useState<'confirmation' | 'reminder' | 'cancellation'>('confirmation');
 
-  // ── Templates ──────────────────────────────────────────────
+  // ── Templates automáticos (salvos no banco) ────────────────
+  const [autoConfirmDraft, setAutoConfirmDraft] = useState('');
+  const [autoRemindDraft,  setAutoRemindDraft]  = useState('');
+  const [tplSaving,        setTplSaving]        = useState(false);
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${getApiUrl()}/api/whatsapp/templates?tenantId=${activeTenant.id}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    }).then(r => r.json()).then(d => {
+      if (d.ok) {
+        setAutoConfirmDraft(d.confirm);
+        setAutoRemindDraft(d.remind);
+      }
+    }).catch(() => {});
+  }, [authToken, activeTenant.id]);
+
+  const handleSaveAutoTpls = async () => {
+    setTplSaving(true);
+    try {
+      await fetch(`${getApiUrl()}/api/whatsapp/templates`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ confirm: autoConfirmDraft, remind: autoRemindDraft }),
+      });
+      toast.success('Templates salvos!');
+    } catch { toast.error('Erro ao salvar templates.'); }
+    finally { setTplSaving(false); }
+  };
+
+  // ── Templates manuais (dispatch) ───────────────────────────
   const LS_TPL = `barber_wpp_tpl_${activeTenant.id}`;
   const defaultTpls = {
     confirm: 'Olá {cliente}! Seu agendamento de {servico} com {profissional} no dia {data} às {hora} está CONFIRMADO. — {salao}',
@@ -110,7 +99,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     try { const s = localStorage.getItem(LS_TPL); if (s) return JSON.parse(s); } catch {}
     return defaultTpls;
   };
-  const [tpls, setTpls]     = useState(loadTpls);
+  const [tpls, setTpls]         = useState(loadTpls);
   const [tplsDraft, setTplsDraft] = useState(loadTpls);
 
   // ── Agendamentos pendentes ─────────────────────────────────
@@ -131,23 +120,14 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
 
   // ── Verificação de status ─────────────────────────────────
   const refreshStatus = useCallback(async () => {
-    if (!isConfigured) { setConnState('error'); return; }
-    try {
-      const res = await evoFetchDynamic<{ data: { Connected: boolean; LoggedIn: boolean; Name: string }; message: string }>(
-        cfg, `/instance/status?instanceId=${cfg.instance}`
-      );
-      const { Connected, LoggedIn, Name } = res?.data ?? {};
-      const state: ConnectionState = LoggedIn ? 'open' : Connected ? 'connecting' : 'close';
-      setConnState(state);
-      if (state === 'open') {
-        setQrData(null);
-        stopQrPolling();
-        setInstanceInfo({ instanceName: cfg.instance, connectionStatus: 'open', profileName: Name || cfg.instance });
-      }
-    } catch {
-      setConnState('error');
+    if (!authToken) return;
+    const state = await checkStatusServer(activeTenant.id, authToken);
+    setConnState(state);
+    if (state === 'open') {
+      setQrData(null);
+      stopQrPolling();
     }
-  }, [cfg, isConfigured]);
+  }, [authToken, activeTenant.id]);
 
   // ── QR Code polling ────────────────────────────────────────
   const stopQrPolling = () => {
@@ -155,14 +135,12 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   };
 
   const fetchQR = useCallback(async () => {
-    if (!isConfigured) return;
+    if (!authToken) return;
     setQrLoading(true);
     try {
-      const data = await evoFetchDynamic<{ data: { Qrcode: string; Code: string }; message: string }>(
-        cfg, `/instance/qr?instanceId=${cfg.instance}`
-      );
-      if (data?.data?.Qrcode) {
-        setQrData({ base64: data.data.Qrcode, code: data.data.Code || '', count: qrRefreshCount + 1 });
+      const qr = await fetchQRCodeServer(activeTenant.id, authToken);
+      if (qr) {
+        setQrData({ ...qr, count: qrRefreshCount + 1 });
         setQrRefreshCount(c => c + 1);
       } else {
         // Sem QR = já conectado
@@ -173,7 +151,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     } finally {
       setQrLoading(false);
     }
-  }, [cfg, isConfigured, qrRefreshCount]);
+  }, [authToken, activeTenant.id, qrRefreshCount]);
 
   const startQrPolling = useCallback(() => {
     fetchQR();
@@ -195,59 +173,22 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   }, [refreshStatus]);
 
   // ── Ações de instância ─────────────────────────────────────
-  const handleConnect = async () => {
+  const handleConnect = () => {
     setConnState('connecting');
     startQrPolling();
   };
 
   const handleLogout = async () => {
-    if (!window.confirm('Desconectar o WhatsApp desta instância? A instância será deletada e recriada.')) return;
-    const globalKey = cfg.globalApiKey;
-    if (!globalKey) { toast.error('Chave Global não configurada. Vá em ⚙️ Config.'); return; }
+    if (!window.confirm('Desconectar o WhatsApp? Será necessário escanear o QR Code novamente.')) return;
     try {
-      // 1. Buscar UUID da instância via /instance/all
-      const allRes = await evoFetchDynamic<{ data: any[]; message: string }>(
-        { ...cfg, apikey: globalKey }, '/instance/all'
-      );
-      const inst = (allRes.data ?? []).find((i: any) => i.name === cfg.instance);
-      if (inst?.id) {
-        await evoFetchDynamic({ ...cfg, apikey: globalKey }, `/instance/delete/${inst.id}`, { method: 'DELETE' });
-      }
-      // 2. Recriar a instância
-      await evoFetchDynamic({ ...cfg, apikey: globalKey }, '/instance/create', {
-        method: 'POST',
-        body: JSON.stringify({ name: cfg.instance, token: cfg.apikey }),
-      });
+      await disconnectServer(activeTenant.id, authToken);
       setConnState('close');
-      setInstanceInfo(null);
+      setConnName(null);
       setQrData(null);
-      toast.info('WhatsApp desconectado. Instância recriada — escaneie o QR para reconectar.');
+      toast.info('WhatsApp desconectado. Escaneie o QR para reconectar.');
     } catch (err: any) {
       toast.error('Erro ao desconectar: ' + err.message);
     }
-  };
-
-  const handleCreateInstance = async () => {
-    try {
-      await evoFetchDynamic(cfg, '/instance/create', {
-        method: 'POST',
-        body: JSON.stringify({ name: cfg.instance, token: cfg.apikey }),
-      });
-      toast.success(`Instância "${cfg.instance}" criada!`);
-      await refreshStatus();
-    } catch (err: any) {
-      toast.error('Erro ao criar instância: ' + err.message);
-    }
-  };
-
-  // ── Salvar config ──────────────────────────────────────────
-  const handleSaveConfig = () => {
-    if (!cfgDraft.url || !cfgDraft.apikey) { toast.error('URL e API Key são obrigatórios.'); return; }
-    const cleaned = { ...cfgDraft, url: cfgDraft.url.replace(/\/$/, '') };
-    setCfg(cleaned);
-    saveConfig(activeTenant.id, cleaned);
-    toast.success('Configuração salva! Verificando conexão…');
-    setTimeout(refreshStatus, 500);
   };
 
   const handleSaveTpls = () => {
@@ -265,15 +206,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
                : type === 'reminder'     ? buildReminderMsg(data)
                :                           buildCancellationMsg(data);
 
-    // Usa fetch dinâmico com config atual
-    let result: WppStatus = 'error';
-    try {
-      await evoFetchDynamic(cfg, '/send/text', {
-        method: 'POST',
-        body: JSON.stringify({ instanceId: cfg.instance, number: normalizePhone(appt.customerPhone), text: msg }),
-      });
-      result = 'sent';
-    } catch { result = 'error'; }
+    const result = await sendWhatsAppServer(activeTenant.id, authToken, appt.customerPhone, msg);
 
     setSendStates(prev => ({ ...prev, [key]: result === 'sent' ? 'done' : 'error' }));
     if (result === 'sent')  toast.success(`✓ Enviado para ${appt.customerName}`);
@@ -319,7 +252,6 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     { id:'connection', label:'📶 Conexão',   dot: connState !== 'open' && connState !== 'checking' },
     { id:'dispatch',   label:'📤 Disparar',  dot: pendingAppts.length > 0 },
     { id:'templates',  label:'✏️ Modelos' },
-    { id:'config',     label:'⚙️ Config' },
   ];
 
   const card: React.CSSProperties = {
@@ -336,17 +268,11 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
       <div style={{ ...card, display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div>
           <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', display: 'block', marginBottom: 4 }}>WhatsApp</span>
-          <h3 style={{ fontSize: 18, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            Evolution Go
-            <span style={{ fontSize: 11, fontWeight: 400, color: 'rgba(255,255,255,0.38)', fontFamily: 'monospace' }}>
-              instância: <code style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 6px', borderRadius: 4 }}>{cfg.instance}</code>
-            </span>
+          <h3 style={{ fontSize: 18, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0 }}>
+            WhatsApp
           </h3>
-          {instanceInfo?.profileName && (
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-              {instanceInfo.profilePicUrl && <img src={instanceInfo.profilePicUrl} style={{ width: 18, height: 18, borderRadius: '50%' }} alt="" />}
-              {instanceInfo.profileName}
-            </p>
+          {connName && (
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4 }}>{connName}</p>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -357,16 +283,6 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
           <button onClick={refreshStatus} style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.09)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Verificar status">↻</button>
         </div>
       </div>
-
-      {/* ── Alerta sem config ───────────────────────────────── */}
-      {!isConfigured && (
-        <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 14, padding: '14px 18px', fontSize: 13, color: '#fbbf24', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <span style={{ fontSize: 18, flexShrink: 0 }}>⚠️</span>
-          <div>
-            <strong>Evo Go não configurado.</strong> Vá para a aba <button onClick={()=>setActiveView('config')} style={{ color: '#fbbf24', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'Outfit, sans-serif' }}>⚙️ Config</button> e preencha a URL, instância e API Key do seu Evo Go no EasyPanel.
-          </div>
-        </div>
-      )}
 
       {/* ── Sub-tabs ─────────────────────────────────────────── */}
       <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
@@ -416,8 +332,8 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
                 {connState==='open' ? '✅' : connState==='connecting' ? '📱' : connState==='error' ? '❌' : '⏳'}
               </div>
               <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', marginBottom: 4 }}>{connLabel}</p>
-              {connState==='open' && instanceInfo && (
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{instanceInfo.profileName || cfg.instance}</p>
+              {connState==='open' && connName && (
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{connName}</p>
               )}
               {connState==='close' && (
                 <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>Escaneie o QR Code para conectar</p>
@@ -430,15 +346,9 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
             {/* Botões de ação */}
             <div className="space-y-3">
               {connState !== 'open' && (
-                <button onClick={handleConnect} disabled={!isConfigured || qrLoading}
-                  style={{ width: '100%', padding: '13px', background: '#E6F4EC', color: '#0A4A2C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: (!isConfigured || qrLoading) ? 'not-allowed' : 'pointer', opacity: (!isConfigured || qrLoading) ? 0.5 : 1, fontFamily: 'Outfit, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <button onClick={handleConnect} disabled={qrLoading || !authToken}
+                  style={{ width: '100%', padding: '13px', background: '#E6F4EC', color: '#0A4A2C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: (qrLoading || !authToken) ? 'not-allowed' : 'pointer', opacity: (qrLoading || !authToken) ? 0.5 : 1, fontFamily: 'Outfit, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                   {qrLoading ? '⏳ Gerando QR…' : '📱 Conectar WhatsApp (QR Code)'}
-                </button>
-              )}
-              {connState !== 'open' && (
-                <button onClick={handleCreateInstance} disabled={!isConfigured}
-                  style={{ width: '100%', padding: '11px', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.65)', fontWeight: 700, fontSize: 13, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, cursor: !isConfigured ? 'not-allowed' : 'pointer', opacity: !isConfigured ? 0.5 : 1, fontFamily: 'Outfit, sans-serif' }}>
-                  ➕ Criar instância "{cfg.instance}"
                 </button>
               )}
               {connState === 'open' && (
@@ -454,13 +364,6 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
                 </button>
               )}
             </div>
-
-            {/* Info técnica */}
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '12px 14px', fontSize: 11, color: 'rgba(255,255,255,0.38)', fontFamily: 'monospace', lineHeight: 1.8 }}>
-              <p><span style={{ color: 'rgba(255,255,255,0.25)' }}>URL:</span> {cfg.url || '—'}</p>
-              <p><span style={{ color: 'rgba(255,255,255,0.25)' }}>Instância:</span> {cfg.instance}</p>
-              <p><span style={{ color: 'rgba(255,255,255,0.25)' }}>API Key:</span> {cfg.apikey ? '••••' + cfg.apikey.slice(-4) : '—'}</p>
-            </div>
           </div>
 
           {/* QR Code */}
@@ -471,13 +374,9 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
               <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 16, padding: '24px 0' }}>
                 <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(74,222,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>✅</div>
                 <p style={{ fontWeight: 700, color: '#4ade80', fontSize: 16 }}>WhatsApp Conectado!</p>
-                {instanceInfo?.profileName && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.04)', padding: '12px 18px', borderRadius: 14, border: '1px solid rgba(255,255,255,0.09)' }}>
-                    {instanceInfo.profilePicUrl && <img src={instanceInfo.profilePicUrl} style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.09)' }} alt="" />}
-                    <div>
-                      <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13 }}>{instanceInfo.profileName}</p>
-                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{instanceInfo.ownerJid?.replace('@s.whatsapp.net','')}</p>
-                    </div>
+                {connName && (
+                  <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px 18px', borderRadius: 14, border: '1px solid rgba(255,255,255,0.09)' }}>
+                    <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13 }}>{connName}</p>
                   </div>
                 )}
               </div>
@@ -584,9 +483,46 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
           VIEW: MODELOS DE MENSAGEM
       ══════════════════════════════════════════════════════ */}
       {activeView === 'templates' && (
+        <div className="space-y-6">
+
+        {/* ── Notificações automáticas ─────────────────────── */}
+        <div style={card} className="space-y-5">
+          <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>
+            Notificações Automáticas
+          </h4>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', fontFamily: 'monospace' }}>
+            {'Variáveis: {nome}  {salao}  {servico}  {data}  {hora}  {duracao}  {profissional}  {codigo}'}
+            <br />
+            <span style={{ color: 'rgba(255,255,255,0.55)' }}>{'  {link}'}</span>
+            {' — link de cancelamento gerado automaticamente'}
+          </p>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', display: 'block', marginBottom: 6, color: 'rgba(255,255,255,0.65)' }}>
+              ✅ Confirmação (enviada ao agendar)
+            </label>
+            <textarea value={autoConfirmDraft} onChange={e => setAutoConfirmDraft(e.target.value)} rows={8}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 14px', color: 'rgba(255,255,255,0.88)', fontSize: 13, resize: 'vertical' as const, outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }} />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', display: 'block', marginBottom: 6, color: 'rgba(255,255,255,0.65)' }}>
+              ⏰ Lembrete (enviado 1h antes)
+            </label>
+            <textarea value={autoRemindDraft} onChange={e => setAutoRemindDraft(e.target.value)} rows={8}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 14px', color: 'rgba(255,255,255,0.88)', fontSize: 13, resize: 'vertical' as const, outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }} />
+          </div>
+
+          <button onClick={handleSaveAutoTpls} disabled={tplSaving}
+            style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: tplSaving ? 'wait' : 'pointer', opacity: tplSaving ? 0.7 : 1, fontFamily: 'Outfit, sans-serif' }}>
+            {tplSaving ? 'Salvando…' : 'Salvar Notificações Automáticas'}
+          </button>
+        </div>
+
+        {/* ── Modelos manuais (dispatch) ───────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div style={card} className="space-y-5">
-            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Modelos de Mensagem</h4>
+            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Modelos — Disparo Manual</h4>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', fontFamily: 'monospace' }}>
               Variáveis: {'{cliente}  {servico}  {profissional}  {data}  {hora}  {salao}'}
             </p>
@@ -640,97 +576,9 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
             </div>
           </div>
         </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════
-          VIEW: CONFIGURAÇÃO Evo Go
-      ══════════════════════════════════════════════════════ */}
-      {activeView === 'config' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div style={card} className="space-y-5">
-            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Configuração Evolution Go</h4>
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', lineHeight: 1.6 }}>
-              Preencha com os dados do seu Evo Go rodando no EasyPanel. As configurações ficam salvas localmente no navegador.
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="navy-label">URL do Evo Go <span style={{ color: '#fca5a5' }}>*</span></label>
-                <input type="url" placeholder="https://evo.seudominio.com.br" value={cfgDraft.url}
-                  onChange={e => setCfgDraft(p => ({...p, url: e.target.value}))}
-                  className="navy-input" style={{ fontFamily: 'monospace' }} />
-                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Ex: https://evo.barberflow.com.br (sem barra no final)</p>
-              </div>
-
-              <div>
-                <label className="navy-label">Nome da Instância <span style={{ color: '#fca5a5' }}>*</span></label>
-                <input type="text" placeholder="barberflow" value={cfgDraft.instance}
-                  onChange={e => setCfgDraft(p => ({...p, instance: e.target.value.trim()}))}
-                  className="navy-input" style={{ fontFamily: 'monospace' }} />
-                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Nome da instância criada no painel do Evo Go</p>
-              </div>
-
-              <div>
-                <label className="navy-label">Token da Instância <span style={{ color: '#fca5a5' }}>*</span></label>
-                <input type="password" placeholder="bf-token-2026" value={cfgDraft.apikey}
-                  onChange={e => setCfgDraft(p => ({...p, apikey: e.target.value.trim()}))}
-                  className="navy-input" style={{ fontFamily: 'monospace' }} />
-                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Token definido em <code>token</code> ao criar a instância no EvoGo.</p>
-              </div>
-
-              <div>
-                <label className="navy-label">Chave Global (Admin) <span style={{ color: '#fca5a5' }}>*</span></label>
-                <input type="password" placeholder="8f91c3d5-e2a7-4b60-..." value={cfgDraft.globalApiKey}
-                  onChange={e => setCfgDraft(p => ({...p, globalApiKey: e.target.value.trim()}))}
-                  className="navy-input" style={{ fontFamily: 'monospace' }} />
-                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>GLOBAL_API_KEY do .env do EvoGo — usada para desconectar e gerenciar instâncias.</p>
-              </div>
-
-              <button onClick={handleSaveConfig}
-                style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                Salvar e Verificar Conexão
-              </button>
-              <button onClick={() => { setCfgDraft(getWindowDefaults(activeTenant.id, activeTenant.slug)); }}
-                style={{ width: '100%', padding: '11px', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', fontWeight: 600, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                Restaurar valores das variáveis de ambiente
-              </button>
-            </div>
-          </div>
-
-          {/* Guia de configuração */}
-          <div style={card} className="space-y-5">
-            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: 0 }}>Guia rápido — EasyPanel</h4>
-            <div className="space-y-4">
-              {[
-                { step:'1', title:'Acesse o EasyPanel', desc:'Abra seu EasyPanel e localize o serviço Evolution Go.' },
-                { step:'2', title:'Copie a URL', desc:'A URL pública do Evo Go geralmente tem formato: https://evo.seudominio.com.br ou https://seudominio.com/evo.' },
-                { step:'3', title:'Pegue a GLOBAL_API_KEY', desc:'No .env do serviço Evo Go no EasyPanel, copie o valor de GLOBAL_API_KEY. É essa chave que vai no campo API Key acima.' },
-                { step:'4', title:'Nome da instância', desc:'Pode ser qualquer nome (ex: barberflow). Se ainda não criou, clique em "Criar instância" na aba Conexão após salvar a config.' },
-                { step:'5', title:'Conecte o WhatsApp', desc:'Vá para a aba Conexão, clique em "Conectar WhatsApp" e escaneie o QR Code com o celular.' },
-              ].map(item => (
-                <div key={item.step} style={{ display: 'flex', gap: 12 }}>
-                  <span style={{ width: 24, height: 24, borderRadius: '50%', background: '#ffffff', color: '#031D3C', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{item.step}</span>
-                  <div>
-                    <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, marginBottom: 2 }}>{item.title}</p>
-                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', lineHeight: 1.6 }}>{item.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Referência .env Evo Go */}
-            <div style={{ background: '#050d14', borderRadius: 14, padding: '16px 18px', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.8 }}>
-              <p style={{ color: 'rgba(255,255,255,0.25)', marginBottom: 8 }}># .env do Evo Go (EasyPanel)</p>
-              <p><span style={{ color: '#fbbf24' }}>SERVER_PORT</span>=<span style={{ color: '#4ade80' }}>8080</span></p>
-              <p><span style={{ color: '#fbbf24' }}>CLIENT_NAME</span>=<span style={{ color: '#4ade80' }}>evolution</span></p>
-              <p><span style={{ color: '#93c5fd' }}>GLOBAL_API_KEY</span>=<span style={{ color: '#fca5a5' }}>SUA_CHAVE_FORTE_AQUI</span> <span style={{ color: 'rgba(255,255,255,0.25)' }}>← copie esta</span></p>
-              <p><span style={{ color: '#fbbf24' }}>POSTGRES_AUTH_DB</span>=<span style={{ color: '#4ade80' }}>postgresql://...</span></p>
-              <p><span style={{ color: '#fbbf24' }}>POSTGRES_USERS_DB</span>=<span style={{ color: '#4ade80' }}>postgresql://...</span></p>
-              <p><span style={{ color: '#fbbf24' }}>CONNECT_ON_STARTUP</span>=<span style={{ color: '#4ade80' }}>true</span></p>
-            </div>
-          </div>
         </div>
       )}
+
     </div>
   );
 }

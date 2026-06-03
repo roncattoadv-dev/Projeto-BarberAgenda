@@ -1,0 +1,29 @@
+{
+  "services": {
+    "app": {
+      "networks": {
+        "easypanel": {
+          "aliases": [
+            "barberflow_barberflow_app"
+          ]
+        },
+        "default": null
+      }
+    },
+    "api": {
+      "networks": {
+        "easypanel": {
+          "aliases": [
+            "barberflow_barberflow_api"
+          ]
+        },
+        "default": null
+      }
+    }
+  },
+  "networks": {
+    "easypanel": {
+      "external": true
+    }
+  }
+}

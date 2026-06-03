@@ -28,7 +28,7 @@ export default function SuperAdminPanel({
   onResolveTicket,
   auditLogs
 }: SuperAdminPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'tenants' | 'coupons' | 'suporte' | 'logs'>('tenants');
+  const [activeSubTab, setActiveSubTab] = useState<'tenants' | 'coupons' | 'suporte' | 'logs' | 'integracoes'>('tenants');
 
   // New coupon form states
   const [newCode, setNewCode] = useState('');
@@ -72,6 +72,7 @@ export default function SuperAdminPanel({
     { id: 'coupons', label: `Cupons (${coupons.length})`,        icon: Ticket },
     { id: 'suporte', label: `Suporte (${supportTickets.filter(t => t.status === 'open').length})`, icon: HeartHandshake },
     { id: 'logs',    label: 'Rastreio',                           icon: ShieldCheck },
+    { id: 'integracoes', label: 'Integrações',                      icon: RefreshCw },
   ] as const;
 
   // Shared input style for the dark forms
@@ -726,6 +727,39 @@ export default function SuperAdminPanel({
                 }}
               >
                 🔒 Em obediência à LGPD (nº 13.709), o SaaS bloqueia requisições brutas de dump de banco, remove registros após 30 dias de cancelamento e audita tentativas de acesso não autorizadas.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === 'integracoes' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* EvoGo */}
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }}>
+              <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <RefreshCw style={{ width: 13, height: 13 }} /> Evolution Go — WhatsApp API
+              </h4>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {[
+                  { label: 'URL do EvoGo', key: 'EVO_URL', desc: 'Domínio público do serviço EvoGo no EasyPanel' },
+                  { label: 'Chave Global (Admin)', key: 'EVO_GLOBAL_KEY', desc: 'GLOBAL_API_KEY do .env do EvoGo — para criar/deletar instâncias' },
+                  { label: 'Instância padrão', key: 'EVO_INSTANCE', desc: 'Nome da instância padrão (substituído pelo slug do tenant)' },
+                  { label: 'Token padrão', key: 'EVO_APIKEY', desc: 'Token da instância padrão (cada tenant recebe token próprio)' },
+                ].map(({ label, key, desc }) => {
+                  const val = (window as any).__BARBER_CONFIG__?.[key] || '—';
+                  return (
+                    <div key={key}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 6 }}>{label}</div>
+                      <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, padding: '10px 14px', fontFamily: 'monospace', fontSize: 12, color: key.includes('KEY') || key === 'EVO_APIKEY' ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.75)', letterSpacing: '0.3px' }}>
+                        {key.includes('KEY') || key === 'EVO_APIKEY' ? (val !== '—' ? '••••' + val.slice(-6) : '—') : val}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>{desc}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 20, background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: 12, padding: '12px 16px', fontSize: 12, color: '#fbbf24' }}>
+                ⚙️ Para alterar as configurações, edite as variáveis de ambiente do serviço <code style={{ background: 'rgba(251,191,36,0.1)', padding: '1px 6px', borderRadius: 4 }}>barberflow-app</code> no EasyPanel e faça redeploy.
               </div>
             </div>
           </div>
