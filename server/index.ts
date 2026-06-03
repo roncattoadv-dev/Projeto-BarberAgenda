@@ -215,18 +215,19 @@ app.post('/api/webhook/asaas', async (req, res) => {
     switch (event) {
       case 'PAYMENT_RECEIVED':
       case 'PAYMENT_CONFIRMED': {
-        // Pagamento confirmado → ativa e calcula próxima renovação
-        const nextRenewal = new Date();
-        nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+        // Próxima renovação = dueDate do pagamento + 30 dias (cobre antecipados e atrasados)
+        const base = payment?.dueDate ? new Date(payment.dueDate + 'T12:00:00Z') : new Date();
+        base.setMonth(base.getMonth() + 1);
+        const subscriptionEndsAt = base.toISOString().split('T')[0];
         await supabase.from('tenants').update({
           status: 'active',
           plan:   'mensal',
           mrr:    89.90,
-          subscription_ends_at: nextRenewal.toISOString().split('T')[0],
+          subscription_ends_at: subscriptionEndsAt,
         }).eq('id', tenant.id);
         newStatus  = 'active';
         logAction  = 'Pagamento confirmado';
-        logDetails = `Asaas payment ${payment?.id} — R$ ${payment?.value?.toFixed(2)}. Plano ativo até ${nextRenewal.toISOString().split('T')[0]}.`;
+        logDetails = `Asaas payment ${payment?.id} — R$ ${payment?.value?.toFixed(2)}. Plano ativo até ${subscriptionEndsAt}.`;
         break;
       }
 
@@ -268,6 +269,109 @@ app.post('/api/webhook/asaas', async (req, res) => {
 
   } catch (err: any) {
     console.error('[Webhook] Error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/billing/verify-payment
+// Consulta o Asaas e ativa o tenant se houver pagamento confirmado
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase
+    .from('tenants').select('asaas_subscription_id, asaas_customer_id, status').eq('id', tenantId).maybeSingle();
+
+  if (!tenant?.asaas_customer_id && !tenant?.asaas_subscription_id) {
+    return res.status(404).json({ error: 'Assinatura não encontrada.' });
+  }
+
+  try {
+    const asaasUrl = process.env.ASAAS_SANDBOX === 'true'
+      ? 'https://sandbox.asaas.com/api/v3'
+      : 'https://api.asaas.com/v3';
+    const key = process.env.ASAAS_API_KEY || '';
+
+    const [rSub, rCust] = await Promise.all([
+      tenant.asaas_subscription_id
+        ? fetch(`${asaasUrl}/payments?subscription=${tenant.asaas_subscription_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json())
+        : { data: [] },
+      tenant.asaas_customer_id
+        ? fetch(`${asaasUrl}/payments?customer=${tenant.asaas_customer_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json())
+        : { data: [] },
+    ]);
+
+    const allPayments = [...(rSub?.data ?? []), ...(rCust?.data ?? [])];
+    const seen = new Set();
+    const unique = allPayments.filter((p: any) => !seen.has(p.id) && seen.add(p.id));
+    const confirmed = unique.find((p: any) => p.status === 'RECEIVED' || p.status === 'CONFIRMED');
+
+    if (!confirmed) {
+      return res.json({ activated: false, message: 'Nenhum pagamento confirmado encontrado.' });
+    }
+
+    const base = confirmed.dueDate ? new Date(confirmed.dueDate + 'T12:00:00Z') : new Date();
+    base.setMonth(base.getMonth() + 1);
+    const subscriptionEndsAt = base.toISOString().split('T')[0];
+    await supabase.from('tenants').update({
+      status: 'active', plan: 'mensal', mrr: 89.90,
+      subscription_ends_at: subscriptionEndsAt,
+    }).eq('id', tenantId);
+
+    await supabase.from('audit_logs').insert({
+      tenant_id: tenantId, user_name: 'Billing Verify',
+      action: 'Pagamento verificado manualmente',
+      details: `Payment ${confirmed.id} — R$ ${confirmed.value?.toFixed(2)}. Tenant ativado até ${subscriptionEndsAt}.`,
+    });
+
+    return res.json({ activated: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/billing/payment-link
+// Retorna o link de pagamento da cobrança pendente/vencida do tenant
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/billing/payment-link', verifyTenant, async (req, res) => {
+  const tenantId = (req as any).verifiedTenantId as string;
+  const { data: tenant } = await supabase
+    .from('tenants').select('asaas_subscription_id, asaas_customer_id, plan').eq('id', tenantId).maybeSingle();
+
+  if (!tenant?.asaas_subscription_id && !tenant?.asaas_customer_id) {
+    return res.status(404).json({ error: 'Assinatura não encontrada.' });
+  }
+
+  try {
+    const asaasUrl = process.env.ASAAS_SANDBOX === 'true'
+      ? 'https://sandbox.asaas.com/api/v3'
+      : 'https://api.asaas.com/v3';
+    const key = process.env.ASAAS_API_KEY || '';
+
+    const [rSub, rCust] = await Promise.all([
+      tenant.asaas_subscription_id
+        ? fetch(`${asaasUrl}/payments?subscription=${tenant.asaas_subscription_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json())
+        : { data: [] },
+      tenant.asaas_customer_id
+        ? fetch(`${asaasUrl}/payments?customer=${tenant.asaas_customer_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json())
+        : { data: [] },
+    ]);
+
+    const allPayments = [...(rSub?.data ?? []), ...(rCust?.data ?? [])];
+    const seen = new Set();
+    const unique = allPayments.filter((p: any) => !seen.has(p.id) && seen.add(p.id));
+
+    const priority = ['OVERDUE', 'PENDING'];
+    let payment = unique.find((p: any) => priority.includes(p.status));
+    if (!payment) {
+      payment = unique.sort((a: any, b: any) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())[0];
+    }
+
+    if (!payment?.invoiceUrl) return res.status(404).json({ error: 'Nenhuma cobrança encontrada.' });
+
+    return res.json({ url: payment.invoiceUrl, dueDate: payment.dueDate, value: payment.value });
+  } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
 });
