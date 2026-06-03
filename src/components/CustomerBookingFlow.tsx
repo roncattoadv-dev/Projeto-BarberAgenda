@@ -297,689 +297,553 @@ export default function CustomerBookingFlow({
     daysArray.push(d);
   }
 
+
+  /* ── hook: detecta tela ≥768px ── */
+  const [isDesktop, setIsDesktop] = React.useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
+  React.useEffect(() => {
+    const fn = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, []);
+
+  /* ── helpers ── */
+  const av = (n: string) => `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=3b82f6&color=fff&size=128`;
+
+  const WEEKDAYS_MAP = ['dom','seg','ter','qua','qui','sex','sab'];
+
+  /* ── sidebar info (steps 2-4) ── */
+  const SidebarInfo = () => (
+    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <button onClick={() => setStep(s => (s - 1) as any)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#2563eb', fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 8 }}>
+        <ArrowLeft size={16} /> Voltar
+      </button>
+      <div>
+        <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, color: '#94a3b8', fontWeight: 700, marginBottom: 4 }}>{activeTenant.name}</p>
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0, lineHeight: 1.2 }}>{selectedService?.name}</h2>
+      </div>
+      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {selectedProfessional && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', overflow: 'hidden', border: '1px solid #e2e8f0', flexShrink: 0 }}>
+              <img src={selectedProfessional.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).src = av(selectedProfessional!.name); }} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{selectedProfessional.name}</span>
+          </div>
+        )}
+        {selectedService && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#64748b', fontSize: 12 }}>
+            <Clock size={14} style={{ flexShrink: 0 }} /> {selectedService.durationMinutes} min
+          </div>
+        )}
+        {selectedService && selectedService.price > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
+            <span style={{ color: '#94a3b8', fontFamily: 'monospace' }}>R$</span> R$ {selectedService.price.toFixed(2)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  /* ── compact mobile top bar ── */
+  const TopBar = () => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+      <button onClick={() => setStep(s => (s - 1) as any)}
+        style={{ width: 32, height: 32, borderRadius: '50%', background: '#fff', border: '1px solid #e2e8f0', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+        <ArrowLeft size={16} />
+      </button>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <p style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1.5, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTenant.name}</p>
+        <p style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedService?.name}</p>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        {selectedProfessional && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 24, height: 24, borderRadius: '50%', overflow: 'hidden', border: '1px solid #e2e8f0', flexShrink: 0 }}>
+              <img src={selectedProfessional.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).src = av(selectedProfessional!.name); }} />
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#334155', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedProfessional.name}</span>
+          </div>
+        )}
+        {selectedService && selectedService.price > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+            R$ {selectedService.price.toFixed(2)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
+  /* ═══════════════════════════════════════════════════════════════
+     RETURN
+  ═══════════════════════════════════════════════════════════════ */
   return (
-    <div id="customer-booking-modern-wrapper" className="w-full max-w-5xl mx-auto rounded-3xl overflow-hidden shadow-2xl bg-white border border-slate-100 min-h-[580px] flex flex-col md:flex-row font-sans">
-      
-      {/* 1. LEFT PINNED SUMMARY BAR (Steps 2, 3, 4 only) */}
-      {activeTab === 'booking' && step > 1 && step < 5 && (
-        <div className="w-full md:w-80 bg-slate-50 border-r border-slate-200/80 p-6 flex flex-col justify-between">
-          <div>
-            {/* Voltar button */}
-            <button
-              onClick={() => setStep(prev => (prev - 1) as any)}
-              className="group flex items-center gap-2 text-blue-600 hover:text-blue-700 font-bold text-xs cursor-pointer mb-8 transition-transform duration-100 active:scale-95"
-            >
-              <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" /> 
-              <span>Voltar</span>
-            </button>
+    <div style={{ width: '100%', maxWidth: 960, margin: '0 auto', background: '#fff', borderRadius: 24, boxShadow: '0 8px 40px rgba(0,0,0,0.12)', border: '1px solid #f1f5f9', fontFamily: 'inherit', overflow: 'hidden' }}>
 
-            {/* Tenant Title */}
-            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5 font-mono">{activeTenant.name}</p>
-
-            {/* Service Title */}
-            <h2 className="text-3xl font-extrabold text-slate-800 leading-tight mb-6">{selectedService?.name}</h2>
-
-            {/* Selected Attributes Summary */}
-            <div className="space-y-4 pt-5 border-t border-slate-200">
-              {selectedProfessional && (
-                <div className="flex items-center gap-3 text-slate-700">
-                  <Users className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span className="text-xs font-semibold">{selectedProfessional.name}</span>
-                </div>
-              )}
-
-              {selectedService && (
-                <div className="flex items-center gap-3 text-slate-600">
-                  <Clock className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span className="text-xs font-medium">{selectedService.durationMinutes} min</span>
-                </div>
-              )}
-
-              {selectedService && (
-                <div className="flex items-center gap-3 text-slate-800">
-                  <span className="text-slate-400 font-semibold font-mono text-sm shrink-0">R$</span>
-                  <span className="text-sm font-bold">R$ {selectedService.price.toFixed(2)}</span>
-                </div>
-              )}
-            </div>
+      {/* ══ Steps 2 / 3 / 4 ══ */}
+      {activeTab === 'booking' && step > 1 && step < 5 && (isDesktop ? (
+        /* ── DESKTOP: flex row ── */
+        <div style={{ display: 'flex', flexDirection: 'row' }}>
+          <div style={{ width: 280, background: '#f8fafc', borderRight: '1px solid #e2e8f0', flexShrink: 0, borderRadius: '24px 0 0 24px' }}>
+            <SidebarInfo />
           </div>
+          <div style={{ flex: 1, minWidth: 0 }}>{/* desktop step content below */}
 
-          {/* Bottom language indicator customized */}
-          <div className="pt-8">
-            <div className="flex items-center gap-2 border border-slate-200 bg-white shadow-3xs rounded-xl px-3 py-1.5 text-[10.5px] font-medium text-slate-500 w-fit select-none">
-              <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>Português</span>
-              <span className="text-[7px] text-slate-400 mt-0.5">▼</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. RIGHT CORE VIEW CONTENT CONTAINER */}
-      <div className={`flex-grow flex flex-col justify-between ${step === 1 || step === 5 || activeTab === 'history' ? 'w-full' : 'w-full md:w-[calc(100%-20rem)]'}`}>
-        
-        {/* VIEW A: BOOKING PROCESS FLOW */}
-        {activeTab === 'booking' && (
-          <div className="flex-grow p-5 md:p-8 flex flex-col justify-between h-full bg-white">
-            
-            {/* STEP 1: SELECT SERVICE (Image 1 replica) */}
-            {step === 1 && (
-              <div className="flex flex-col items-center py-6 px-4 max-w-md mx-auto w-full transition-all animate-fade-in">
-                
-                {/* Circular Brand Logo / Initials */}
-                {(activeTenant.logo?.startsWith('http') || activeTenant.logo?.startsWith('data:'))
-                  ? <div className="w-32 h-32 rounded-full overflow-hidden mb-8 shadow-sm border border-blue-100 flex-shrink-0">
-                      <img src={activeTenant.logo} alt={activeTenant.name} className="w-full h-full object-cover" />
-                    </div>
-                  : <div className="relative w-32 h-32 rounded-full border border-blue-600 flex flex-col items-center justify-center mb-8 bg-white shadow-sm">
-                      <div className="absolute top-[8px] right-[8px] transform rotate-45 text-blue-600">
-                        <Scissors className="w-5 h-5 fill-current" />
-                      </div>
-                      <span className="text-[38px] font-light leading-none tracking-tight text-blue-600 font-sans">
-                        {getInitials(activeTenant.name)}
-                      </span>
-                      <span className="text-[9px] font-bold text-blue-600 tracking-[0.2em] uppercase mt-2.5 text-center max-w-[110px] leading-tight">
-                        {activeTenant.name.replace(/barbearia|salao|studio|estetica/gi, '').trim()}
-                      </span>
-                      <span className="text-[7px] font-semibold text-blue-405 tracking-[0.3em] uppercase mt-1 font-mono leading-none">
-                        BARBEARIA
-                      </span>
-                    </div>
-                }
-
-                {/* History link button at top container of Step 1 */}
-                <div className="w-full flex justify-end mb-4">
-                  <button
-                    onClick={() => setActiveTab('history')}
-                    className="text-[10px] font-mono text-blue-600 hover:text-blue-700 bg-blue-50 border border-blue-105 px-3 py-1.5 rounded-full font-bold focus:outline-none flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-3xs"
-                  >
-                    <History className="w-3 h-3" />
-                    <span>Meus Agendamentos</span>
-                  </button>
-                </div>
-
-                {/* Vertical Services buttons list */}
-                <div className="w-full space-y-3 max-h-[380px] overflow-y-auto pr-1">
-                  {myServices.map(srv => (
-                    <button
-                      key={srv.id}
-                      onClick={() => {
-                        setSelectedServiceId(srv.id);
-                        setStep(2);
-                      }}
-                      className="w-full py-4 px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-2xl hover:scale-[1.01] active:scale-[0.99] transition-all duration-100 flex items-center justify-between shadow-md cursor-pointer border border-blue-500 group"
-                    >
-                      <span className="font-sans font-semibold tracking-wide text-left text-sm">{srv.name}</span>
-                      <span className="flex items-center gap-2 text-xs text-blue-100 group-hover:text-white font-sans font-medium transition-colors">
-                        {srv.durationMinutes} min
-                        <span className="text-[8px] translate-x-0.5">▶</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: CHOOSE BARBER / PROFESSIONAL (Image 2 replica) */}
+            {/* Step 2: professionals */}
             {step === 2 && (
-              <div className="flex-grow flex flex-col justify-center min-h-[320px] transition-all animate-fade-in">
-                <h3 className="text-base font-semibold text-slate-800 border-b border-slate-100 pb-3 mb-6 select-none">
+              <div style={{ padding: '24px 20px' }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 20, margin: '0 0 20px' }}>
                   Selecione o profissional
                 </h3>
-
-                <div className="grid grid-cols-2 gap-4 max-w-lg">
-                  {myProfessionals.map(prof => (
-                    <button
-                      key={prof.id}
-                      onClick={() => {
-                        setSelectedProfId(prof.id);
-                        setStep(3);
-                      }}
-                      className="bg-blue-600 hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] transition-all p-5 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer shadow-md text-white border border-blue-500 group"
-                    >
-                      <img
-                        src={prof.avatar}
-                        alt={prof.name}
-                        referrerPolicy="no-referrer"
-                        className="w-14 h-14 rounded-full object-cover border-2 border-white shadow-md mb-3 group-hover:border-blue-100 transition-colors"
-                      />
-                      <span className="text-xs font-bold leading-tight select-none">{prof.name}</span>
-                    </button>
-                  ))}
-                </div>
+                {myProfessionals.length === 0 ? (
+                  <div style={{ padding: '32px 0', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                    Nenhum profissional disponível no momento.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', gap: 12 }}>
+                    {myProfessionals.map(prof => (
+                      <button key={prof.id}
+                        onClick={() => { setSelectedProfId(prof.id); setStep(3); }}
+                        style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', cursor: 'pointer', transition: 'all 120ms', gap: 8 }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#2563eb'; (e.currentTarget as HTMLElement).style.borderColor = '#2563eb'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff'; (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0'; }}>
+                        <div style={{ width: 64, height: 64, borderRadius: '50%', overflow: 'hidden', border: '2px solid #f1f5f9', flexShrink: 0 }}>
+                          <img src={prof.avatar} alt={prof.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={e => { (e.target as HTMLImageElement).src = av(prof.name); }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{prof.name}</div>
+                          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{prof.role}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* STEP 3: PICK DATE & SLOTS (Image 3 replica) */}
+            {/* Step 3: calendar + time */}
             {step === 3 && (
-              <div className="flex-grow grid grid-cols-1 md:grid-cols-12 gap-6 transition-all animate-fade-in">
-                
-                {/* MIDDLE CONTAINER: MONTH VIEW CALENDAR */}
-                <div className="md:col-span-7 flex flex-col justify-between pr-0 md:pr-4">
-                  <div>
-                    {/* Header Month section */}
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-5">
-                      <span className="text-sm font-semibold text-slate-700 select-none">
+              <div style={{ padding: '20px' }}>
+                <div style={isDesktop
+                  ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }
+                  : { display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+                  {/* Calendar */}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 16 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: '#334155', textTransform: 'capitalize' }}>
                         {MONTH_NAMES_PT[viewMonth].toLowerCase()} {viewYear}
                       </span>
-                      
-                      <div className="flex items-center gap-4 text-xs font-bold text-blue-600">
-                        <button
-                          onClick={handleGoToToday}
-                          className="hover:text-blue-700 cursor-pointer select-none active:scale-95"
-                        >
-                          Hoje
-                        </button>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={handlePrevMonth}
-                            className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer transition-colors active:scale-90"
-                          >
-                            <ChevronLeft className="w-4 h-4" />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <button onClick={handleGoToToday} style={{ color: '#2563eb', fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={handlePrevMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <ChevronLeft size={14} />
                           </button>
-                          <button
-                            onClick={handleNextMonth}
-                            className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer transition-colors active:scale-90"
-                          >
-                            <ChevronRight className="w-4 h-4" />
+                          <button onClick={handleNextMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <ChevronRight size={14} />
                           </button>
                         </div>
                       </div>
                     </div>
 
-                    {/* Week Header */}
-                    <div className="grid grid-cols-7 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest gap-y-2 mb-3">
-                      <div>seg</div>
-                      <div>ter</div>
-                      <div>qua</div>
-                      <div>qui</div>
-                      <div>sex</div>
-                      <div>sab</div>
-                      <div>dom</div>
+                    {/* Week headers */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 6 }}>
+                      {['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => (
+                        <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', padding: '0 0 4px' }}>{d}</div>
+                      ))}
                     </div>
 
-                    {/* Calendar Days grid */}
-                    <div className="grid grid-cols-7 text-center text-xs font-semibold text-slate-700 gap-y-2 gap-x-1.5 select-none">
+                    {/* Day cells — plain grid, no aspect-ratio tricks */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
                       {daysArray.map((day, idx) => {
-                        if (day === null) {
-                          return <div key={`empty-${idx}`} />;
-                        }
+                        if (!day) return <div key={`e-${idx}`} style={{ height: 32 }} />;
 
-                        // Check if the business is open on this day of the week
-                        const dateObj = new Date(viewYear, viewMonth, day);
-                        const dayOfWeek = dateObj.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
-                        const WEEKDAYS_MAP = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-                        let isClosed = false;
-                        
-                        if (selectedProfessional && selectedProfessional.businessDays && selectedProfessional.businessDays.length > 0) {
-                          isClosed = !selectedProfessional.businessDays.includes(WEEKDAYS_MAP[dayOfWeek]);
-                        } else if (activeTenant.businessDays && activeTenant.businessDays.length > 0) {
-                          isClosed = !activeTenant.businessDays.includes(WEEKDAYS_MAP[dayOfWeek]);
-                        }
+                        const dow = new Date(viewYear, viewMonth, day).getDay();
+                        const isClosed = selectedProfessional?.businessDays?.length
+                          ? !selectedProfessional.businessDays.includes(WEEKDAYS_MAP[dow])
+                          : activeTenant.businessDays?.length
+                          ? !activeTenant.businessDays.includes(WEEKDAYS_MAP[dow])
+                          : false;
+                        const dk = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                        const isBlocked = (activeTenant.blockedDates ?? []).includes(dk);
+                        const ps = selectedDate.split('-');
+                        const isSel = ps.length === 3 && +ps[0] === viewYear && +ps[1]-1 === viewMonth && +ps[2] === day;
 
-                        if (isClosed) {
-                          return (
-                            <div
-                              key={`day-${day}`}
-                              className="aspect-square flex flex-col items-center justify-center rounded-xl text-[10px] font-mono text-slate-350 bg-slate-50/50 cursor-not-allowed select-none border border-slate-100/50"
-                              title="Estabelecimento fechado neste dia"
-                            >
-                              <span className="line-through">{day}</span>
-                              <span className="text-[7.5px] scale-90 text-red-400 font-bold block leading-none select-none">fechado</span>
-                            </div>
-                          );
-                        }
+                        const cellBase: React.CSSProperties = { height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', border: 'none' };
 
-                        const parsedSelected = selectedDate.split('-');
-                        const isSel = parsedSelected.length === 3 &&
-                          parseInt(parsedSelected[0]) === viewYear &&
-                          parseInt(parsedSelected[1]) - 1 === viewMonth &&
-                          parseInt(parsedSelected[2]) === day;
-
+                        if (isClosed) return <div key={dk} style={{ ...cellBase, background: '#f8fafc', cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#cbd5e1' }}>{day}</span></div>;
+                        if (isBlocked) return <div key={dk} style={{ ...cellBase, background: 'rgba(239,68,68,0.06)', cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#fca5a5' }}>{day}</span></div>;
                         return (
-                          <button
-                            key={`day-${day}`}
-                            type="button"
-                            onClick={() => handleSelectDay(day)}
-                            className={`aspect-square w-full flex items-center justify-center rounded-full text-xs font-mono font-medium transition-all cursor-pointer focus:outline-none ${
-                              isSel
-                                ? 'bg-blue-600 text-white font-bold shadow-md hover:bg-blue-700'
-                                : 'hover:bg-slate-100 hover:text-slate-900 text-slate-755'
-                            }`}
-                          >
+                          <button key={dk} onClick={() => handleSelectDay(day)} type="button"
+                            style={{ ...cellBase, background: isSel ? '#2563eb' : 'transparent', color: isSel ? '#fff' : '#475569', fontWeight: isSel ? 700 : 500, cursor: 'pointer' }}
+                            onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLElement).style.background = '#f1f5f9'; }}
+                            onMouseOut={e => { if (!isSel) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
                             {day}
                           </button>
                         );
                       })}
                     </div>
                   </div>
-                </div>
 
-                {/* RIGHT CONTAINER: TIMEFRAME SLOTS SELECTION */}
-                <div className="md:col-span-5 border-t md:border-t-0 md:border-l border-slate-205 pt-5 md:pt-0 md:pl-6 flex flex-col justify-between">
-                  <div className="space-y-4">
-                    {/* Selected Date Header */}
-                    <h4 className="text-sm font-bold text-slate-800 leading-none pb-2 select-none">
-                      {formatPTBRDate(selectedDate)}
-                    </h4>
-
-                    {/* Exibindo horários display box */}
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-sans font-medium text-slate-400 uppercase block select-none">Exibindo horários para:</label>
-                      <div className="flex items-center gap-2 border border-slate-200 bg-slate-50/50 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium select-none shadow-3xs">
-                        <Users className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span>{selectedProfessional?.name || 'Selecione o profissional'}</span>
-                      </div>
+                  {/* Time slots */}
+                  <div style={{ minWidth: 0, borderTop: isDesktop ? 'none' : '1px solid #f1f5f9', paddingTop: isDesktop ? 0 : 16, borderLeft: isDesktop ? '1px solid #f1f5f9' : 'none', paddingLeft: isDesktop ? 16 : 0 }}>
+                    <div style={{ marginBottom: 12 }}>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>
+                        {selectedDate ? selectedDate.split('-').reverse().join('/') : '—'}
+                      </p>
+                      {selectedProfessional && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b' }}>
+                          <div style={{ width: 20, height: 20, borderRadius: '50%', overflow: 'hidden', border: '1px solid #e2e8f0', flexShrink: 0 }}>
+                            <img src={selectedProfessional.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).src = av(selectedProfessional!.name); }} />
+                          </div>
+                          {selectedProfessional.name}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Hours list and scrollable */}
-                    <div className="space-y-2 max-h-[290px] overflow-y-auto pr-1">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
                       {HOURLY_SLOTS.map(time => {
-                        const isOccupied = checkSlotOccupied(time);
-                        const isSel = selectedTime === time;
-
-                        if (isOccupied) {
-                          return (
-                            <div
-                              key={time}
-                              className="p-2.5 border border-slate-150 text-slate-350 bg-slate-50 text-center text-xs font-mono rounded-xl cursor-not-allowed select-none"
-                              title="Horário já reservado"
-                            >
-                              Ocupado
-                            </div>
-                          );
-                        }
-
+                        const occ = checkSlotOccupied(time);
+                        const sel = selectedTime === time;
+                        if (occ) return (
+                          <div key={time} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', color: '#cbd5e1', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', textDecoration: 'line-through', userSelect: 'none' }}>{time}</div>
+                        );
                         return (
-                          <button
-                            key={time}
-                            onClick={() => setSelectedTime(time)}
-                            className={`w-full py-2.5 rounded-xl border text-center text-xs font-mono font-bold transition-all cursor-pointer ${
-                              isSel
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                                : 'bg-white border-blue-600/20 text-blue-600 hover:text-blue-700 hover:bg-blue-50/40 hover:border-blue-600/40'
-                            }`}
-                          >
+                          <button key={time} onClick={() => setSelectedTime(time)}
+                            style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 10, border: sel ? 'none' : '1px solid #bfdbfe', background: sel ? '#2563eb' : '#fff', color: sel ? '#fff' : '#2563eb', cursor: 'pointer', transition: 'all 120ms' }}>
                             {time}
                           </button>
                         );
                       })}
                     </div>
-                  </div>
 
-                  {/* Continuar button for step 3 selection */}
-                  <div className="pt-4 border-t border-slate-100">
-                    <button
-                      onClick={() => setStep(4)}
-                      disabled={!selectedTime}
-                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 shadow-md disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                    >
-                      <span>Continuar para informações</span>
-                      <ArrowRight className="w-4 h-4" />
+                    <button onClick={() => setStep(4)} disabled={!selectedTime}
+                      style={{ width: '100%', padding: '12px 0', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      Continuar <ArrowRight size={16} />
                     </button>
                   </div>
                 </div>
-
               </div>
             )}
 
-            {/* STEP 4: CLIENT IDENTIFICATION (Image 4 replica) */}
+            {/* Step 4: client info */}
             {step === 4 && (
-              <div className="flex-grow flex flex-col justify-between min-h-[380px] max-w-lg transition-all animate-fade-in">
-                
-                <div className="space-y-4">
-                  {/* Title bar */}
-                  <h3 className="text-xl font-bold text-slate-800 leading-tight">Suas informações</h3>
-
-                  {/* Selected Slot receipt visual */}
-                  <div className="flex items-center gap-2.5 text-xs text-slate-700 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-3 font-semibold select-none shadow-3xs">
-                    <Calendar className="w-4.5 h-4.5 text-slate-400 shrink-0" />
-                    <span>{formatPTBRDate(selectedDate)} - {selectedTime}</span>
-                  </div>
-
-                  {/* Interactive Input details form */}
-                  <form onSubmit={handleFormSubmission} className="space-y-4 font-sans text-xs">
-                    
-                    {/* Name input */}
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-650 block select-none">Seu nome *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Seu nome"
-                        value={clientName}
-                        onChange={(e) => setClientName(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600 text-xs tracking-wide placeholder-slate-400"
-                      />
-                    </div>
-
-                    {/* BR Flag country phone input */}
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-650 block select-none">Telefone *</label>
-                      <div className="relative flex items-center border border-slate-200 bg-slate-50/55 rounded-xl px-3 py-2 text-xs focus-within:ring-1 focus-within:ring-blue-600 focus-within:border-blue-600 transition-all font-mono">
-                        <div className="flex items-center gap-1.5 pr-2.5 border-r border-slate-200 mr-2.5 select-none">
-                          <span className="text-base">🇧🇷</span>
-                          <span className="text-slate-500 font-bold text-[11px]">+55</span>
-                        </div>
-                        <input
-                          type="tel"
-                          required
-                          placeholder="Telefone"
-                          value={clientPhone}
-                          onChange={(e) => setClientPhone(e.target.value)}
-                          className="w-full bg-transparent p-0 border-none focus:ring-0 text-slate-800 font-mono tracking-wide placeholder-slate-400 outline-none text-xs"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Optional Email input */}
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-650 block select-none">Email para Notificações</label>
-                      <input
-                        type="email"
-                        placeholder="seuemail@exemplo.com"
-                        value={clientEmail}
-                        onChange={(e) => setClientEmail(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600 text-xs tracking-wide placeholder-slate-400"
-                      />
-                    </div>
-
-                    {/* Actions bar at bottom of step 4 */}
-                    <div className="pt-6 border-t border-slate-100 flex items-center justify-between gap-4">
-                      <button
-                        type="button"
-                        onClick={() => setStep(3)}
-                        className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer select-none active:scale-95"
-                      >
-                        Voltar
-                      </button>
-                      
-                      <button
-                        type="submit"
-                        className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-[0.98] cursor-pointer"
-                      >
-                        Concluir agendamento
-                      </button>
-                    </div>
-
-                  </form>
+              <div style={{ padding: '24px 20px', maxWidth: 480 }}>
+                <h3 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', marginBottom: 16 }}>Suas informações</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: '#334155', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', marginBottom: 20, fontWeight: 600 }}>
+                  <Calendar size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                  {formatPTBRDate(selectedDate)} às {selectedTime}
                 </div>
-
-              </div>
-            )}
-
-            {/* STEP 5: SUCCESS RECEIPT DETAIL SCREEN (Image 5 replica) */}
-            {step === 5 && (
-              <div className="relative flex flex-col items-center justify-center py-4 text-center max-w-sm mx-auto w-full transition-all animate-fade-in">
-                
-                {/* Share action top right */}
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(`Agendado para ${clientName} em ${activeTenant.name}: ${selectedService?.name} no dia ${selectedDate} as ${selectedTime}. Código: ${bookingCode}`);
-                    alert("Informações do agendamento copiadas para a área de transferência!");
-                  }}
-                  className="absolute top-0 right-0 p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition active:scale-90 cursor-pointer"
-                  title="Compartilhar agendamento"
-                >
-                  <Share2 className="w-5 h-5" />
-                </button>
-
-                {/* Animated Green circular check badge */}
-                <div className="w-14 h-14 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center text-2xl shadow-sm mb-4 animate-bounce font-bold select-none">
-                  ✓
-                </div>
-
-                {/* Title */}
-                <h3 className="text-xl font-bold text-slate-800 leading-tight mb-6">
-                  Detalhes do agendamento
-                </h3>
-
-                {/* Grid layout parameters representing receipts list with border outlines */}
-                <div className="w-full bg-slate-50/50 p-5 rounded-2xl border border-slate-200/60 text-left font-sans text-xs space-y-4 mb-8">
-                  
-                  {/* Quando */}
-                  <div className="border-b border-slate-110 pb-3">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5 select-none">Quando</span>
-                    <strong className="text-slate-800 font-semibold text-xs leading-tight">
-                      {formatPTBRDate(selectedDate)} às {selectedTime}
-                    </strong>
-                  </div>
-
-                  {/* O que */}
-                  <div className="border-b border-slate-110 pb-3">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5 select-none">O que</span>
-                    <strong className="text-slate-800 font-semibold text-xs leading-tight">
-                      {selectedService?.name}
-                    </strong>
-                  </div>
-
-                  {/* Duração */}
-                  <div className="border-b border-slate-110 pb-3">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5 select-none">Duração</span>
-                    <strong className="text-slate-800 font-semibold text-xs leading-tight">
-                      {selectedService?.durationMinutes} min
-                    </strong>
-                  </div>
-
-                  {/* Profissional */}
-                  <div className="border-b border-slate-110 pb-3">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5 select-none">Profissional</span>
-                    <strong className="text-slate-800 font-semibold text-xs leading-tight">
-                      {selectedProfessional?.name}
-                    </strong>
-                  </div>
-
-                  {/* Status */}
-                  <div className="border-b border-slate-110 pb-3">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5 select-none">Status</span>
-                    <strong className="text-slate-800 font-normal text-xs leading-tight">
-                      Confirmado
-                    </strong>
-                  </div>
-
-                  {/* Código */}
+                <form onSubmit={handleFormSubmission} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5 select-none">Código</span>
-                    <strong className="text-slate-800 font-bold font-mono text-[13px] tracking-wide block mt-0.5">
-                      {bookingCode || '231NW1E5'}
-                    </strong>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#475569', display: 'block', marginBottom: 6 }}>Seu nome *</label>
+                    <input type="text" required placeholder="Seu nome" value={clientName} onChange={e => setClientName(e.target.value)}
+                      style={{ width: '100%', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }} />
                   </div>
-
-                </div>
-
-                {/* Cancel action nested inside success element block */}
-                <button
-                  onClick={() => {
-                    if (confirm("Você tem certeza de que deseja cancelar este agendamento?")) {
-                      if (recentBookedId) onUpdateAppointmentStatus(recentBookedId, 'cancelled');
-                      alert("Agendamento cancelado com sucesso.");
-                      setRecentBookedId(null);
-                      setStep(1);
-                    }
-                  }}
-                  className="text-slate-500 hover:text-red-600 transition font-medium text-xs border-b border-slate-300 hover:border-red-400 pb-0.5 select-none cursor-pointer mb-6 active:scale-95"
-                >
-                  Cancelar agendamento
-                </button>
-
-                {/* New appointment link button situated outside/below the card block frame container */}
-                <button
-                  onClick={() => {
-                    setRecentBookedId(null);
-                    setSelectedServiceId('');
-                    setSelectedProfId('');
-                    setSelectedTime('');
-                    setStep(1);
-                  }}
-                  className="text-blue-600 hover:text-blue-700 font-bold text-xs flex items-center justify-center gap-1 cursor-pointer select-none pb-0.5 border-b-2 border-blue-605/10 hover:border-blue-650 transition-all active:scale-95"
-                >
-                  Novo agendamento
-                </button>
-
-              </div>
-            )}
-
-          </div>
-        )}
-
-        {/* VIEW B: PERSONAL BOOKINGS HISTORY FEED & FEEDBACKS */}
-        {activeTab === 'history' && (
-          <div className="p-6 md:p-8 space-y-5 text-xs flex flex-col justify-between h-full bg-white transition-all animate-fade-in max-w-2xl mx-auto w-full">
-            
-            <div className="space-y-5">
-              
-              {/* Back link and Header */}
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <button
-                  onClick={() => setActiveTab('booking')}
-                  className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-bold cursor-pointer select-none"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" /> 
-                  <span>Voltar para agendar</span>
-                </button>
-                <h3 className="text-base font-bold text-slate-800">Meus agendamentos</h3>
-              </div>
-
-              <p className="text-[11px] text-slate-500 select-none leading-relaxed">
-                Digite seu número de telefone celular cadastrado para listar todo o seu histórico em tempo real.
-              </p>
-
-              {/* Tel Input field form search */}
-              <form onSubmit={handleSearchHistory} className="flex gap-2 font-sans">
-                <div className="relative flex items-center border border-slate-200 bg-slate-55/40 rounded-xl px-3 py-2 text-xs focus-within:ring-1 focus-within:ring-blue-600 focus-within:border-blue-600 transition-all font-mono flex-grow">
-                  <div className="flex items-center gap-1.5 pr-2.5 border-r border-slate-200 mr-2.5 select-none">
-                    <span className="text-base">🇧🇷</span>
-                    <span className="text-slate-500 font-bold text-[11px]">+55</span>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#475569', display: 'block', marginBottom: 6 }}>Telefone *</label>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', background: '#f8fafc', gap: 10 }}>
+                      <span style={{ fontSize: 16 }}>🇧🇷</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', borderRight: '1px solid #e2e8f0', paddingRight: 10 }}>+55</span>
+                      <input type="tel" required placeholder="(11) 99999-8888" value={clientPhone} onChange={e => setClientPhone(e.target.value)}
+                        style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: '#0f172a', fontFamily: 'monospace' }} />
+                    </div>
                   </div>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="(11) 99999-8888"
-                    value={historySearchPhone}
-                    onChange={(e) => setHistorySearchPhone(e.target.value)}
-                    className="w-full bg-transparent p-0 border-none focus:ring-0 text-slate-800 font-mono tracking-wide outline-none text-xs"
-                  />
-                </div>
-                
-                <button
-                  type="submit"
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs border border-blue-600 rounded-xl cursor-pointer shadow-3xs hover:scale-[1.01] active:scale-[0.98] transition-all"
-                >
-                  Pesquisar
-                </button>
-              </form>
-
-              {/* LIST SEARCHED CLIENT HISTORY */}
-              <div className="space-y-3.5 max-h-[310px] overflow-y-auto pr-1">
-                {searchedHistory ? (
-                  searchedHistory.length > 0 ? (
-                    searchedHistory.map(appt => {
-                      const srv = services.find(s => s.id === appt.serviceId);
-                      const prof = professionals.find(p => p.id === appt.professionalId);
-
-                      return (
-                        <div key={appt.id} className="bg-slate-50/50 p-4 rounded-2xl border border-slate-205 space-y-3 text-xs shadow-3xs transition-all hover:border-slate-300">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-mono text-slate-400 font-bold">{formatPTBRDate(appt.date)} às {appt.time}</span>
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold font-mono uppercase tracking-wider ${
-                              appt.status === 'attended' ? 'bg-green-50 text-green-700 border border-green-200/60' :
-                              appt.status === 'cancelled' ? 'bg-red-50 text-red-700 border border-red-200/60' :
-                              'bg-blue-50 text-blue-750 border border-blue-200/60'
-                            }`}>
-                              {appt.status === 'attended' ? 'Atendido' :
-                               appt.status === 'cancelled' ? 'Cancelado' : 'Agendado'}
-                            </span>
-                          </div>
-
-                          <div className="text-[11px] leading-relaxed">
-                            <p className="font-bold text-slate-800 text-xs">{srv?.name}</p>
-                            <span className="text-slate-500 font-medium mt-0.5 block">Profissional: {prof?.name}</span>
-                          </div>
-
-                          <div className="border-t border-slate-200/80 pt-2.5 mt-2 flex justify-between items-center bg-transparent">
-                            <span className="font-mono text-emerald-600 font-bold">R$ {appt.price.toFixed(2)}</span>
-                            
-                            <div className="flex gap-1.5">
-                              {appt.status === 'confirmed' && (
-                                <button
-                                  onClick={() => handleCancelMyAppointment(appt.id)}
-                                  className="px-3 py-1 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 text-[10.5px] border border-red-200 cursor-pointer font-bold transition-all active:scale-95"
-                                >
-                                  Cancelar Vaga
-                                </button>
-                              )}
-                              
-                              {appt.status === 'attended' && (
-                                <button
-                                  onClick={() => setReviewingApptId(appt.id)}
-                                  className="px-3 py-1 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 text-[10.5px] border border-amber-200 flex items-center gap-1 cursor-pointer font-bold transition-all active:scale-95"
-                                >
-                                  <Star className="w-3.5 h-3.5 fill-current text-amber-500" /> 
-                                  <span>Avaliar Barbeiro</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <p className="text-center py-6 text-slate-400 italic text-[11px] font-mono font-medium">Nenhum agendamento encontrado para o celular fornecido.</p>
-                  )
-                ) : (
-                  <p className="text-center py-6 text-slate-400 italic text-[11px] font-mono font-medium">Consulte seu telefone acima para carregar seus horários.</p>
-                )}
-              </div>
-            </div>
-
-            {/* REVIEW MODAL ACCORDION */}
-            {reviewingApptId && (
-              <div className="bg-amber-50/20 p-4 rounded-xl border border-amber-200 space-y-3 mt-4 animate-fade-in">
-                <div className="flex justify-between items-center border-b border-amber-110 pb-2">
-                  <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Como foi o seu atendimento?</span>
-                  <button onClick={() => setReviewingApptId(null)} className="text-slate-500 hover:text-slate-800 cursor-pointer">✕ Fechar</button>
-                </div>
-
-                <form onSubmit={handleAddReviewSubmit} className="space-y-3">
-                  <div className="flex gap-1.5">
-                    {[1, 2, 3, 4, 5].map(stars => (
-                      <button
-                        key={stars}
-                        type="button"
-                        onClick={() => setReviewStars(stars)}
-                        className="focus:outline-none cursor-pointer"
-                      >
-                        <Star className={`w-5 h-5 transition-transform hover:scale-110 ${stars <= reviewStars ? 'fill-current text-amber-500' : 'text-slate-300'}`} />
-                      </button>
-                    ))}
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#475569', display: 'block', marginBottom: 6 }}>Email (opcional)</label>
+                    <input type="email" placeholder="seuemail@exemplo.com" value={clientEmail} onChange={e => setClientEmail(e.target.value)}
+                      style={{ width: '100%', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }} />
                   </div>
-
-                  <input
-                    type="text"
-                    required
-                    placeholder="Escreva seu comentário de feedback..."
-                    value={reviewComment}
-                    onChange={(e) => setReviewComment(e.target.value)}
-                    className="w-full bg-white border border-slate-205 rounded px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
-                  />
-
-                  <button
-                    type="submit"
-                    className="w-full py-2 bg-amber-550 hover:bg-amber-600 text-white font-bold rounded text-[11px] transition shadow-sm cursor-pointer"
-                  >
-                    Enviar Nota de Avaliação
-                  </button>
+                  <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                    <button type="button" onClick={() => setStep(3)} style={{ color: '#64748b', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>Voltar</button>
+                    <button type="submit" style={{ padding: '10px 24px', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: 'pointer' }}>
+                      Concluir agendamento
+                    </button>
+                  </div>
                 </form>
               </div>
             )}
 
-            <div className="text-[9.5px] text-slate-400 leading-relaxed font-mono bg-slate-50 p-3 rounded-xl border border-slate-200 text-center select-none">
-              🛡️ Os agendamentos geram notificações push reais automatizadas por nossa API em tempo real.
+          </div>{/* end desktop step content */}
+        </div>
+      ) : (
+        /* ── MOBILE: pure block, sem flex wrapper ── */
+        <div>
+          <TopBar />
+          {step === 2 && (
+            <div style={{ padding: '24px 20px' }}>
+              <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 20, margin: '0 0 20px' }}>
+                Selecione o profissional
+              </h3>
+              {myProfessionals.length === 0 ? (
+                <div style={{ padding: '32px 0', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                  Nenhum profissional disponível no momento.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                  {myProfessionals.map(prof => (
+                    <button key={prof.id}
+                      onClick={() => { setSelectedProfId(prof.id); setStep(3); }}
+                      style={{ background: '#fff', border: '2px solid #e2e8f0', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', cursor: 'pointer', gap: 8, width: '100%' }}>
+                      <div style={{ width: 64, height: 64, borderRadius: '50%', overflow: 'hidden', border: '2px solid #dbeafe', flexShrink: 0 }}>
+                        <img src={prof.avatar} alt={prof.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={e => { (e.target as HTMLImageElement).src = av(prof.name); }} />
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{prof.name}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{prof.role}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )}
+          {step === 3 && (
+            <div style={{ padding: '20px' }}>
+              {/* Calendar */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 16 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#334155', textTransform: 'capitalize' }}>{MONTH_NAMES_PT[viewMonth].toLowerCase()} {viewYear}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button onClick={handleGoToToday} style={{ color: '#2563eb', fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button onClick={handlePrevMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={14} /></button>
+                      <button onClick={handleNextMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={14} /></button>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 6 }}>
+                  {['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => (
+                    <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', padding: '0 0 4px' }}>{d}</div>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+                  {daysArray.map((day, idx) => {
+                    if (!day) return <div key={`e-${idx}`} style={{ height: 32 }} />;
+                    const dow = new Date(viewYear, viewMonth, day).getDay();
+                    const isClosed = selectedProfessional?.businessDays?.length ? !selectedProfessional.businessDays.includes(WEEKDAYS_MAP[dow]) : activeTenant.businessDays?.length ? !activeTenant.businessDays.includes(WEEKDAYS_MAP[dow]) : false;
+                    const dk = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    const isBlocked = (activeTenant.blockedDates ?? []).includes(dk);
+                    const ps = selectedDate.split('-');
+                    const isSel = ps.length === 3 && +ps[0] === viewYear && +ps[1]-1 === viewMonth && +ps[2] === day;
+                    const cell: React.CSSProperties = { height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', border: 'none' };
+                    if (isClosed) return <div key={dk} style={{ ...cell, background: '#f8fafc', cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#cbd5e1' }}>{day}</span></div>;
+                    if (isBlocked) return <div key={dk} style={{ ...cell, background: 'rgba(239,68,68,0.06)', cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#fca5a5' }}>{day}</span></div>;
+                    return <button key={dk} onClick={() => handleSelectDay(day)} type="button" style={{ ...cell, background: isSel ? '#2563eb' : 'transparent', color: isSel ? '#fff' : '#475569', fontWeight: isSel ? 700 : 500, cursor: 'pointer' }}>{day}</button>;
+                  })}
+                </div>
+              </div>
+              {/* Time slots */}
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>{selectedDate ? selectedDate.split('-').reverse().join('/') : '—'}</p>
+                  {selectedProfessional && <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b' }}>
+                    <div style={{ width: 20, height: 20, borderRadius: '50%', overflow: 'hidden', border: '1px solid #e2e8f0', flexShrink: 0 }}><img src={selectedProfessional.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).src = av(selectedProfessional!.name); }} /></div>
+                    {selectedProfessional.name}
+                  </div>}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
+                  {HOURLY_SLOTS.map(time => {
+                    const occ = checkSlotOccupied(time); const sel = selectedTime === time;
+                    if (occ) return <div key={time} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', color: '#cbd5e1', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', textDecoration: 'line-through' }}>{time}</div>;
+                    return <button key={time} onClick={() => setSelectedTime(time)} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 10, border: sel ? 'none' : '1px solid #bfdbfe', background: sel ? '#2563eb' : '#fff', color: sel ? '#fff' : '#2563eb', cursor: 'pointer' }}>{time}</button>;
+                  })}
+                </div>
+                <button onClick={() => setStep(4)} disabled={!selectedTime} style={{ width: '100%', padding: '12px 0', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  Continuar <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+          {step === 4 && (
+            <div style={{ padding: '24px 20px' }}>
+              <h3 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', marginBottom: 16 }}>Suas informações</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: '#334155', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', marginBottom: 20, fontWeight: 600 }}>
+                <Calendar size={14} style={{ color: '#94a3b8', flexShrink: 0 }} /> {formatPTBRDate(selectedDate)} às {selectedTime}
+              </div>
+              <form onSubmit={handleFormSubmission} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#475569', display: 'block', marginBottom: 6 }}>Seu nome *</label>
+                  <input type="text" required placeholder="Seu nome" value={clientName} onChange={e => setClientName(e.target.value)}
+                    style={{ width: '100%', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#475569', display: 'block', marginBottom: 6 }}>Telefone *</label>
+                  <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', background: '#f8fafc', gap: 10 }}>
+                    <span style={{ fontSize: 16 }}>🇧🇷</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', borderRight: '1px solid #e2e8f0', paddingRight: 10 }}>+55</span>
+                    <input type="tel" required placeholder="(11) 99999-8888" value={clientPhone} onChange={e => setClientPhone(e.target.value)}
+                      style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: '#0f172a', fontFamily: 'monospace' }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#475569', display: 'block', marginBottom: 6 }}>Email (opcional)</label>
+                  <input type="email" placeholder="seuemail@exemplo.com" value={clientEmail} onChange={e => setClientEmail(e.target.value)}
+                    style={{ width: '100%', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                  <button type="button" onClick={() => setStep(3)} style={{ color: '#64748b', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>Voltar</button>
+                  <button type="submit" style={{ padding: '10px 24px', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: 'pointer' }}>Concluir agendamento</button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+      ))}
 
-      </div>
+      {/* ══ Step 1 / 5 / History ══ */}
+      {(activeTab === 'booking' && (step === 1 || step === 5)) || activeTab === 'history' ? (
+        <div style={{ padding: 0 }}>
+
+          {/* Step 1: select service */}
+          {activeTab === 'booking' && step === 1 && (
+            <div style={{ maxWidth: 420, margin: '0 auto', padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {(activeTenant.logo?.startsWith('http') || activeTenant.logo?.startsWith('data:'))
+                ? <div style={{ width: 112, height: 112, borderRadius: '50%', overflow: 'hidden', marginBottom: 28, border: '2px solid #bfdbfe', flexShrink: 0 }}>
+                    <img src={activeTenant.logo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                : <div style={{ width: 112, height: 112, borderRadius: '50%', border: '2px solid #2563eb', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 28, background: '#fff', position: 'relative', flexShrink: 0 }}>
+                    <span style={{ position: 'absolute', top: 8, right: 8, transform: 'rotate(45deg)', color: '#2563eb', fontSize: 14 }}>✂</span>
+                    <span style={{ fontSize: 36, fontWeight: 300, color: '#2563eb', lineHeight: 1 }}>{getInitials(activeTenant.name)}</span>
+                    <span style={{ fontSize: 8, fontWeight: 700, color: '#2563eb', letterSpacing: 2, textTransform: 'uppercase', marginTop: 6, textAlign: 'center', maxWidth: 90, lineHeight: 1.3 }}>
+                      {activeTenant.name.replace(/barbearia|salao|studio|estetica/gi,'').trim()}
+                    </span>
+                  </div>
+              }
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {myServices.map(srv => (
+                  <button key={srv.id} onClick={() => { setSelectedServiceId(srv.id); setStep(2); }}
+                    style={{ width: '100%', padding: '14px 20px', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 16, border: '1px solid #1d4ed8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
+                    <span>{srv.name}</span>
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {srv.durationMinutes} min ▶
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: success */}
+          {activeTab === 'booking' && step === 5 && (
+            <div style={{ maxWidth: 380, margin: '0 auto', padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', position: 'relative' }}>
+              <button onClick={() => { navigator.clipboard.writeText(`${activeTenant.name}: ${selectedService?.name} dia ${selectedDate} às ${selectedTime}. Código: ${bookingCode}`); alert('Copiado!'); }}
+                style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                <Share2 size={18} />
+              </button>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 700, marginBottom: 16 }}>✓</div>
+              <h3 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', marginBottom: 20 }}>Detalhes do agendamento</h3>
+              <div style={{ width: '100%', background: '#f8fafc', borderRadius: 16, border: '1px solid #e2e8f0', padding: 20, textAlign: 'left', marginBottom: 20 }}>
+                {[
+                  ['Quando',       `${formatPTBRDate(selectedDate)} às ${selectedTime}`],
+                  ['O que',        selectedService?.name ?? '—'],
+                  ['Duração',      `${selectedService?.durationMinutes ?? 0} min`],
+                  ['Profissional', selectedProfessional?.name ?? '—'],
+                  ['Status',       'Confirmado'],
+                  ['Código',       bookingCode || '—'],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: 10, marginBottom: 10 }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 2, display: 'block', marginBottom: 2 }}>{label}</span>
+                    <strong style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{value}</strong>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => { if (confirm('Cancelar agendamento?')) { if (recentBookedId) onUpdateAppointmentStatus(recentBookedId,'cancelled'); alert('Cancelado.'); setStep(1); } }}
+                style={{ fontSize: 12, color: '#64748b', background: 'none', border: 'none', borderBottom: '1px solid #e2e8f0', paddingBottom: 2, cursor: 'pointer', marginBottom: 16 }}>
+                Cancelar agendamento
+              </button>
+              <button onClick={() => { setRecentBookedId(null); setSelectedServiceId(''); setSelectedProfId(''); setSelectedTime(''); setStep(1); }}
+                style={{ fontSize: 13, fontWeight: 700, color: '#2563eb', background: 'none', border: 'none', borderBottom: '2px solid #bfdbfe', paddingBottom: 2, cursor: 'pointer' }}>
+                Novo agendamento
+              </button>
+            </div>
+          )}
+
+          {/* History */}
+          {activeTab === 'history' && (
+            <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 16 }}>
+                <button onClick={() => setActiveTab('booking')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  <ArrowLeft size={14} /> Voltar
+                </button>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', margin: 0 }}>Meus agendamentos</h3>
+              </div>
+              <p style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>Digite seu telefone para ver seu histórico.</p>
+              <form onSubmit={handleSearchHistory} style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', background: '#f8fafc', gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>🇧🇷</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', borderRight: '1px solid #e2e8f0', paddingRight: 10 }}>+55</span>
+                  <input type="tel" required placeholder="(11) 99999-8888" value={historySearchPhone} onChange={e => setHistorySearchPhone(e.target.value)}
+                    style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, fontFamily: 'monospace' }} />
+                </div>
+                <button type="submit" style={{ padding: '0 16px', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer' }}>Buscar</button>
+              </form>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {!searchedHistory && <p style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8', fontSize: 12 }}>Digite seu telefone para buscar agendamentos.</p>}
+                {searchedHistory?.length === 0 && <p style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8', fontSize: 12 }}>Nenhum agendamento encontrado.</p>}
+                {searchedHistory?.map(appt => {
+                  const srv  = services.find(s => s.id === appt.serviceId);
+                  const prof = professionals.find(p => p.id === appt.professionalId);
+                  const statusColor = appt.status === 'attended' ? { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' } : appt.status === 'cancelled' ? { bg: '#fef2f2', text: '#dc2626', border: '#fecaca' } : { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe' };
+                  const statusLabel = appt.status === 'attended' ? 'Atendido' : appt.status === 'cancelled' ? 'Cancelado' : 'Agendado';
+                  return (
+                    <div key={appt.id} style={{ background: '#f8fafc', borderRadius: 16, border: '1px solid #e2e8f0', padding: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#94a3b8', fontWeight: 700 }}>{formatPTBRDate(appt.date)} às {appt.time}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, padding: '2px 8px', borderRadius: 20, background: statusColor.bg, color: statusColor.text, border: `1px solid ${statusColor.border}` }}>{statusLabel}</span>
+                      </div>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', margin: '0 0 2px' }}>{srv?.name}</p>
+                      <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>Profissional: {prof?.name}</p>
+                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#059669', fontSize: 13 }}>R$ {appt.price.toFixed(2)}</span>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {appt.status === 'confirmed' && (
+                            <button onClick={() => handleCancelMyAppointment(appt.id)}
+                              style={{ padding: '4px 10px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                              Cancelar
+                            </button>
+                          )}
+                          {appt.status === 'attended' && (
+                            <button onClick={() => setReviewingApptId(appt.id)}
+                              style={{ padding: '4px 10px', background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Star size={12} style={{ fill: '#f59e0b', color: '#f59e0b' }} /> Avaliar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {reviewingApptId && (
+                <div style={{ marginTop: 16, background: '#fffbeb', borderRadius: 12, border: '1px solid #fde68a', padding: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #fde68a', paddingBottom: 8, marginBottom: 12 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 1 }}>Como foi o atendimento?</span>
+                    <button onClick={() => setReviewingApptId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: 14 }}>✕</button>
+                  </div>
+                  <form onSubmit={handleAddReviewSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {[1,2,3,4,5].map(s => (
+                        <button key={s} type="button" onClick={() => setReviewStars(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                          <Star size={20} style={{ fill: s <= reviewStars ? '#f59e0b' : 'none', color: s <= reviewStars ? '#f59e0b' : '#cbd5e1' }} />
+                        </button>
+                      ))}
+                    </div>
+                    <input type="text" required placeholder="Seu comentário…" value={reviewComment} onChange={e => setReviewComment(e.target.value)}
+                      style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }} />
+                    <button type="submit" style={{ padding: '8px 0', background: '#f59e0b', color: '#fff', fontWeight: 700, borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13 }}>
+                      Enviar avaliação
+                    </button>
+                  </form>
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+      ) : null}
+
     </div>
   );
 }
