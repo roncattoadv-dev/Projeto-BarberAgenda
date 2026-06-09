@@ -115,6 +115,11 @@ export async function updateCustomer(id: string, updates: { name?: string; phone
   if (error) throw error;
 }
 
+export async function deleteCustomer(id: string): Promise<void> {
+  const { error } = await supabase.from('customers').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function upsertCustomerByPhone(tenantId: string, phone: string, name: string, email?: string): Promise<Customer> {
   const { data, error } = await supabase.rpc('upsert_customer', {
     p_tenant_id: tenantId,

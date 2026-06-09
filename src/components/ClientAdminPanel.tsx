@@ -44,6 +44,7 @@ interface Props {
   onAddPayment: (pay: Omit<Payment, 'id'>) => void;
   onAddCustomer: (c: Omit<Customer, 'id'>) => Promise<Customer>;
   onUpdateCustomer: (id: string, updates: { name?: string; phone?: string; email?: string }) => Promise<void>;
+  onDeleteCustomer: (id: string) => Promise<void>;
   onUpdateTenantDetails: (tenantId: string, details: Partial<Tenant>) => void | Promise<void>;
   onSwitchToBookingFlow: (slug: string) => void;
   onDeleteAccount: () => Promise<void>;
@@ -75,7 +76,7 @@ export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
   onAddProfessional, onUpdateProfessional, onAddProduct, onUpdateProductStock,
-  onAddAppointment, onUpdateAppointmentStatus, onAddPayment, onAddCustomer, onUpdateCustomer,
+  onAddAppointment, onUpdateAppointmentStatus, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
 }: Props) {
   const toast = useToast();
@@ -608,6 +609,17 @@ export default function ClientAdminPanel({
                               title={isEditing ? 'Cancelar edição' : 'Editar cliente'}
                               style={{ width: 28, height: 28, borderRadius: 7, background: isEditing ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.05)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: isEditing ? '#60a5fa' : 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                               {isEditing ? <X size={12} /> : <Pencil size={12} />}
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm(`Apagar ${c.name}? Esta ação não pode ser desfeita.`)) return;
+                                if (isEditing) cancelEditCust();
+                                await onDeleteCustomer(c.id);
+                                toast.success('Cliente apagado.');
+                              }}
+                              title="Apagar cliente"
+                              style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <X size={12} />
                             </button>
                           </motion.div>
                         );

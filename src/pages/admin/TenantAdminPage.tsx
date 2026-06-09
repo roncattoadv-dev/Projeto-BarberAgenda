@@ -126,7 +126,7 @@ import {
   getTenants, getServices, getProfessionals, getProducts,
   getCustomers, getAppointments, getPayments,
   updateTenant, createService, updateService, deleteService,
-  createProfessional, updateProfessional, createProduct, updateCustomer,
+  createProfessional, updateProfessional, createProduct, updateCustomer, deleteCustomer,
   updateProductStock, createAppointment, updateAppointmentStatus,
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours,
@@ -329,6 +329,10 @@ export default function TenantAdminPage() {
           onUpdateCustomer={async (id, updates) => {
             await updateCustomer(id, updates);
             setCustomers(prev => prev.map(x => x.id === id ? { ...x, ...updates } : x));
+          }}
+          onDeleteCustomer={async id => {
+            await deleteCustomer(id);
+            setCustomers(prev => prev.filter(x => x.id !== id));
           }}
           onUpdateTenantDetails={async (id, details) => {
             await updateTenant(id, details);
