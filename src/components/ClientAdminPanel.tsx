@@ -5,7 +5,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Calendar, Users, MessageSquare, Settings, List,
+  Calendar, Users, MessageSquare, Settings, List, Store,
   Plus, Search, ExternalLink, ChevronLeft, ChevronRight,
   Check, X, RefreshCw, Scissors, CreditCard, Package,
   Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck,
@@ -21,7 +21,7 @@ import FinanceiroTab   from './tabs/FinanceiroTab';
 import WhatsAppTab     from './tabs/WhatsAppTab';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Tab = 'agenda' | 'agendamentos' | 'clientes' | 'automacoes' | 'configuracoes';
+type Tab = 'agenda' | 'agendamentos' | 'clientes' | 'negocio' | 'automacoes' | 'configuracoes';
 type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro' | 'assinatura' | 'conta';
 
 interface Props {
@@ -56,13 +56,14 @@ const NAV: { id: Tab; label: string; Icon: React.ElementType }[] = [
   { id: 'agenda',        label: 'Agenda',       Icon: Calendar      },
   { id: 'agendamentos',  label: 'Agendamentos', Icon: List          },
   { id: 'clientes',      label: 'Clientes',     Icon: Users         },
+  { id: 'negocio',       label: 'Meu Negócio',  Icon: Store         },
   { id: 'automacoes',    label: 'Automações',   Icon: MessageSquare },
   { id: 'configuracoes', label: 'Config.',      Icon: Settings      },
 ];
 
 const PAGE_TITLES: Record<Tab, string> = {
   agenda: 'Agenda', agendamentos: 'Agendamentos', clientes: 'Clientes',
-  automacoes: 'Automações', configuracoes: 'Configurações',
+  negocio: 'Meu Negócio', automacoes: 'Automações', configuracoes: 'Configurações',
 };
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
@@ -200,6 +201,13 @@ export default function ClientAdminPanel({
   }, []);
 
   useEffect(() => { if (cmdOpen) setTimeout(() => cmdRef.current?.focus(), 50); }, [cmdOpen]);
+
+  const NEGOCIO_TABS: CfgTab[] = ['identidade', 'horarios', 'equipe', 'catalogo', 'financeiro'];
+  const CONFIG_TABS:  CfgTab[] = ['assinatura', 'conta'];
+  useEffect(() => {
+    if (activeTab === 'negocio'       && !NEGOCIO_TABS.includes(cfgTab)) setCfgTab('identidade');
+    if (activeTab === 'configuracoes' && !CONFIG_TABS.includes(cfgTab))  setCfgTab('assinatura');
+  }, [activeTab]);
 
   const cmdResults = useMemo(() => {
     if (!cmdQuery.trim()) return [];
@@ -559,12 +567,15 @@ export default function ClientAdminPanel({
                 <WhatsAppTab activeTenant={activeTenant} myAppointments={myAppointments} myServices={myServices} myProfessionals={myProfessionals} />
               )}
 
-              {/* ─────────── CONFIGURAÇÕES ─────────── */}
-              {activeTab === 'configuracoes' && (
+              {/* ─────────── MEU NEGÓCIO + CONFIGURAÇÕES (sub-nav compartilhado) ─────────── */}
+              {(activeTab === 'negocio' || activeTab === 'configuracoes') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  {/* Sub-nav */}
+                  {/* Sub-nav — tabs dinâmicos conforme o menu ativo */}
                   <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0, overflowX: 'auto' }} className="no-scrollbar">
-                    {([['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro'], ['assinatura','Assinatura'], ['conta','Conta']] as [CfgTab, string][]).map(([id, label]) => (
+                    {(activeTab === 'negocio'
+                      ? [['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro']] as [CfgTab, string][]
+                      : [['assinatura','Assinatura'], ['conta','Conta']] as [CfgTab, string][]
+                    ).map(([id, label]) => (
                       <button key={id} onClick={() => setCfgTab(id)}
                         style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: cfgTab === id ? '2px solid #ffffff' : '2px solid transparent', color: cfgTab === id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', marginBottom: -1, whiteSpace: 'nowrap', transition: 'color 150ms' }}>
                         {label}
