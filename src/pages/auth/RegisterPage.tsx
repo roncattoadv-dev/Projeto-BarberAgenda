@@ -130,7 +130,7 @@ function BarberSetupForm({
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
           <img
-            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/Generated%20Image%20June%2008,%202026%20-%207_33PM.jpg"
+            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"
             alt="BarberFlow"
             style={{ height: 200, objectFit: 'contain', marginBottom: 16 }}
           />
@@ -399,7 +399,7 @@ export default function RegisterPage() {
         {/* Header */}
         <div className="flex flex-col items-center mb-8">
           <img
-            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/Generated%20Image%20June%2008,%202026%20-%207_33PM.jpg"
+            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"
             alt="BarberFlow"
             style={{ height: 220, objectFit: 'contain', marginBottom: 16 }}
           />
