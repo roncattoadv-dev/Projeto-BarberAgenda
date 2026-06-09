@@ -152,6 +152,16 @@ export async function notifyAppointmentWhatsApp(tenantId: string, appointmentId:
   });
 }
 
+export async function remindAppointmentWhatsApp(tenantId: string, appointmentId: string): Promise<void> {
+  const apiUrl = ((window as any).__BARBER_CONFIG__?.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+  const res = await fetch(`${apiUrl}/api/whatsapp/remind`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tenantId, appointmentId }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 export async function updateAppointmentStatus(id: string, status: Appointment['status']) {
   const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
   if (error) throw error;

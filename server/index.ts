@@ -804,6 +804,61 @@ app.post('/api/whatsapp/notify', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/whatsapp/remind  — envia lembrete manualmente para um agendamento
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/whatsapp/remind', async (req, res) => {
+  const { tenantId, appointmentId } = req.body as { tenantId?: string; appointmentId?: string };
+  if (!tenantId || !appointmentId) { res.status(400).json({ error: 'tenantId e appointmentId obrigatórios.' }); return; }
+
+  try {
+    const [apptRes, tenantRes] = await Promise.all([
+      supabase.from('appointments')
+        .select('*, services(name), professionals(name)')
+        .eq('id', appointmentId).eq('tenant_id', tenantId).maybeSingle(),
+      supabase.from('tenants')
+        .select('name, slug, wpp_template_remind, wpp_booking_url')
+        .eq('id', tenantId).maybeSingle(),
+    ]);
+
+    const appt   = apptRes.data;
+    const tenant = tenantRes.data;
+    if (!appt || !tenant) { res.status(404).json({ error: 'Dados não encontrados.' }); return; }
+
+    const phone = appt.customer_phone?.replace(/\D/g, '');
+    if (!phone) { res.json({ ok: true, skipped: 'sem telefone' }); return; }
+
+    const code  = bookingCode(appt.id);
+    const link  = buildLink(tenant, appt.id);
+    const vars  = {
+      nome:         appt.customer_name              ?? '',
+      salao:        tenant.name                     ?? '',
+      servico:      (appt.services as any)?.name    ?? '',
+      data:         formatDatePT(appt.scheduled_date),
+      hora:         appt.scheduled_time?.slice(0,5) ?? '',
+      duracao:      String(appt.duration_minutes),
+      profissional: (appt.professionals as any)?.name ?? '',
+      codigo:       code,
+      link,
+    };
+
+    const msg           = applyTemplate(tenant.wpp_template_remind ?? TPL_REMIND_DEFAULT, vars);
+    const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+
+    await evoInstance(instanceToken, '/send/text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+    });
+
+    await supabase.from('appointments').update({ wpp_reminder_sent: true }).eq('id', appointmentId);
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[Remind]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // WhatsApp / Evolution Go — helpers de servidor
 // O EVO_GLOBAL_KEY nunca é exposto ao frontend.
 // ─────────────────────────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ import {
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
 import { useToast } from '../hooks/useToast';
-import { uploadTenantLogo } from '../lib/db';
+import { uploadTenantLogo, remindAppointmentWhatsApp } from '../lib/db';
 import LogoCropModal from './LogoCropModal';
 import AgendaTab       from './tabs/AgendaTab';
 import AgendamentosTab from './tabs/AgendamentosTab';
@@ -496,6 +496,7 @@ export default function ClientAdminPanel({
                       onUpdateAppointmentStatus={onUpdateAppointmentStatus}
                       onAddAppointment={onAddAppointment}
                       onCompleteAppointment={handleCompleteAppointment}
+                      onResendReminder={apptId => remindAppointmentWhatsApp(activeTenant.id, apptId)}
                       tenantId={activeTenant.id}
                     />
                   </div>

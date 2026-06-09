@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Bell, BellOff, RefreshCw } from 'lucide-react';
 import { Appointment, Service, Professional, Customer } from '../../types';
+import { useToast } from '../../hooks/useToast';
 
 interface Props {
   myAppointments: Appointment[];
@@ -11,6 +12,7 @@ interface Props {
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
   onCompleteAppointment: (appt: Appointment) => void;
+  onResendReminder: (apptId: string) => Promise<void>;
   tenantId: string;
 }
 
@@ -46,6 +48,15 @@ const STATUS_COLOR: Record<string, { bg: string; border: string; text: string; d
   cancelled: { bg: '#fee2e2', border: '#fca5a5', text: '#dc2626', dot: '#ef4444' },
   attended:  { bg: '#dbeafe', border: '#93c5fd', text: '#1d4ed8', dot: '#3b82f6' },
 };
+
+const STATUS_SOLID: Record<string, { bg: string; shadow: string }> = {
+  confirmed: { bg: '#16a34a', shadow: 'rgba(22,163,74,0.35)' },
+  pending:   { bg: '#d97706', shadow: 'rgba(217,119,6,0.35)' },
+  attended:  { bg: '#2563eb', shadow: 'rgba(37,99,235,0.35)' },
+  cancelled: { bg: '#dc2626', shadow: 'rgba(220,38,38,0.35)' },
+};
+
+const FOOTER_H = 20;
 
 // Paleta de cores para chips de profissionais (saturadas, legíveis em fundo branco)
 const PROF_COLORS = [
@@ -104,7 +115,13 @@ function layoutDay(appts: Appointment[]): Array<{ appt: Appointment; col: number
   return placed.map(p => ({ ...p, totalCols }));
 }
 
-export default function AgendaTab({ myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment }: Props) {
+function isPastAppt(date: string, time: string): boolean {
+  const [y, m, d] = date.split('-').map(Number);
+  const [h, min]  = time.split(':').map(Number);
+  return new Date(y, m - 1, d, h, min) < new Date();
+}
+
+export default function AgendaTab({ myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment, onResendReminder }: Props) {
   const [view, setView] = useState<ViewMode>(() => {
     const s = localStorage.getItem('bf_agenda_view');
     return (s === 'day' || s === 'week' || s === 'month') ? s : 'day';
@@ -117,7 +134,23 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
     catch { return new Set(); }
   });
   const [now, setNow] = useState(new Date());
+  const [resendingIds, setResendingIds] = useState<Set<string>>(new Set());
+  const [remindedIds,  setRemindedIds]  = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+  const toast = useToast();
+
+  const handleResend = async (apptId: string) => {
+    setResendingIds(prev => new Set(prev).add(apptId));
+    try {
+      await onResendReminder(apptId);
+      setRemindedIds(prev => new Set(prev).add(apptId));
+      toast.success('Lembrete reenviado!');
+    } catch {
+      toast.error('Falha ao reenviar lembrete.');
+    } finally {
+      setResendingIds(prev => { const n = new Set(prev); n.delete(apptId); return n; });
+    }
+  };
 
   const today = formatDateKey(new Date());
 
@@ -390,10 +423,19 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                     const left   = `calc(${col * colW}% + 3px)`;
                     const width  = `calc(${colW}% - 6px)`;
 
-                    const sc      = STATUS_COLOR[appt.status] ?? STATUS_COLOR.pending;
+                    const sc      = STATUS_SOLID[appt.status] ?? STATUS_SOLID.pending;
                     const srv     = myServices.find(s => s.id === appt.serviceId);
                     const prof    = myProfessionals.find(p => p.id === appt.professionalId);
                     const isHov   = hoveredAppt === appt.id;
+
+                    const confirmSent  = appt.wppConfirmSent  === true;
+                    const reminderSent = appt.wppReminderSent === true || remindedIds.has(appt.id);
+                    const reminderFailed  = !reminderSent && isPastAppt(appt.date, appt.time);
+                    const isResending     = resendingIds.has(appt.id);
+
+                    const showFooter = height >= 32;
+                    const showTime   = height >= (showFooter ? FOOTER_H + 32 : 28);
+                    const showProf   = height >= (showFooter ? FOOTER_H + 50 : 46);
 
                     return (
                       <div
@@ -404,65 +446,109 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                           position: 'absolute', top, height, left, width,
                           background: sc.bg,
                           borderRadius: 6,
-                          borderLeft: `3px solid ${sc.dot}`,
-                          padding: '3px 6px',
                           overflow: 'hidden',
                           cursor: 'pointer',
                           zIndex: isHov ? 4 : 1,
-                          boxShadow: isHov ? '0 3px 10px rgba(0,0,0,0.14)' : '0 1px 3px rgba(0,0,0,0.07)',
+                          boxShadow: isHov ? `0 4px 14px ${sc.shadow}` : `0 1px 4px ${sc.shadow}`,
                           transition: 'box-shadow 0.15s',
                         }}
                       >
-                        {/* Nome sempre visível */}
-                        <div style={{ fontSize: 11, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
-                          {appt.customerName}
+                        {/* Conteúdo principal */}
+                        <div style={{ padding: `3px 6px ${showFooter ? FOOTER_H + 2 : 3}px 6px`, boxSizing: 'border-box' }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3, paddingRight: isHov ? 46 : 0 }}>
+                            {appt.customerName}
+                          </div>
+                          {showTime && (
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.82)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+                              {appt.time.slice(0, 5)}{srv ? ` · ${srv.name}` : ''}
+                            </div>
+                          )}
+                          {showProf && prof && (
+                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3, marginTop: 1 }}>
+                              {prof.name}
+                            </div>
+                          )}
                         </div>
-                        {/* Hora + serviço (só se tiver espaço) */}
-                        {height >= 36 && (
-                          <div style={{ fontSize: 10, color: C.textSm, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
-                            {appt.time.slice(0, 5)}{srv ? ` · ${srv.name}` : ''}
-                          </div>
-                        )}
-                        {/* Profissional */}
-                        {height >= 54 && prof && (
-                          <div style={{ fontSize: 9, color: C.textSm, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3, marginTop: 1 }}>
-                            {prof.name}
-                          </div>
-                        )}
-                        {/* Indicadores de mensagens — canto superior direito, sempre visíveis */}
-                        {(appt.wppConfirmSent || appt.wppReminderSent) && (
-                          <div style={{ position: 'absolute', top: 3, right: 4, display: 'flex', gap: 3, alignItems: 'center', zIndex: 2, pointerEvents: 'none' }}>
-                            {appt.wppConfirmSent  && (
-                              <span title="Confirmação enviada" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: 3, background: '#dcfce7', border: '1px solid #86efac' }}>
-                                <MessageSquare size={8} color="#16a34a" />
+
+                        {/* Footer: sinal de confirmação + lembrete */}
+                        {showFooter && (
+                          <div style={{
+                            position: 'absolute', bottom: 0, left: 0, right: 0, height: FOOTER_H,
+                            background: 'rgba(0,0,0,0.22)',
+                            display: 'flex', alignItems: 'center', gap: 4, padding: '0 5px',
+                            pointerEvents: reminderFailed ? 'auto' : 'none',
+                          }}>
+                            {/* Sinal de confirmação WhatsApp */}
+                            <span
+                              title={confirmSent ? 'Confirmação enviada' : 'Confirmação não enviada'}
+                              style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '1px 4px', borderRadius: 3,
+                                background: confirmSent ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                                border: `1px solid ${confirmSent ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.12)'}`,
+                              }}>
+                              <MessageSquare size={8} color={confirmSent ? '#fff' : 'rgba(255,255,255,0.35)'} />
+                              {confirmSent
+                                ? <Check size={7} color="#fff" strokeWidth={3} />
+                                : <X    size={7} color="rgba(255,255,255,0.35)" strokeWidth={3} />
+                              }
+                            </span>
+
+                            {/* Sinal de lembrete */}
+                            {reminderSent ? (
+                              <span title="Lembrete enviado"
+                                style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '1px 4px', borderRadius: 3,
+                                  background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.35)',
+                                }}>
+                                <Bell size={8} color="#fff" />
+                                <Check size={7} color="#fff" strokeWidth={3} />
+                              </span>
+                            ) : reminderFailed ? (
+                              <button
+                                onClick={e => { e.stopPropagation(); if (!isResending) handleResend(appt.id); }}
+                                disabled={isResending}
+                                title="Lembrete não enviado — clique para reenviar"
+                                style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '1px 5px', borderRadius: 3,
+                                  background: 'rgba(251,191,36,0.28)', border: '1px solid rgba(251,191,36,0.55)',
+                                  cursor: isResending ? 'wait' : 'pointer', fontFamily: 'Outfit, sans-serif',
+                                }}>
+                                {isResending
+                                  ? <RefreshCw size={8} color="#fcd34d" style={{ animation: 'spin 1s linear infinite' }} />
+                                  : <BellOff   size={8} color="#fcd34d" />
+                                }
+                                <span style={{ fontSize: 8, color: '#fcd34d', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                  {isResending ? 'Enviando…' : 'Reenviar'}
+                                </span>
+                              </button>
+                            ) : (
+                              <span title="Lembrete será enviado automaticamente"
+                                style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '1px 4px', borderRadius: 3,
+                                  background: 'rgba(0,0,0,0.12)', border: '1px solid rgba(255,255,255,0.1)',
+                                }}>
+                                <Bell size={8} color="rgba(255,255,255,0.38)" />
+                                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.38)', fontWeight: 600 }}>auto</span>
                               </span>
                             )}
-                            {appt.wppReminderSent && (
-                              <span title="Lembrete enviado" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: 3, background: '#fef9c3', border: '1px solid #fde68a' }}>
-                                <Clock size={8} color="#b45309" />
-                              </span>
-                            )}
                           </div>
                         )}
-                        {/* Ações no hover — sobrepostas no canto inferior direito */}
+
+                        {/* Ações no hover — canto superior direito */}
                         {isHov && appt.status !== 'attended' && appt.status !== 'cancelled' && (
                           <div
-                            style={{ position: 'absolute', bottom: 3, right: 3, display: 'flex', gap: 3, zIndex: 5 }}
+                            style={{ position: 'absolute', top: 3, right: 4, display: 'flex', gap: 3, zIndex: 5 }}
                             onClick={e => e.stopPropagation()}
                           >
                             <button
                               onClick={() => onCompleteAppointment(appt)}
                               title="Concluir"
-                              style={{ width: 22, height: 22, borderRadius: 4, background: '#dcfce7', border: '1px solid #86efac', color: '#16a34a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                              style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.45)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                             >
-                              <Check size={10} />
+                              <Check size={9} />
                             </button>
                             <button
                               onClick={() => { if (window.confirm(`Cancelar ${appt.customerName}?`)) onUpdateAppointmentStatus(appt.id, 'cancelled'); }}
                               title="Cancelar"
-                              style={{ width: 22, height: 22, borderRadius: 4, background: '#fee2e2', border: '1px solid #fca5a5', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                              style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', color: 'rgba(255,255,255,0.85)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                             >
-                              <X size={10} />
+                              <X size={9} />
                             </button>
                           </div>
                         )}
