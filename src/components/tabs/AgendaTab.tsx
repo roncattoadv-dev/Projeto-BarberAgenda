@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Bell, BellOff, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Bell, BellOff, RefreshCw, Clock } from 'lucide-react';
 import { Appointment, Service, Professional, Customer } from '../../types';
 import { useToast } from '../../hooks/useToast';
 
