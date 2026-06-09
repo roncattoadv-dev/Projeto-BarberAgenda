@@ -110,6 +110,11 @@ export async function getCustomers(tenantId: string): Promise<Customer[]> {
   return (data ?? []).map(mapCustomer);
 }
 
+export async function updateCustomer(id: string, updates: { name?: string; phone?: string; email?: string; notes?: string }): Promise<void> {
+  const { error } = await supabase.from('customers').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
 export async function upsertCustomerByPhone(tenantId: string, phone: string, name: string, email?: string): Promise<Customer> {
   const { data, error } = await supabase.rpc('upsert_customer', {
     p_tenant_id: tenantId,

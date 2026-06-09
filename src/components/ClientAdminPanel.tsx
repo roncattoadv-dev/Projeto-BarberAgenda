@@ -43,6 +43,7 @@ interface Props {
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onAddPayment: (pay: Omit<Payment, 'id'>) => void;
   onAddCustomer: (c: Omit<Customer, 'id'>) => Promise<Customer>;
+  onUpdateCustomer: (id: string, updates: { name?: string; phone?: string; email?: string }) => Promise<void>;
   onUpdateTenantDetails: (tenantId: string, details: Partial<Tenant>) => void | Promise<void>;
   onSwitchToBookingFlow: (slug: string) => void;
   onDeleteAccount: () => Promise<void>;
@@ -74,7 +75,7 @@ export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
   onAddProfessional, onUpdateProfessional, onAddProduct, onUpdateProductStock,
-  onAddAppointment, onUpdateAppointmentStatus, onAddPayment, onAddCustomer,
+  onAddAppointment, onUpdateAppointmentStatus, onAddPayment, onAddCustomer, onUpdateCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
 }: Props) {
   const toast = useToast();
@@ -124,10 +125,20 @@ export default function ClientAdminPanel({
   const [apptNewClientPhone, setApptNewClientPhone] = useState('');
 
   // ── Clientes state ────────────────────────────────────────────────────────
-  const [custSearch,  setCustSearch]  = useState('');
-  const [custName,    setCustName]    = useState('');
-  const [custPhone,   setCustPhone]   = useState('');
-  const [custEmail,   setCustEmail]   = useState('');
+  const [custSearch,    setCustSearch]    = useState('');
+  const [custName,      setCustName]      = useState('');
+  const [custPhone,     setCustPhone]     = useState('');
+  const [custEmail,     setCustEmail]     = useState('');
+  const [editingCust,   setEditingCust]   = useState<Customer | null>(null);
+
+  const startEditCust = (c: Customer) => {
+    setEditingCust(c);
+    setCustName(c.name); setCustPhone(c.phone); setCustEmail(c.email || '');
+  };
+  const cancelEditCust = () => {
+    setEditingCust(null);
+    setCustName(''); setCustPhone(''); setCustEmail('');
+  };
 
   // ── Config state ──────────────────────────────────────────────────────────
   const [uploadingLogo,    setUploadingLogo]    = useState(false);
@@ -265,12 +276,18 @@ export default function ClientAdminPanel({
     toast.success('Agendamento criado!');
   };
 
-  const handleAddCustomer = (e: React.FormEvent) => {
+  const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!custName.trim() || !custPhone.trim()) { toast.error('Nome e telefone obrigatórios.'); return; }
-    onAddCustomer({ tenantId: activeTenant.id, name: custName, email: custEmail || `${custName.replace(/\s/g, '')}@barber.com`, phone: custPhone });
-    setCustName(''); setCustPhone(''); setCustEmail('');
-    toast.success('Cliente cadastrado!');
+    if (editingCust) {
+      await onUpdateCustomer(editingCust.id, { name: custName, phone: custPhone, email: custEmail });
+      toast.success('Cliente atualizado!');
+      cancelEditCust();
+    } else {
+      await onAddCustomer({ tenantId: activeTenant.id, name: custName, email: custEmail || `${custName.replace(/\s/g, '')}@barber.com`, phone: custPhone });
+      setCustName(''); setCustPhone(''); setCustEmail('');
+      toast.success('Cliente cadastrado!');
+    }
   };
 
   const handleCropConfirm = async (blob: Blob) => {
@@ -541,15 +558,30 @@ export default function ClientAdminPanel({
               {/* ─────────── CLIENTES ─────────── */}
               {activeTab === 'clientes' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 20 }}>
-                  <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 14px' }}>Novo Cliente</p>
+
+                  {/* Formulário: adicionar ou editar */}
+                  <div style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${editingCust ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 16, padding: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: editingCust ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                        {editingCust ? `Editando: ${editingCust.name.split(' ')[0]}` : 'Novo Cliente'}
+                      </p>
+                      {editingCust && (
+                        <button onClick={cancelEditCust} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
                     <form onSubmit={handleAddCustomer} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       <input placeholder="Nome completo" value={custName} onChange={e => setCustName(e.target.value)} required className="navy-input" />
                       <input placeholder="(DDD) Telefone" value={custPhone} onChange={e => setCustPhone(e.target.value)} required className="navy-input" />
                       <input placeholder="Email (opcional)" value={custEmail} onChange={e => setCustEmail(e.target.value)} className="navy-input" />
-                      <button type="submit" style={{ padding: 12, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Adicionar</button>
+                      <button type="submit" style={{ padding: 12, background: editingCust ? '#3b82f6' : '#ffffff', color: editingCust ? '#fff' : '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                        {editingCust ? 'Salvar alterações' : 'Adicionar'}
+                      </button>
                     </form>
                   </div>
+
+                  {/* Lista de clientes */}
                   <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20 }}>
                     <div style={{ position: 'relative', marginBottom: 14 }}>
                       <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
@@ -559,17 +591,24 @@ export default function ClientAdminPanel({
                       {myCustomers.filter(c => !custSearch || c.name.toLowerCase().includes(custSearch.toLowerCase()) || c.phone.includes(custSearch)).map(c => {
                         const totalSpent = myPayments.filter(p => myAppointments.find(a => a.id === p.appointmentId && a.customerId === c.id)).reduce((s, p) => s + p.amount, 0);
                         const visits = myAppointments.filter(a => a.customerId === c.id && a.status === 'attended').length;
+                        const isEditing = editingCust?.id === c.id;
                         return (
                           <motion.div key={c.id} whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
-                            style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'rgba(255,255,255,0.65)', fontSize: 14, flexShrink: 0 }}>{c.name[0]}</div>
-                              <div>
-                                <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13 }}>{c.name}</div>
-                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{c.phone} · {visits} visita{visits !== 1 ? 's' : ''}</div>
-                              </div>
+                            style={{ padding: '12px 14px', background: isEditing ? 'rgba(59,130,246,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.35)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, transition: 'all 150ms' }}>
+                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: isEditing ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: isEditing ? '#60a5fa' : 'rgba(255,255,255,0.65)', fontSize: 14, flexShrink: 0 }}>
+                              {c.name[0]}
                             </div>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#4ade80', fontSize: 13 }}>R$ {totalSpent.toFixed(2)}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{c.phone} · {visits} visita{visits !== 1 ? 's' : ''}</div>
+                            </div>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#4ade80', fontSize: 13, flexShrink: 0 }}>R$ {totalSpent.toFixed(2)}</span>
+                            <button
+                              onClick={() => isEditing ? cancelEditCust() : startEditCust(c)}
+                              title={isEditing ? 'Cancelar edição' : 'Editar cliente'}
+                              style={{ width: 28, height: 28, borderRadius: 7, background: isEditing ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.05)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: isEditing ? '#60a5fa' : 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              {isEditing ? <X size={12} /> : <Pencil size={12} />}
+                            </button>
                           </motion.div>
                         );
                       })}
