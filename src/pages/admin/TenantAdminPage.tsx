@@ -126,7 +126,7 @@ import {
   getTenants, getServices, getProfessionals, getProducts,
   getCustomers, getAppointments, getPayments,
   updateTenant, createService, updateService, deleteService,
-  createProfessional, createProduct,
+  createProfessional, updateProfessional, createProduct,
   updateProductStock, createAppointment, updateAppointmentStatus,
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours,
@@ -293,6 +293,10 @@ export default function TenantAdminPage() {
           onAddProfessional={async (p, sIds) => {
             const c = await createProfessional(p, sIds ?? []);
             setProfessionals(prev => [...prev, c]);
+          }}
+          onUpdateProfessional={async (id, updates) => {
+            await updateProfessional(id, updates);
+            setProfessionals(prev => prev.map(x => x.id === id ? { ...x, ...updates } : x));
           }}
           onAddProduct={async p => {
             const c = await createProduct(p);

@@ -8,7 +8,7 @@ import {
   Calendar, Users, MessageSquare, Settings, List, Store,
   Plus, Search, ExternalLink, ChevronLeft, ChevronRight,
   Check, X, RefreshCw, Scissors, CreditCard, Package,
-  Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck,
+  Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck, Pencil,
 } from 'lucide-react';
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
@@ -36,6 +36,7 @@ interface Props {
   onUpdateService: (id: string, s: Partial<Omit<Service, 'id'>>) => void | Promise<void>;
   onDeleteService: (id: string) => void | Promise<void>;
   onAddProfessional: (p: Omit<Professional, 'id'>) => void;
+  onUpdateProfessional: (id: string, p: Partial<Omit<Professional, 'id' | 'tenantId'>>) => void;
   onAddProduct: (p: Omit<Product, 'id'>) => void;
   onUpdateProductStock: (id: string, stock: number) => void;
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
@@ -72,7 +73,7 @@ const STATUS_DOT: Record<string, string> = { confirmed: '#22c55e', pending: '#f5
 export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
-  onAddProfessional, onAddProduct, onUpdateProductStock,
+  onAddProfessional, onUpdateProfessional, onAddProduct, onUpdateProductStock,
   onAddAppointment, onUpdateAppointmentStatus, onAddPayment, onAddCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
 }: Props) {
@@ -171,6 +172,21 @@ export default function ClientAdminPanel({
   const [profCommission, setProfCommission] = useState(40);
   const [profAvatar,     setProfAvatar]     = useState('');
   const [profDays,       setProfDays]       = useState<string[]>(['seg','ter','qua','qui','sex','sab']);
+  const [editingProf,    setEditingProf]    = useState<Professional | null>(null);
+
+  const startEditProf = (p: Professional) => {
+    setEditingProf(p);
+    setProfName(p.name);
+    setProfRole(p.role);
+    setProfAvatar(p.avatar || '');
+    setProfCommission(p.commissionPercentage);
+    setProfDays(p.businessDays || ['seg','ter','qua','qui','sex','sab']);
+  };
+  const cancelEditProf = () => {
+    setEditingProf(null);
+    setProfName(''); setProfRole('Barbeiro'); setProfAvatar('');
+    setProfCommission(40); setProfDays(['seg','ter','qua','qui','sex','sab']);
+  };
 
   const logoInputRef   = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -805,32 +821,95 @@ export default function ClientAdminPanel({
                       {/* Equipe */}
                       {cfgTab === 'equipe' && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                          <form onSubmit={e => { e.preventDefault(); if (!profName.trim()) return; onAddProfessional({ tenantId: activeTenant.id, name: profName, role: profRole, avatar: profAvatar || 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80', rating: 5, services: myServices.map(s => s.id), commissionPercentage: profCommission, businessDays: profDays, businessHoursByDay: {} }); toast.success(`${profName} adicionado!`); setProfName(''); }}
-                            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Novo Colaborador</p>
+
+                          {/* Formulário: adicionar ou editar */}
+                          <form
+                            onSubmit={async e => {
+                              e.preventDefault();
+                              if (!profName.trim()) return;
+                              if (editingProf) {
+                                await onUpdateProfessional(editingProf.id, {
+                                  name: profName, role: profRole,
+                                  avatar: profAvatar || editingProf.avatar,
+                                  commissionPercentage: profCommission,
+                                  businessDays: profDays,
+                                });
+                                toast.success(`${profName} atualizado!`);
+                                cancelEditProf();
+                              } else {
+                                onAddProfessional({ tenantId: activeTenant.id, name: profName, role: profRole, avatar: profAvatar || 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80', rating: 5, services: myServices.map(s => s.id), commissionPercentage: profCommission, businessDays: profDays, businessHoursByDay: {} });
+                                toast.success(`${profName} adicionado!`);
+                                setProfName(''); setProfAvatar('');
+                              }
+                            }}
+                            style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${editingProf ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: editingProf ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                                {editingProf ? `Editando: ${editingProf.name}` : 'Novo Colaborador'}
+                              </p>
+                              {editingProf && (
+                                <button type="button" onClick={cancelEditProf}
+                                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                                  Cancelar
+                                </button>
+                              )}
+                            </div>
+
                             <input ref={avatarInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e => { if (e.target.files?.[0]) setProfAvatar(await fileToDataURL(e.target.files[0])); }} />
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 48, height: 48, borderRadius: 12, border: '1px solid rgba(255,255,255,0.09)', overflow: 'hidden', background: 'rgba(255,255,255,0.07)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => avatarInputRef.current?.click()}>
-                                {profAvatar ? <img src={profAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <User size={18} style={{ color: 'rgba(255,255,255,0.3)' }} />}
+                                {(profAvatar || editingProf?.avatar)
+                                  ? <img src={profAvatar || editingProf?.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  : <User size={18} style={{ color: 'rgba(255,255,255,0.3)' }} />}
                               </div>
-                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', cursor: 'pointer' }} onClick={() => avatarInputRef.current?.click()}>Foto do profissional</span>
+                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', cursor: 'pointer' }} onClick={() => avatarInputRef.current?.click()}>
+                                {profAvatar ? 'Trocar foto' : 'Foto do profissional'}
+                              </span>
                             </div>
+
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                               <input placeholder="Nome" value={profName} onChange={e => setProfName(e.target.value)} required className="navy-input" />
                               <input placeholder="Cargo" value={profRole} onChange={e => setProfRole(e.target.value)} className="navy-input" />
                             </div>
-                            <div><label className="navy-label">Comissão %</label><input type="number" min={0} max={100} value={profCommission} onChange={e => setProfCommission(Number(e.target.value))} className="navy-input" /></div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                              {['seg','ter','qua','qui','sex','sab','dom'].map(d => <button key={d} type="button" onClick={() => setProfDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])} style={{ padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', background: profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.07)', color: profDays.includes(d) ? '#031D3C' : 'rgba(255,255,255,0.38)', border: `1px solid ${profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>{d}</button>)}
+                            <div>
+                              <label className="navy-label">Comissão %</label>
+                              <input type="number" min={0} max={100} value={profCommission} onChange={e => setProfCommission(Number(e.target.value))} className="navy-input" />
                             </div>
-                            <button type="submit" style={{ padding: 12, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Adicionar</button>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              {['seg','ter','qua','qui','sex','sab','dom'].map(d => (
+                                <button key={d} type="button" onClick={() => setProfDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])}
+                                  style={{ padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', background: profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.07)', color: profDays.includes(d) ? '#031D3C' : 'rgba(255,255,255,0.38)', border: `1px solid ${profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>
+                                  {d}
+                                </button>
+                              ))}
+                            </div>
+                            <button type="submit"
+                              style={{ padding: 12, background: editingProf ? '#3b82f6' : '#ffffff', color: editingProf ? '#fff' : '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                              {editingProf ? 'Salvar alterações' : 'Adicionar'}
+                            </button>
                           </form>
-                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto' }} className="no-scrollbar">
-                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Equipe</p>
+
+                          {/* Lista da equipe */}
+                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 460, overflowY: 'auto' }} className="no-scrollbar">
+                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Equipe ({myProfessionals.length})</p>
+                            {myProfessionals.length === 0 && (
+                              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', textAlign: 'center', marginTop: 20 }}>Nenhum colaborador ainda.</p>
+                            )}
                             {myProfessionals.map(p => (
-                              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10 }}>
+                              <div key={p.id}
+                                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: editingProf?.id === p.id ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10, transition: 'all 150ms' }}>
                                 <img src={p.avatar} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                                <div><div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13 }}>{p.name}</div><div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{p.role} · {p.commissionPercentage}%</div></div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{p.role} · {p.commissionPercentage}%</div>
+                                </div>
+                                <button
+                                  onClick={() => editingProf?.id === p.id ? cancelEditProf() : startEditProf(p)}
+                                  title={editingProf?.id === p.id ? 'Cancelar edição' : 'Editar'}
+                                  style={{ width: 30, height: 30, borderRadius: 8, background: editingProf?.id === p.id ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: editingProf?.id === p.id ? '#60a5fa' : 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                  {editingProf?.id === p.id ? <X size={13} /> : <Pencil size={13} />}
+                                </button>
                               </div>
                             ))}
                           </div>

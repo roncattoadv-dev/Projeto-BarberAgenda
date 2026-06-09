@@ -82,6 +82,20 @@ export async function createProfessional(p: Omit<Professional, 'id'>, serviceIds
   return { ...mapProfessional(data), services: serviceIds };
 }
 
+export async function updateProfessional(id: string, p: Partial<Omit<Professional, 'id' | 'tenantId'>>): Promise<void> {
+  const updates: any = {};
+  if (p.name               !== undefined) updates.name                = p.name;
+  if (p.role               !== undefined) updates.role                = p.role;
+  if (p.avatar             !== undefined) updates.avatar              = p.avatar;
+  if (p.commissionPercentage !== undefined) updates.commission_percentage = p.commissionPercentage;
+  if (p.businessDays       !== undefined) updates.business_days       = p.businessDays;
+  if (p.businessHoursByDay !== undefined) updates.business_hours_by_day = p.businessHoursByDay;
+  if (Object.keys(updates).length) {
+    const { error } = await supabase.from('professionals').update(updates).eq('id', id);
+    if (error) throw error;
+  }
+}
+
 export async function syncProfessionalsHours(tenantId: string, businessDays: string[], businessHoursByDay: Record<string, string[]>): Promise<void> {
   await supabase.from('professionals')
     .update({ business_days: businessDays, business_hours_by_day: businessHoursByDay })
