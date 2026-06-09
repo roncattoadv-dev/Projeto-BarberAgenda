@@ -41,7 +41,7 @@ RUN chmod +x /docker-entrypoint.sh
 
 # Healthcheck nativo
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost/health || exit 1
+  CMD wget -qO- http://127.0.0.1/health || exit 1
 
 EXPOSE 80
 
