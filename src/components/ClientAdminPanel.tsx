@@ -9,6 +9,7 @@ import {
   Plus, Search, ExternalLink, ChevronLeft, ChevronRight,
   Check, X, RefreshCw, Scissors, CreditCard, Package,
   Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck, Pencil,
+  Palette, Phone, MapPin, Instagram, Eye, EyeOff,
 } from 'lucide-react';
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
@@ -22,7 +23,7 @@ import WhatsAppTab     from './tabs/WhatsAppTab';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Tab = 'agenda' | 'agendamentos' | 'clientes' | 'negocio' | 'automacoes' | 'configuracoes';
-type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro' | 'assinatura' | 'conta';
+type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro' | 'pagina-cliente' | 'assinatura' | 'conta';
 
 interface Props {
   activeTenant: Tenant;
@@ -162,6 +163,12 @@ export default function ClientAdminPanel({
   const [newHourInput,     setNewHourInput]     = useState('');
   const [blockedDates,     setBlockedDates]     = useState<string[]>(activeTenant.blockedDates ?? []);
   const [vacStartDate,     setVacStartDate]     = useState('');
+
+  // ── Booking page config ────────────────────────────────────────────────────
+  const [bookingPrimaryColor,  setBookingPrimaryColor]  = useState(activeTenant.bookingPageConfig?.primaryColor  ?? '#2563EB');
+  const [bookingShowPhone,     setBookingShowPhone]     = useState(activeTenant.bookingPageConfig?.showPhone     ?? true);
+  const [bookingShowAddress,   setBookingShowAddress]   = useState(activeTenant.bookingPageConfig?.showAddress   ?? true);
+  const [bookingShowInstagram, setBookingShowInstagram] = useState(activeTenant.bookingPageConfig?.showInstagram ?? true);
   const [vacEndDate,       setVacEndDate]       = useState('');
   const PRESET_SERVICES: { name: string; durationMinutes: number; category: Service['category'] }[] = [
     { name: 'Barba',                        durationMinutes: 40, category: 'Barba'  },
@@ -216,6 +223,10 @@ export default function ClientAdminPanel({
         : Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d => [d, d === 'dom' ? [] : [...DEFAULT_HOURS]]))
     );
     setBlockedDates(activeTenant.blockedDates ?? []);
+    setBookingPrimaryColor(activeTenant.bookingPageConfig?.primaryColor  ?? '#2563EB');
+    setBookingShowPhone(activeTenant.bookingPageConfig?.showPhone     ?? true);
+    setBookingShowAddress(activeTenant.bookingPageConfig?.showAddress   ?? true);
+    setBookingShowInstagram(activeTenant.bookingPageConfig?.showInstagram ?? true);
   }, [activeTenant.id]);
 
   // ── ⌘K handler ───────────────────────────────────────────────────────────
@@ -640,7 +651,7 @@ export default function ClientAdminPanel({
                   {/* Sub-nav — tabs dinâmicos conforme o menu ativo */}
                   <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0, overflowX: 'auto' }} className="no-scrollbar">
                     {(activeTab === 'negocio'
-                      ? [['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro']] as [CfgTab, string][]
+                      ? [['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro'], ['pagina-cliente','Página do Cliente']] as [CfgTab, string][]
                       : [['assinatura','Assinatura'], ['conta','Conta']] as [CfgTab, string][]
                     ).map(([id, label]) => (
                       <button key={id} onClick={() => setCfgTab(id)}
@@ -1169,6 +1180,122 @@ export default function ClientAdminPanel({
                       {/* Financeiro */}
                       {cfgTab === 'financeiro' && (
                         <FinanceiroTab activeTenant={activeTenant} myPayments={myPayments} myProfessionals={myProfessionals} myAppointments={myAppointments} myServices={myServices} onAddPayment={onAddPayment} />
+                      )}
+
+                      {/* ── Página do Cliente ── */}
+                      {cfgTab === 'pagina-cliente' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
+                          {/* Form */}
+                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+                            {/* Cor principal */}
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Palette size={13} /> Cor Principal
+                              </p>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                                {[
+                                  { color: '#2563EB', label: 'Azul' },
+                                  { color: '#9333EA', label: 'Roxo' },
+                                  { color: '#DC2626', label: 'Vermelho' },
+                                  { color: '#0F766E', label: 'Verde' },
+                                  { color: '#D97706', label: 'Âmbar' },
+                                  { color: '#DB2777', label: 'Rosa' },
+                                  { color: '#0891B2', label: 'Ciano' },
+                                  { color: '#1D2D44', label: 'Marinho' },
+                                ].map(({ color, label }) => (
+                                  <button key={color} type="button" title={label} onClick={() => setBookingPrimaryColor(color)}
+                                    style={{ width: 36, height: 36, borderRadius: 10, background: color, cursor: 'pointer', border: bookingPrimaryColor === color ? '3px solid #ffffff' : '3px solid transparent', outline: bookingPrimaryColor === color ? `2px solid ${color}` : 'none', transition: 'all 0.15s' }} />
+                                ))}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Outfit, sans-serif' }}>Personalizada:</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '6px 12px' }}>
+                                  <input type="color" value={bookingPrimaryColor} onChange={e => setBookingPrimaryColor(e.target.value)}
+                                    style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
+                                  <span style={{ fontSize: 13, fontFamily: 'monospace', color: 'rgba(255,255,255,0.7)', letterSpacing: '0.05em' }}>{bookingPrimaryColor.toUpperCase()}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Informações visíveis */}
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Eye size={13} /> Informações Visíveis
+                              </p>
+                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 12, fontFamily: 'Outfit, sans-serif' }}>
+                                Escolha quais dados aparecem para o cliente na página de agendamento.
+                              </p>
+                              {([
+                                { key: 'phone',     label: 'Telefone',  icon: <Phone size={14} />,     value: bookingShowPhone,     setter: setBookingShowPhone },
+                                { key: 'address',   label: 'Endereço',  icon: <MapPin size={14} />,    value: bookingShowAddress,   setter: setBookingShowAddress },
+                                { key: 'instagram', label: 'Instagram', icon: <Instagram size={14} />, value: bookingShowInstagram, setter: setBookingShowInstagram },
+                              ] as { key: string; label: string; icon: React.ReactNode; value: boolean; setter: (v: boolean) => void }[]).map(row => (
+                                <div key={row.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '11px 14px', marginBottom: 8 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                                    {row.icon} {row.label}
+                                  </div>
+                                  <button type="button" onClick={() => row.setter(!row.value)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 13px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s',
+                                      background: row.value ? '#E6F4EC' : 'rgba(255,255,255,0.07)',
+                                      color:      row.value ? '#0A4A2C'  : 'rgba(255,255,255,0.4)',
+                                      border:     `1px solid ${row.value ? '#A7D7BC' : 'rgba(255,255,255,0.12)'}` }}>
+                                    {row.value ? <Eye size={11} /> : <EyeOff size={11} />}
+                                    {row.value ? 'Visível' : 'Oculto'}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            <button type="button"
+                              onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { bookingPageConfig: { primaryColor: bookingPrimaryColor, showPhone: bookingShowPhone, showAddress: bookingShowAddress, showInstagram: bookingShowInstagram } }); toast.success('Página do cliente atualizada!'); } catch { toast.error('Erro ao salvar.'); } }}
+                              style={{ padding: 13, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                              Salvar Configurações
+                            </button>
+                          </div>
+
+                          {/* Pré-visualização */}
+                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }}>
+                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 20 }}>Pré-visualização</p>
+                            <div style={{ background: '#ffffff', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, boxShadow: '0 4px 24px rgba(0,0,0,0.18)' }}>
+                              <div style={{ width: 80, height: 80, borderRadius: '50%', border: `2px solid ${bookingPrimaryColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ fontSize: 22, fontWeight: 300, color: bookingPrimaryColor }}>
+                                  {activeTenant.name.replace(/barbearia|salao|studio|estetica/gi, '').trim().substring(0, 2).toUpperCase()}
+                                </span>
+                                <span style={{ fontSize: 6, fontWeight: 700, color: bookingPrimaryColor, letterSpacing: '0.15em', textTransform: 'uppercase', marginTop: 2 }}>BARBEARIA</span>
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{activeTenant.name}</span>
+                              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {bookingShowPhone && activeTenant.phone && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '6px 10px' }}>
+                                    <Phone size={11} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
+                                    <span>{activeTenant.phone}</span>
+                                  </div>
+                                )}
+                                {bookingShowAddress && activeTenant.address && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '6px 10px' }}>
+                                    <MapPin size={11} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTenant.address}</span>
+                                  </div>
+                                )}
+                                {bookingShowInstagram && activeTenant.instagram && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '6px 10px' }}>
+                                    <Instagram size={11} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
+                                    <span>{activeTenant.instagram}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ width: '100%', background: bookingPrimaryColor, borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>Corte + Barba</span>
+                                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)' }}>45 min ▶</span>
+                              </div>
+                              <div style={{ width: '100%', background: bookingPrimaryColor, borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.7 }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>Barba</span>
+                                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)' }}>30 min ▶</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       )}
 
                       {cfgTab === 'assinatura' && (() => {

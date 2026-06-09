@@ -276,6 +276,7 @@ function mapTenant(r: any): Tenant {
     businessDays: r.business_days ?? [],
     businessHoursByDay: r.business_hours_by_day ?? {},
     blockedDates: r.blocked_dates ?? [],
+    bookingPageConfig: r.booking_page_config ?? undefined,
   };
 }
 function mapService(r: any): Service {
@@ -317,7 +318,8 @@ function dbTenant(t: Partial<Tenant>): any {
     ...(t.businessDays      !== undefined && { business_days: t.businessDays }),
     ...(t.businessHours     !== undefined && { business_hours: t.businessHours }),
     ...(t.businessHoursByDay !== undefined && { business_hours_by_day: t.businessHoursByDay }),
-    ...(t.blockedDates      !== undefined && { blocked_dates: t.blockedDates }),
+    ...(t.blockedDates        !== undefined && { blocked_dates: t.blockedDates }),
+    ...(t.bookingPageConfig   !== undefined && { booking_page_config: t.bookingPageConfig }),
   };
 }
 function dbService(s: Omit<Service, 'id'>): any {

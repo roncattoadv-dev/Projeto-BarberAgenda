@@ -21,7 +21,8 @@ export const INITIAL_TENANTS: Tenant[] = [
     subscriptionEndsAt: '2026-12-31',
     mrr: 149.90,
     businessHours: ['09:40', '10:20', '11:00', '13:30', '14:10', '14:50', '15:30', '16:10', '16:50', '17:30', '18:10'],
-    businessDays: ['seg', 'ter', 'qua', 'qui', 'sex', 'sab']
+    businessDays: ['seg', 'ter', 'qua', 'qui', 'sex', 'sab'],
+    bookingPageConfig: { primaryColor: '#2563EB', showPhone: true, showAddress: true, showInstagram: true }
   },
   {
     id: 'tenant-studio-bella',
@@ -38,7 +39,8 @@ export const INITIAL_TENANTS: Tenant[] = [
     subscriptionEndsAt: '2026-06-05',
     mrr: 0.00,
     businessHours: ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'],
-    businessDays: ['ter', 'qua', 'qui', 'sex', 'sab']
+    businessDays: ['ter', 'qua', 'qui', 'sex', 'sab'],
+    bookingPageConfig: { primaryColor: '#9333EA', showPhone: true, showAddress: true, showInstagram: true }
   },
   {
     id: 'tenant-lenox-barber',
@@ -55,7 +57,8 @@ export const INITIAL_TENANTS: Tenant[] = [
     subscriptionEndsAt: '2026-05-15', // Overdue subscription (blocked)
     mrr: 1199.00,
     businessHours: ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'],
-    businessDays: ['seg', 'ter', 'qua', 'qui', 'sex', 'sab']
+    businessDays: ['seg', 'ter', 'qua', 'qui', 'sex', 'sab'],
+    bookingPageConfig: { primaryColor: '#0F766E', showPhone: true, showAddress: true, showInstagram: false }
   }
 ];
 

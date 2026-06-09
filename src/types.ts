@@ -21,6 +21,12 @@ export interface Tenant {
   businessDays?: string[];
   businessHoursByDay?: Record<string, string[]>;
   blockedDates?: string[]; // YYYY-MM-DD — férias, feriados, folgas
+  bookingPageConfig?: {
+    primaryColor: string;
+    showPhone: boolean;
+    showAddress: boolean;
+    showInstagram: boolean;
+  };
 }
 
 export interface User {

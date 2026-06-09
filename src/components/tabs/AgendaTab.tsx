@@ -434,8 +434,6 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                     const isResending     = resendingIds.has(appt.id);
 
                     const showFooter = height >= 32;
-                    const showTime   = height >= (showFooter ? FOOTER_H + 32 : 28);
-                    const showProf   = height >= (showFooter ? FOOTER_H + 50 : 46);
 
                     return (
                       <div
@@ -455,19 +453,15 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                       >
                         {/* Conteúdo principal */}
                         <div style={{ padding: `3px 6px ${showFooter ? FOOTER_H + 2 : 3}px 6px`, boxSizing: 'border-box' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3, paddingRight: isHov ? 46 : 0 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3, paddingRight: isHov ? 46 : 0 }}>
                             {appt.customerName}
+                            <span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.75)' }}>
+                              {` · ${appt.time.slice(0, 5)}`}
+                              {srv  && ` · ${srv.name}`}
+                              {prof && ` · ${prof.name}`}
+                              {appt.price > 0 && ` · R$${appt.price % 1 === 0 ? appt.price : appt.price.toFixed(2)}`}
+                            </span>
                           </div>
-                          {showTime && (
-                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.82)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
-                              {appt.time.slice(0, 5)}{srv ? ` · ${srv.name}` : ''}
-                            </div>
-                          )}
-                          {showProf && prof && (
-                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3, marginTop: 1 }}>
-                              {prof.name}
-                            </div>
-                          )}
                         </div>
 
                         {/* Footer: sinal de confirmação + lembrete */}
