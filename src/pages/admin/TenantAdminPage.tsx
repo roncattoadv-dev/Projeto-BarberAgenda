@@ -96,11 +96,12 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
         ) : payUrl ? (
           <a href={payUrl} target="_blank" rel="noopener noreferrer"
             style={{ display: 'inline-block', padding: '12px 28px', background: '#22c55e', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: 'none' }}>
-            Pagar agora — R$ 89,90/mês
+            Regularizar assinatura
           </a>
         ) : (
           <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>
-            Nenhuma cobrança pendente encontrada.
+            Nenhuma cobrança pendente encontrada.<br />
+            <span style={{ fontSize: 12 }}>Acesse a aba Assinatura após o login para escolher um plano.</span>
           </p>
         )}
 
@@ -138,14 +139,15 @@ export default function TenantAdminPage() {
   const { profile, signOut } = useAuth();
   const tenantId = profile?.tenant_id ?? '';
 
-  const [tenant,        setTenant]        = useState<Tenant | null>(null);
-  const [services,      setServices]      = useState<Service[]>([]);
-  const [professionals, setProfessionals] = useState<Professional[]>([]);
-  const [products,      setProducts]      = useState<Product[]>([]);
-  const [customers,     setCustomers]     = useState<Customer[]>([]);
-  const [appointments,  setAppointments]  = useState<Appointment[]>([]);
-  const [payments,      setPayments]      = useState<Payment[]>([]);
-  const [loading,       setLoading]       = useState(true);
+  const [tenant,              setTenant]              = useState<Tenant | null>(null);
+  const [services,            setServices]            = useState<Service[]>([]);
+  const [professionals,       setProfessionals]       = useState<Professional[]>([]);
+  const [products,            setProducts]            = useState<Product[]>([]);
+  const [customers,           setCustomers]           = useState<Customer[]>([]);
+  const [appointments,        setAppointments]        = useState<Appointment[]>([]);
+  const [payments,            setPayments]            = useState<Payment[]>([]);
+  const [loading,             setLoading]             = useState(true);
+  const [openSubscription,    setOpenSubscription]    = useState(false);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -180,21 +182,15 @@ export default function TenantAdminPage() {
     <BlockedScreen tenant={tenant} signOut={signOut} onUnblocked={load} />
   );
 
+  const isTenantTrial = tenant?.plan === 'trial';
   const daysUntilExpiry = (() => {
-    if (!tenant?.subscriptionEndsAt) return null;
-    const diff = Math.ceil((new Date(tenant.subscriptionEndsAt).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
-    return diff >= 0 && diff <= 5 ? diff : null;
+    const dateStr = isTenantTrial ? tenant?.trialEndsAt : tenant?.subscriptionEndsAt;
+    if (!dateStr) return null;
+    const diff = Math.ceil((new Date(dateStr).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
+    return diff >= 0 && diff <= 10 ? diff : null;
   })();
 
-  const handleExpiryClick = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const r = await fetch(`${((window as any).__BARBER_CONFIG__?.API_URL || '').replace(/\/$/, '')}/api/billing/payment-link?tenantId=${tenant!.id}`, {
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-      if (r.ok) { const { url } = await r.json(); window.open(url, '_blank'); }
-    } catch {}
-  };
+  const handleExpiryClick = () => setOpenSubscription(true);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
@@ -203,9 +199,13 @@ export default function TenantAdminPage() {
         <button onClick={handleExpiryClick} style={{ width: '100%', background: '#f59e0b', color: '#1c1000', padding: '8px 20px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'Outfit, sans-serif', border: 'none', cursor: 'pointer' }}>
           <span>⚠️</span>
           <span>
-            {daysUntilExpiry === 0
-              ? 'Sua assinatura vence hoje! Clique aqui para renovar.'
-              : `Sua assinatura vence em ${daysUntilExpiry} dia${daysUntilExpiry > 1 ? 's' : ''}. Clique aqui para renovar.`}
+            {isTenantTrial
+              ? daysUntilExpiry === 0
+                ? 'Seu período de teste encerra hoje! Assine um plano para continuar.'
+                : `Seu período de teste encerra em ${daysUntilExpiry} dia${daysUntilExpiry! > 1 ? 's' : ''}. Assine agora para não perder o acesso.`
+              : daysUntilExpiry === 0
+                ? 'Sua assinatura vence hoje! Clique aqui para renovar.'
+                : `Sua assinatura vence em ${daysUntilExpiry} dia${daysUntilExpiry! > 1 ? 's' : ''}. Clique aqui para renovar.`}
           </span>
         </button>
       )}
@@ -355,6 +355,8 @@ export default function TenantAdminPage() {
             if (!r.ok) { const e = await r.json(); throw new Error(e.error); }
             await signOut();
           }}
+          openSubscriptionTab={openSubscription}
+          onSubscriptionTabOpened={() => setOpenSubscription(false)}
         />
       )}
     </div>

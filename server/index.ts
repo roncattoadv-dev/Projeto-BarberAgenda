@@ -200,33 +200,77 @@ app.get('/api/billing/payment-link', async (req, res) => {
 
     if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
 
-    // Se já tem assinatura, busca o link do boleto pendente
+    const asaasBase = process.env.ASAAS_SANDBOX === 'true'
+      ? 'https://sandbox.asaas.com/api/v3'
+      : 'https://api.asaas.com/v3';
+    const asaasKey = process.env.ASAAS_API_KEY || '';
+
+    const getPixForPayment = async (paymentId: string) => {
+      try {
+        const r = await fetch(`${asaasBase}/payments/${paymentId}/pixQrCode`, {
+          headers: { 'access_token': asaasKey },
+        });
+        if (!r.ok) return {};
+        const d = await r.json();
+        return { pixImage: d.encodedImage as string | undefined, pixCode: d.payload as string | undefined };
+      } catch { return {}; }
+    };
+
+    const getPendingPaymentId = async (subscriptionId: string) => {
+      const r = await fetch(`${asaasBase}/payments?subscription=${subscriptionId}&limit=5`, {
+        headers: { 'access_token': asaasKey },
+      });
+      const d = await r.json();
+      const pending = (d.data ?? []).find((p: any) => ['PENDING', 'OVERDUE'].includes(p.status));
+      return (pending ?? d.data?.[0]) as { id: string; invoiceUrl?: string; bankSlipUrl?: string } | undefined;
+    };
+
+    const plan    = (req.query.plan    as string) || 'mensal';
+    const cpfCnpj = (req.query.cpfCnpj as string) || undefined;
+
+    // Se já tem assinatura UNDEFINED (multi-método), reutiliza
     if (tenant.asaas_subscription_id) {
       try {
-        const url = await getPendingPaymentLink(tenant.asaas_subscription_id);
-        if (url) return res.json({ url });
+        const subRes = await fetch(`${asaasBase}/subscriptions/${tenant.asaas_subscription_id}`, {
+          headers: { 'access_token': asaasKey },
+        });
+        const sub = subRes.ok ? await subRes.json() : null;
+        if (sub && sub.billingType === 'UNDEFINED') {
+          const payment = await getPendingPaymentId(tenant.asaas_subscription_id);
+          if (payment) {
+            const pix = await getPixForPayment(payment.id);
+            return res.json({ url: payment.invoiceUrl || payment.bankSlipUrl, ...pix });
+          }
+        } else {
+          // Assinatura antiga com tipo errado — cancela para recriar
+          await fetch(`${asaasBase}/subscriptions/${tenant.asaas_subscription_id}`, {
+            method: 'DELETE', headers: { 'access_token': asaasKey },
+          }).catch(() => {});
+          await supabase.from('tenants').update({ asaas_subscription_id: null }).eq('id', tenantId);
+        }
       } catch {}
     }
 
-    // Se não tem assinatura, cria cliente + assinatura no Asaas agora
+    // Cria cliente + assinatura
     let customerId = tenant.asaas_customer_id;
     if (!customerId) {
-      const customer = await createAsaasCustomer({ name: tenant.name, email: user.email! });
+      const customer = await createAsaasCustomer({ name: tenant.name, email: user.email!, cpfCnpj });
       customerId = customer.id;
     }
 
-    const subscription = await createSubscription(customerId, 0); // 0 dias de trial = cobrança imediata
+    const subscription = await createSubscription(customerId, plan, 0);
     await supabase.from('tenants').update({
       asaas_customer_id:     customerId,
       asaas_subscription_id: subscription.id,
     }).eq('id', tenantId);
 
-    const url = await getPendingPaymentLink(subscription.id);
-    return res.json({ url: url ?? `https://www.asaas.com/c/${customerId}` });
+    const payment = await getPendingPaymentId(subscription.id);
+    const pix = payment ? await getPixForPayment(payment.id) : {};
+    return res.json({ url: payment?.invoiceUrl || payment?.bankSlipUrl || `https://www.asaas.com/c/${customerId}`, ...pix });
 
   } catch (err: any) {
     console.error('[PaymentLink] Error:', err);
-    return res.status(500).json({ error: 'Erro ao buscar link de pagamento.' });
+    return res.status(500).json({ error: err.message ?? 'Erro ao gerar cobrança.' });
   }
 });
 

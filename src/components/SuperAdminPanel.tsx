@@ -262,8 +262,8 @@ export default function SuperAdminPanel({
                           fontFamily: 'monospace',
                           fontWeight: 700,
                           textTransform: 'uppercase',
-                          background: tenant.plan === 'anual' ? '#EEF2FF' : tenant.plan === 'semestral' ? '#FEF9EC' : tenant.plan === 'mensal' ? '#EFF6FF' : '#F1F5F9',
-                          color: tenant.plan === 'anual' ? '#4338CA' : tenant.plan === 'semestral' ? '#7A4B0A' : tenant.plan === 'mensal' ? '#1D4ED8' : '#64748B',
+                          background: tenant.plan === 'anual' ? '#EEF2FF' : tenant.plan === 'trimestral' ? '#F5F3FF' : tenant.plan === 'mensal' ? '#EFF6FF' : '#F1F5F9',
+                          color: tenant.plan === 'anual' ? '#4338CA' : tenant.plan === 'trimestral' ? '#6D28D9' : tenant.plan === 'mensal' ? '#1D4ED8' : '#64748B',
                         }}>
                           {tenant.plan}
                         </span>

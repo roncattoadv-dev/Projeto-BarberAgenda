@@ -15,6 +15,7 @@ import {
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
 import { useToast } from '../hooks/useToast';
 import { uploadTenantLogo, remindAppointmentWhatsApp } from '../lib/db';
+import { supabase } from '../lib/supabase';
 import LogoCropModal from './LogoCropModal';
 import AgendaTab       from './tabs/AgendaTab';
 import AgendamentosTab from './tabs/AgendamentosTab';
@@ -49,6 +50,8 @@ interface Props {
   onUpdateTenantDetails: (tenantId: string, details: Partial<Tenant>) => void | Promise<void>;
   onSwitchToBookingFlow: (slug: string) => void;
   onDeleteAccount: () => Promise<void>;
+  openSubscriptionTab?: boolean;
+  onSubscriptionTabOpened?: () => void;
 }
 
 // ── Motion presets ─────────────────────────────────────────────────────────────
@@ -79,12 +82,21 @@ export default function ClientAdminPanel({
   onAddProfessional, onUpdateProfessional, onAddProduct, onUpdateProductStock,
   onAddAppointment, onUpdateAppointmentStatus, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
+  openSubscriptionTab, onSubscriptionTabOpened,
 }: Props) {
   const toast = useToast();
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const [activeTab,    setActiveTab]    = useState<Tab>('agenda');
   const [cfgTab,       setCfgTab]       = useState<CfgTab>('identidade');
+
+  useEffect(() => {
+    if (openSubscriptionTab) {
+      setActiveTab('configuracoes');
+      setCfgTab('assinatura');
+      onSubscriptionTabOpened?.();
+    }
+  }, [openSubscriptionTab]);
   const [collapsed,    setCollapsed]    = useState(false);
   const [fabOpen,      setFabOpen]      = useState(false);
   const [cmdOpen,      setCmdOpen]      = useState(false);
@@ -103,9 +115,34 @@ export default function ClientAdminPanel({
   const todayAppts = myAppointments.filter(a => a.date === today && a.status !== 'cancelled');
   const pendingCount = myAppointments.filter(a => a.status === 'pending').length;
 
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [deleteStep,  setDeleteStep]  = useState<'idle' | 'confirm' | 'deleting'>('idle');
-  const [deleteInput, setDeleteInput] = useState('');
+  const [linkCopied,      setLinkCopied]      = useState(false);
+  const [deleteStep,      setDeleteStep]      = useState<'idle' | 'confirm' | 'deleting'>('idle');
+  const [deleteInput,     setDeleteInput]     = useState('');
+  const [pixCopied,    setPixCopied]    = useState(false);
+  const [billingModal, setBillingModal] = useState<null | {
+    plan: 'mensal' | 'trimestral' | 'anual';
+    step: 'form' | 'loading' | 'payment' | 'success';
+    cpfCnpj: string;
+    pixImage?: string;
+    pixCode?: string;
+    payUrl?: string;
+    error?: string;
+  }>(null);
+
+  // Polling: detecta pagamento confirmado enquanto modal está aberto
+  useEffect(() => {
+    if (billingModal?.step !== 'payment') return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from('tenants').select('status').eq('id', activeTenant.id).maybeSingle();
+      if (data?.status === 'active') {
+        clearInterval(interval);
+        setBillingModal(prev => prev ? { ...prev, step: 'success' } : null);
+        setTimeout(() => window.location.reload(), 3500);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [billingModal?.step, activeTenant.id]);
   const handleCopyLink = () => {
     const url = `${window.location.origin}/${activeTenant.slug}/agendamento`;
     navigator.clipboard.writeText(url).then(() => {
@@ -1299,62 +1336,186 @@ export default function ClientAdminPanel({
                       )}
 
                       {cfgTab === 'assinatura' && (() => {
-                        const isTrial = activeTenant.plan === 'trial';
-                        const isActive = activeTenant.status === 'active';
-                        const endDate = isTrial ? activeTenant.trialEndsAt : activeTenant.subscriptionEndsAt;
-                        const daysLeft = endDate ? Math.ceil((new Date(endDate).getTime() - new Date().setHours(0,0,0,0)) / 86400000) : null;
-                        const fmtDate = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
-                        const planLabel: Record<string, string> = { trial: 'Período de Teste', mensal: 'Mensal', semestral: 'Semestral', anual: 'Anual' };
-                        const statusColor = activeTenant.status === 'active' ? '#22c55e' : activeTenant.status === 'trial' ? '#f59e0b' : '#ef4444';
-                        const statusLabel = activeTenant.status === 'active' ? 'Ativo' : activeTenant.status === 'trial' ? 'Período de Teste' : 'Suspenso';
+                        const BASE = 89.90;
+                        type PlanKey = 'mensal' | 'trimestral' | 'anual';
+                        const PLANS: Array<{ key: PlanKey; label: string; months: number; discountPct: number; color: string; badge: string | null }> = [
+                          { key: 'mensal',     label: '1 Mês',   months: 1,  discountPct: 0,  color: '#3b82f6', badge: null        },
+                          { key: 'trimestral', label: '3 Meses', months: 3,  discountPct: 15, color: '#8b5cf6', badge: '15% OFF'   },
+                          { key: 'anual',      label: '1 Ano',   months: 12, discountPct: 25, color: '#10b981', badge: '25% OFF'   },
+                        ];
+
+                        const isTrial      = activeTenant.plan === 'trial';
+                        const isActive     = activeTenant.status === 'active';
+                        const endDate      = isTrial ? activeTenant.trialEndsAt : activeTenant.subscriptionEndsAt;
+                        const daysLeft     = endDate ? Math.ceil((new Date(endDate).getTime() - Date.now()) / 86400000) : null;
+                        const fmtDate      = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+                        const statusColor  = isActive ? '#22c55e' : isTrial ? '#f59e0b' : '#ef4444';
+                        const statusLabel  = isActive ? 'Ativo' : isTrial ? 'Em Teste' : 'Suspenso';
+                        const showAlert    = daysLeft !== null && daysLeft <= 10;
+                        const planLabels: Record<string, string> = { trial: 'Período de Teste', mensal: '1 Mês', trimestral: '3 Meses', anual: '1 Ano' };
+
+                        const handleSubscribe = (planKey: 'mensal' | 'trimestral' | 'anual') => {
+                          setBillingModal({ plan: planKey, step: 'form', cpfCnpj: '' });
+                        };
 
                         return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
                             {/* Status card */}
-                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                                 <div>
-                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 6px' }}>Plano atual</p>
-                                  <p style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{planLabel[activeTenant.plan] ?? activeTenant.plan}</p>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 6px' }}>Plano atual</p>
+                                  <p style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{planLabels[activeTenant.plan] ?? activeTenant.plan}</p>
                                 </div>
-                                <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44` }}>
+                                <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44`, whiteSpace: 'nowrap' as const }}>
                                   {statusLabel}
                                 </span>
                               </div>
 
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '14px 16px' }}>
-                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>{isTrial ? 'Trial encerra em' : 'Próxima renovação'}</p>
-                                  <p style={{ fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{fmtDate(endDate)}</p>
+                              <div style={{ display: 'grid', gridTemplateColumns: isActive && !isTrial ? '1fr 1fr' : '1fr', gap: 10 }}>
+                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 14px' }}>
+                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>
+                                    {isTrial ? 'Trial encerra em' : 'Próxima renovação'}
+                                  </p>
+                                  <p style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{fmtDate(endDate)}</p>
                                   {daysLeft !== null && (
-                                    <p style={{ fontSize: 11, color: daysLeft <= 5 ? '#f59e0b' : 'rgba(255,255,255,0.35)', margin: '4px 0 0', fontWeight: 600 }}>
-                                      {daysLeft > 0 ? `${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}` : 'Vence hoje'}
+                                    <p style={{ fontSize: 11, color: daysLeft <= 10 ? '#f59e0b' : 'rgba(255,255,255,0.35)', margin: '3px 0 0', fontWeight: 600 }}>
+                                      {daysLeft > 0
+                                        ? `${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}`
+                                        : 'Vence hoje'}
                                     </p>
                                   )}
                                 </div>
-                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '14px 16px' }}>
-                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>Valor mensal</p>
-                                  <p style={{ fontSize: 16, fontWeight: 700, color: '#4ade80', margin: 0 }}>
-                                    {activeTenant.mrr > 0 ? `R$ ${Number(activeTenant.mrr).toFixed(2).replace('.', ',')}` : isTrial ? 'Grátis' : '—'}
-                                  </p>
-                                </div>
+                                {isActive && !isTrial && (
+                                  <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 14px' }}>
+                                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>Valor do plano</p>
+                                    <p style={{ fontSize: 15, fontWeight: 700, color: '#4ade80', margin: 0 }}>
+                                      {activeTenant.mrr > 0 ? `R$ ${Number(activeTenant.mrr).toFixed(2).replace('.', ',')}` : '—'}
+                                    </p>
+                                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', margin: '3px 0 0' }}>renovação automática</p>
+                                  </div>
+                                )}
                               </div>
 
-                              {isTrial && (
-                                <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '14px 16px' }}>
-                                  <p style={{ fontSize: 13, color: '#fcd34d', margin: 0, lineHeight: 1.6 }}>
-                                    Você está no período de teste gratuito. Após o término, será necessário assinar um plano para continuar usando o BarberFlow.
+                              {/* Alerta de vencimento próximo */}
+                              {showAlert && (
+                                <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                                  <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                                  <p style={{ fontSize: 13, color: '#fcd34d', margin: 0, lineHeight: 1.5 }}>
+                                    {isTrial
+                                      ? `Seu trial encerra em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Escolha um plano abaixo para continuar sem interrupção.`
+                                      : `Sua assinatura vence em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Renove agora para não perder o acesso.`}
                                   </p>
                                 </div>
                               )}
 
-                              {isActive && !isTrial && (
-                                <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.18)', borderRadius: 12, padding: '14px 16px' }}>
-                                  <p style={{ fontSize: 13, color: '#86efac', margin: 0, lineHeight: 1.6 }}>
-                                    Sua assinatura está ativa. O pagamento é processado automaticamente via Asaas.
+                              {/* Info trial sem urgência */}
+                              {isTrial && !showAlert && (
+                                <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, padding: '12px 14px' }}>
+                                  <p style={{ fontSize: 13, color: 'rgba(253,211,77,0.8)', margin: 0, lineHeight: 1.5 }}>
+                                    Você está no período de teste gratuito de 10 dias. Explore todos os recursos e escolha seu plano abaixo.
                                   </p>
                                 </div>
                               )}
+
+                              {/* Info assinatura saudável */}
+                              {isActive && !isTrial && !showAlert && (
+                                <div style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.15)', borderRadius: 10, padding: '12px 14px' }}>
+                                  <p style={{ fontSize: 13, color: '#86efac', margin: 0, lineHeight: 1.5 }}>
+                                    Assinatura ativa. O pagamento é renovado automaticamente via Asaas (boleto, Pix ou cartão).
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Planos */}
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 14px' }}>
+                                {isActive && !isTrial && !showAlert ? 'Alterar plano' : 'Escolha seu plano'}
+                              </p>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                                {PLANS.map(p => {
+                                  const monthly   = parseFloat((BASE * (1 - p.discountPct / 100)).toFixed(2));
+                                  const total     = parseFloat((monthly * p.months).toFixed(2));
+                                  const saving    = parseFloat(((BASE - monthly) * p.months).toFixed(2));
+                                  const isCurrent = activeTenant.plan === p.key;
+                                  const isRenew   = isCurrent && showAlert;
+
+                                  return (
+                                    <div key={p.key} style={{
+                                      position: 'relative' as const,
+                                      background: isCurrent ? `${p.color}18` : 'rgba(255,255,255,0.03)',
+                                      border: `1.5px solid ${isCurrent ? p.color + '66' : p.key === 'trimestral' ? p.color + '33' : 'rgba(255,255,255,0.09)'}`,
+                                      borderRadius: 14,
+                                      padding: '22px 14px 14px',
+                                      display: 'flex',
+                                      flexDirection: 'column' as const,
+                                      gap: 10,
+                                    }}>
+                                      {/* Badge topo */}
+                                      {(p.badge || isCurrent) && (
+                                        <div style={{ position: 'absolute' as const, top: -11, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
+                                          <span style={{ background: isCurrent ? '#22c55e' : p.color, color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.5px', whiteSpace: 'nowrap' as const }}>
+                                            {isCurrent ? '✓ PLANO ATUAL' : p.badge}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      <p style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' as const, letterSpacing: '1px', margin: 0 }}>{p.label}</p>
+
+                                      {/* Preço */}
+                                      <div>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+                                          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.45)' }}>R$</span>
+                                          <span style={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1 }}>
+                                            {monthly.toFixed(2).replace('.', ',')}
+                                          </span>
+                                        </div>
+                                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>/mês</span>
+                                      </div>
+
+                                      {/* Total e economia */}
+                                      {p.months > 1 ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 2 }}>
+                                          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', margin: 0 }}>
+                                            Total: R$ {total.toFixed(2).replace('.', ',')}
+                                          </p>
+                                          <p style={{ fontSize: 10, color: '#4ade80', fontWeight: 700, margin: 0 }}>
+                                            Economia de R$ {saving.toFixed(2).replace('.', ',')}
+                                          </p>
+                                        </div>
+                                      ) : (
+                                        <div style={{ height: 30 }} />
+                                      )}
+
+                                      <button
+                                        disabled={isCurrent && !isTrial && !isRenew}
+                                        onClick={() => { if (!isCurrent || isRenew || isTrial) handleSubscribe(p.key as 'mensal' | 'trimestral' | 'anual'); }}
+                                        style={{
+                                          marginTop: 4,
+                                          padding: '10px 0',
+                                          background: isRenew ? p.color : isCurrent && !isTrial ? 'rgba(255,255,255,0.07)' : p.color,
+                                          color: '#fff',
+                                          border: isCurrent && !isTrial && !isRenew ? '1px solid rgba(255,255,255,0.15)' : 'none',
+                                          borderRadius: 8,
+                                          fontSize: 12,
+                                          fontWeight: 700,
+                                          cursor: isCurrent && !isTrial && !isRenew ? 'default' : 'pointer',
+                                          fontFamily: 'Outfit, sans-serif',
+                                        }}
+                                      >
+                                        {isRenew ? 'Renovar agora' : isCurrent && !isTrial ? 'Plano atual' : isTrial ? 'Assinar' : 'Mudar plano'}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', textAlign: 'center' as const, margin: '14px 0 0', lineHeight: 1.5 }}>
+                                Pagamentos processados via Asaas · Boleto, Pix ou Cartão de Crédito
+                              </p>
                             </div>
                           </div>
                         );
@@ -1457,6 +1618,193 @@ export default function ClientAdminPanel({
           </motion.div>
         </motion.button>
       </div>
+
+      {/* ── Modal de Assinatura ─────────────────────────────────────────────── */}
+      {billingModal && (() => {
+        const BASE = 89.90;
+        const PLAN_META = {
+          mensal:     { label: '1 Mês',   months: 1,  discountPct: 0,  color: '#3b82f6' },
+          trimestral: { label: '3 Meses', months: 3,  discountPct: 15, color: '#8b5cf6' },
+          anual:      { label: '1 Ano',   months: 12, discountPct: 25, color: '#10b981' },
+        } as const;
+        const pm      = PLAN_META[billingModal.plan];
+        const monthly = parseFloat((BASE * (1 - pm.discountPct / 100)).toFixed(2));
+        const total   = parseFloat((monthly * pm.months).toFixed(2));
+        const cpfClean = billingModal.cpfCnpj.replace(/\D/g, '');
+        const cpfValid = cpfClean.length === 11 || cpfClean.length === 14;
+        const handleSubmit = async () => {
+          if (!cpfValid) {
+            setBillingModal(prev => prev ? { ...prev, error: 'Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido.' } : null);
+            return;
+          }
+          setBillingModal(prev => prev ? { ...prev, step: 'loading', error: undefined } : null);
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const apiUrl = ((window as any).__BARBER_CONFIG__?.API_URL || '').replace(/\/$/, '');
+            const r = await fetch(
+              `${apiUrl}/api/billing/payment-link?tenantId=${activeTenant.id}&plan=${billingModal.plan}&cpfCnpj=${cpfClean}`,
+              { headers: { Authorization: `Bearer ${session?.access_token}` } }
+            );
+            const json = await r.json();
+            if (!r.ok) {
+              setBillingModal(prev => prev ? { ...prev, step: 'form', error: json.error ?? 'Erro ao gerar cobrança.' } : null);
+              return;
+            }
+            setBillingModal(prev => prev ? {
+              ...prev,
+              step: 'payment',
+              pixImage: json.pixImage,
+              pixCode:  json.pixCode,
+              payUrl:   json.url,
+            } : null);
+          } catch {
+            setBillingModal(prev => prev ? { ...prev, step: 'form', error: 'Erro de conexão. Tente novamente.' } : null);
+          }
+        };
+
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.82)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+            onClick={e => { if (e.target === e.currentTarget) setBillingModal(null); }}
+          >
+            <div style={{ background: '#fff', borderRadius: 20, width: 460, maxWidth: '100%', overflow: 'hidden', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
+
+              {/* Cabeçalho */}
+              <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: '1.5px', margin: '0 0 2px' }}>BarberFlow · Assinatura</p>
+                  <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                    {billingModal.step === 'payment' ? 'Concluir pagamento' : 'Assinar plano'}
+                  </h3>
+                </div>
+                <button onClick={() => setBillingModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 4, display: 'flex', alignItems: 'center' }}>
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Resumo do plano */}
+              <div style={{ padding: '14px 24px', background: pm.color + '12', borderBottom: '1px solid ' + pm.color + '28', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: pm.color, textTransform: 'uppercase' as const, letterSpacing: '1px' }}>Plano {pm.label}</span>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: '#475569', margin: '2px 0 0' }}>R$ {monthly.toFixed(2).replace('.', ',')} /mês</p>
+                </div>
+                <div style={{ textAlign: 'right' as const }}>
+                  <p style={{ fontSize: 10, color: '#94a3b8', margin: 0 }}>Total {pm.months > 1 ? `(${pm.months} meses)` : ''}</p>
+                  <p style={{ fontSize: 22, fontWeight: 900, color: '#0f172a', margin: 0 }}>R$ {total.toFixed(2).replace('.', ',')}</p>
+                </div>
+              </div>
+
+              {/* Corpo */}
+              <div style={{ padding: 24 }}>
+
+                {/* Passo 1: formulário */}
+                {billingModal.step === 'form' && (
+                  <>
+                    <div style={{ marginBottom: 18 }}>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>CPF ou CNPJ *</label>
+                      <input
+                        autoFocus
+                        type="text"
+                        placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                        value={billingModal.cpfCnpj}
+                        onChange={e => setBillingModal(prev => prev ? { ...prev, cpfCnpj: e.target.value, error: undefined } : null)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+                        style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${billingModal.error ? '#fca5a5' : '#e2e8f0'}`, borderRadius: 10, fontSize: 14, color: '#0f172a', outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'Outfit, sans-serif', transition: 'border-color 0.15s' }}
+                      />
+                      <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0' }}>Necessário para emissão da cobrança via Asaas.</p>
+                    </div>
+                    {billingModal.error && (
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
+                        <p style={{ fontSize: 13, color: '#dc2626', margin: 0 }}>{billingModal.error}</p>
+                      </div>
+                    )}
+                    <button onClick={handleSubmit}
+                      style={{ width: '100%', padding: '13px 0', background: pm.color, color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                      Gerar cobrança →
+                    </button>
+                  </>
+                )}
+
+                {/* Passo loading */}
+                {billingModal.step === 'loading' && (
+                  <div style={{ textAlign: 'center' as const, padding: '32px 0' }}>
+                    <div style={{ width: 40, height: 40, border: `3px solid ${pm.color}33`, borderTopColor: pm.color, borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+                    <p style={{ color: '#64748b', fontSize: 14, margin: 0 }}>Gerando cobrança…</p>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                  </div>
+                )}
+
+                {/* Passo 2: pagamento */}
+                {billingModal.step === 'payment' && (
+                  <>
+                    {billingModal.pixImage && (
+                      <div style={{ textAlign: 'center' as const, marginBottom: 20 }}>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase' as const, letterSpacing: '1px', marginBottom: 12 }}>Pagar via PIX</p>
+                        <div style={{ display: 'inline-block', padding: 12, border: '1.5px solid #e2e8f0', borderRadius: 14, marginBottom: 14 }}>
+                          <img src={`data:image/png;base64,${billingModal.pixImage}`} alt="QR Code PIX" style={{ width: 200, height: 200, display: 'block' }} />
+                        </div>
+                        {billingModal.pixCode && (
+                          <div>
+                            <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 6px' }}>Copia e cola:</p>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <input readOnly value={billingModal.pixCode}
+                                style={{ flex: 1, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 10, color: '#475569', fontFamily: 'monospace', background: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} />
+                              <button onClick={() => { navigator.clipboard.writeText(billingModal.pixCode!); setPixCopied(true); setTimeout(() => setPixCopied(false), 2000); }}
+                                style={{ padding: '8px 14px', background: pixCopied ? '#10b981' : '#0f172a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' as const, flexShrink: 0 }}>
+                                {pixCopied ? '✓ Copiado' : 'Copiar'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {billingModal.payUrl && (
+                      <>
+                        {billingModal.pixImage && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0' }}>
+                            <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+                            <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>ou</span>
+                            <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+                          </div>
+                        )}
+                        <a href={billingModal.payUrl} target="_blank" rel="noopener noreferrer"
+                          style={{ display: 'block', textAlign: 'center' as const, padding: '13px 0', background: billingModal.pixImage ? '#f1f5f9' : pm.color, color: billingModal.pixImage ? '#374151' : '#fff', borderRadius: 10, fontSize: 14, fontWeight: 700, textDecoration: 'none', border: billingModal.pixImage ? '1.5px solid #e2e8f0' : 'none' }}>
+                          {billingModal.pixImage ? 'Pagar via Boleto ou Cartão →' : 'Acessar link de pagamento →'}
+                        </a>
+                      </>
+                    )}
+
+                    <p style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center' as const, margin: '16px 0 0', lineHeight: 1.5 }}>
+                      Após confirmação do pagamento, o acesso é liberado automaticamente.
+                    </p>
+                  </>
+                )}
+
+                {/* Passo success */}
+                {billingModal.step === 'success' && (
+                  <div style={{ textAlign: 'center' as const, padding: '24px 0' }}>
+                    <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#f0fdf4', border: '2px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+                      <span style={{ fontSize: 32 }}>✅</span>
+                    </div>
+                    <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: '0 0 10px' }}>Pagamento confirmado!</h3>
+                    <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6, margin: '0 0 6px' }}>
+                      Obrigado por assinar o BarberFlow! 🎉
+                    </p>
+                    <p style={{ fontSize: 13, color: '#94a3b8', margin: '0 0 24px' }}>
+                      Sua conta foi ativada. Recarregando em instantes…
+                    </p>
+                    <div style={{ height: 4, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', background: '#22c55e', borderRadius: 4, animation: 'grow 3.5s linear forwards' }} />
+                    </div>
+                    <style>{`@keyframes grow { from { width: 0% } to { width: 100% } }`}</style>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

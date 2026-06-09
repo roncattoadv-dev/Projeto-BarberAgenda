@@ -13,7 +13,7 @@ export interface Tenant {
   address: string;
   instagram: string;
   status: 'active' | 'blocked' | 'trial';
-  plan: 'mensal' | 'semestral' | 'anual' | 'trial';
+  plan: 'mensal' | 'trimestral' | 'anual' | 'trial';
   trialEndsAt: string;
   subscriptionEndsAt: string;
   mrr: number;
@@ -114,7 +114,7 @@ export interface Payment {
 export interface Subscription {
   id: string;
   tenantId: string;
-  plan: 'mensal' | 'semestral' | 'anual';
+  plan: 'mensal' | 'trimestral' | 'anual';
   amount: number;
   status: 'active' | 'past_due' | 'unpaid' | 'cancelled';
   gatewayId: string;
