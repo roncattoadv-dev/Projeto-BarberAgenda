@@ -128,7 +128,7 @@ import {
   getCustomers, getAppointments, getPayments,
   updateTenant, createService, updateService, deleteService,
   createProfessional, updateProfessional, createProduct, updateCustomer, deleteCustomer,
-  updateProductStock, createAppointment, updateAppointmentStatus,
+  updateProductStock, createAppointment, updateAppointmentStatus, rescheduleAppointment,
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours,
 } from '../../lib/db';
@@ -296,6 +296,10 @@ export default function TenantAdminPage() {
           onUpdateAppointmentStatus={async (id, status) => {
             await updateAppointmentStatus(id, status);
             setAppointments(p => p.map(a => a.id === id ? { ...a, status } : a));
+          }}
+          onRescheduleAppointment={async (id, date, time) => {
+            await rescheduleAppointment(id, date, time);
+            setAppointments(p => p.map(a => a.id === id ? { ...a, date, time } : a));
           }}
           onAddPayment={async p => {
             const c = await createPayment(p);

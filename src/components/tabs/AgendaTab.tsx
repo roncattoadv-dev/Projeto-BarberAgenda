@@ -11,8 +11,10 @@ interface Props {
   myCustomers: Customer[];
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
+  onAddCustomer: (c: Omit<Customer, 'id'>) => Promise<Customer>;
   onCompleteAppointment: (appt: Appointment) => void;
   onResendReminder: (apptId: string) => Promise<void>;
+  onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
   tenantId: string;
 }
 
@@ -69,7 +71,7 @@ const PROF_COLORS = [
 ];
 
 const HOURS    = Array.from({ length: 13 }, (_, i) => `${String(i + 8).padStart(2, '0')}:00`);
-const HOUR_HEIGHT = 72;
+const HOUR_HEIGHT = 90;
 const FIRST_HOUR  = 8;
 const DAYS_PT  = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -121,7 +123,7 @@ function isPastAppt(date: string, time: string): boolean {
   return new Date(y, m - 1, d, h, min) < new Date();
 }
 
-export default function AgendaTab({ myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment, onResendReminder }: Props) {
+export default function AgendaTab({ myAppointments, myServices, myProfessionals, myCustomers, onUpdateAppointmentStatus, onAddAppointment, onAddCustomer, onCompleteAppointment, onResendReminder, onRescheduleAppointment, tenantId }: Props) {
   const [view, setView] = useState<ViewMode>(() => {
     const s = localStorage.getItem('bf_agenda_view');
     return (s === 'day' || s === 'week' || s === 'month') ? s : 'day';
@@ -138,6 +140,93 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
   const [remindedIds,  setRemindedIds]  = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
+
+  // ── Novo agendamento via clique no slot ──────────────────────────────────────
+  type NewSlot = { date: string; time: string; px: number; py: number };
+  const [newSlot,    setNewSlot]    = useState<NewSlot | null>(null);
+  const [slotCustId, setSlotCustId] = useState('');
+  const [slotCustQ,  setSlotCustQ]  = useState('');
+  const [slotSrvId,  setSlotSrvId]  = useState('');
+  const [slotProfId, setSlotProfId] = useState('');
+  const [slotSaving, setSlotSaving] = useState(false);
+  const [slotNewCustMode,  setSlotNewCustMode]  = useState(false);
+  const [slotNewCustName,  setSlotNewCustName]  = useState('');
+  const [slotNewCustPhone, setSlotNewCustPhone] = useState('');
+  const [slotCreating,     setSlotCreating]     = useState(false);
+
+  // ── Painel de detalhes do agendamento ────────────────────────────────────────
+  const [apptPanel,     setApptPanel]     = useState<Appointment | null>(null);
+  const [panelPx,       setPanelPx]       = useState(0);
+  const [panelPy,       setPanelPy]       = useState(0);
+  const [reschedMode,   setReschedMode]   = useState(false);
+  const [reschedDate,   setReschedDate]   = useState('');
+  const [reschedTime,   setReschedTime]   = useState('');
+  const [rescheduling,  setRescheduling]  = useState(false);
+
+  const closeAll = () => { setNewSlot(null); setApptPanel(null); setReschedMode(false); setSlotNewCustMode(false); setSlotNewCustName(''); setSlotNewCustPhone(''); };
+
+  const handleSlotClick = (e: React.MouseEvent<HTMLDivElement>, dateKey: string) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relY  = e.clientY - rect.top;
+    const hourF = FIRST_HOUR + relY / HOUR_HEIGHT;
+    const h     = Math.min(Math.max(FIRST_HOUR, Math.floor(hourF)), FIRST_HOUR + HOURS.length - 1);
+    const m     = Math.round(((hourF - Math.floor(hourF)) * 2)) * 30;
+    const time  = `${String(h).padStart(2,'0')}:${String(m >= 60 ? 0 : m).padStart(2,'0')}`;
+    const px = Math.min(e.clientX + 12, window.innerWidth  - 300);
+    const py = Math.min(e.clientY - 20, window.innerHeight - 340);
+    setSlotCustId(''); setSlotCustQ(''); setSlotSrvId(''); setSlotProfId('');
+    setSlotNewCustMode(false); setSlotNewCustName(''); setSlotNewCustPhone('');
+    setApptPanel(null);
+    setNewSlot({ date: dateKey, time, px, py });
+  };
+
+  const handleApptClick = (e: React.MouseEvent, appt: Appointment) => {
+    e.stopPropagation();
+    const px = Math.min(e.clientX + 12, window.innerWidth  - 300);
+    const py = Math.min(e.clientY - 40, window.innerHeight - 360);
+    setNewSlot(null);
+    setReschedMode(false);
+    setReschedDate(appt.date); setReschedTime(appt.time);
+    setApptPanel(appt);
+    setPanelPx(px); setPanelPy(py);
+  };
+
+  const handleSlotSubmit = async () => {
+    if (!newSlot || !slotCustId || !slotSrvId) return;
+    const cust = myCustomers.find(c => c.id === slotCustId);
+    const srv  = myServices.find(s => s.id === slotSrvId);
+    if (!cust || !srv) return;
+    setSlotSaving(true);
+    try {
+      await onAddAppointment({
+        tenantId, serviceId: slotSrvId, professionalId: slotProfId || myProfessionals[0]?.id || '',
+        customerId: cust.id, customerName: cust.name, customerPhone: cust.phone,
+        date: newSlot.date, time: newSlot.time, durationMinutes: srv.durationMinutes,
+        price: srv.price, status: 'confirmed', notes: '',
+        wppConfirmSent: false, wppReminderSent: false,
+      });
+      toast.success('Agendamento criado!');
+      setNewSlot(null);
+    } catch { toast.error('Erro ao criar agendamento.'); }
+    finally { setSlotSaving(false); }
+  };
+
+  const handleReschedule = async () => {
+    if (!apptPanel || !reschedDate || !reschedTime) return;
+    setRescheduling(true);
+    try {
+      await onRescheduleAppointment(apptPanel.id, reschedDate, reschedTime);
+      toast.success('Reagendado!');
+      setApptPanel(prev => prev ? { ...prev, date: reschedDate, time: reschedTime } : null);
+      setReschedMode(false);
+    } catch { toast.error('Erro ao reagendar.'); }
+    finally { setRescheduling(false); }
+  };
+
+  const filtCusts = myCustomers.filter(c =>
+    !slotCustQ || c.name.toLowerCase().includes(slotCustQ.toLowerCase()) || c.phone.includes(slotCustQ)
+  ).slice(0, 6);
 
   const handleResend = async (apptId: string) => {
     setResendingIds(prev => new Set(prev).add(apptId));
@@ -235,7 +324,8 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontFamily: 'Outfit, sans-serif' }}>
+    <>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontFamily: 'Outfit, sans-serif', padding: '12px 16px 0' }}>
 
       {/* ── Toolbar — sobre fundo navy, usa cores claras ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexShrink: 0 }}>
@@ -302,7 +392,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
-        style={{ flex: 1, overflowY: 'auto', borderRadius: 12, border: `1px solid ${C.border}`, background: C.gridBg, position: 'relative' }}
+        style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain', borderRadius: 12, border: `1px solid ${C.border}`, background: C.gridBg, position: 'relative' }}
         className="no-scrollbar"
       >
 
@@ -359,7 +449,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
 
         {/* ── Week header ── */}
         {view === 'week' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '56px repeat(7, 1fr)', borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0, background: C.headerBg, zIndex: 2 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '64px repeat(7, 1fr)', borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0, background: C.headerBg, zIndex: 2 }}>
             <div />
             {weekDays.map(d => {
               const key = formatDateKey(d);
@@ -378,7 +468,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
 
         {/* ── Grid de horas — posicionamento absoluto estilo Google Calendar ── */}
         {view !== 'month' && (
-          <div style={{ display: 'grid', gridTemplateColumns: `56px repeat(${weekDays.length}, 1fr)` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `64px repeat(${weekDays.length}, 1fr)` }}>
 
             {/* Coluna de rótulos de hora */}
             <div>
@@ -399,7 +489,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
               const totalH     = HOURS.length * HOUR_HEIGHT;
 
               return (
-                <div key={dateKey} style={{ position: 'relative', height: totalH, borderLeft: `1px solid ${C.borderLight}`, background: C.cellBg }}>
+                <div key={dateKey} onClick={e => handleSlotClick(e, dateKey)} style={{ position: 'relative', height: totalH, borderLeft: `1px solid ${C.borderLight}`, background: C.cellBg, cursor: 'crosshair' }}>
 
                   {/* Linhas de hora */}
                   {HOURS.map((_, i) => (
@@ -440,6 +530,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                         key={appt.id}
                         onMouseEnter={() => setHoveredAppt(appt.id)}
                         onMouseLeave={() => setHoveredAppt(null)}
+                        onClick={e => handleApptClick(e, appt)}
                         style={{
                           position: 'absolute', top, height, left, width,
                           background: sc.bg,
@@ -556,5 +647,190 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
         )}
       </motion.div>
     </div>
+
+    {/* ── Overlay fecha ao clicar fora ── */}
+    {(newSlot || apptPanel) && (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }} onClick={closeAll} />
+    )}
+
+    {/* ── Card de novo agendamento ── */}
+    {newSlot && (
+      <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: newSlot.py, left: newSlot.px, width: 280, zIndex: 1001, background: '#fff', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', overflow: 'hidden', fontFamily: 'Outfit, sans-serif' }}>
+        <div style={{ background: '#031D3C', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1px' }}>Novo agendamento</p>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>
+              {DAYS_PT[new Date(newSlot.date + 'T12:00:00').getDay()]}, {newSlot.date.slice(8)}/{newSlot.date.slice(5,7)} · {newSlot.time}
+            </p>
+          </div>
+          <button onClick={closeAll} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.45)', cursor: 'pointer', padding: 2 }}><X size={14} /></button>
+        </div>
+        <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Cliente */}
+          <div>
+            <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>Cliente</label>
+            {!slotNewCustMode ? (
+              <>
+                <input value={slotCustQ} onChange={e => { setSlotCustQ(e.target.value); setSlotCustId(''); }}
+                  placeholder="Buscar cliente…"
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' as const, color: '#0f172a' }} />
+                {slotCustQ && !slotCustId && (
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: 7, marginTop: 2, overflow: 'hidden' }}>
+                    {filtCusts.map(c => (
+                      <div key={c.id} onClick={() => { setSlotCustId(c.id); setSlotCustQ(c.name); }}
+                        style={{ padding: '7px 10px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f1f5f9', color: '#0f172a' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '')}>
+                        <span style={{ fontWeight: 600 }}>{c.name}</span>
+                        {c.phone && <span style={{ color: '#94a3b8', marginLeft: 6 }}>{c.phone}</span>}
+                      </div>
+                    ))}
+                    <div onClick={() => { setSlotNewCustMode(true); setSlotNewCustName(slotCustQ); setSlotNewCustPhone(''); }}
+                      style={{ padding: '7px 10px', fontSize: 12, cursor: 'pointer', color: '#2563eb', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, background: '#f8faff' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#eff6ff')}
+                      onMouseLeave={e => (e.currentTarget.style.background = '#f8faff')}>
+                      + Criar cliente "{slotCustQ}"
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px', background: '#eff6ff', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: '#1d4ed8' }}>Novo cliente</p>
+                <input value={slotNewCustName} onChange={e => setSlotNewCustName(e.target.value)}
+                  placeholder="Nome *"
+                  style={{ width: '100%', padding: '6px 9px', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12, outline: 'none', boxSizing: 'border-box' as const, color: '#0f172a' }} />
+                <input value={slotNewCustPhone} onChange={e => setSlotNewCustPhone(e.target.value)}
+                  placeholder="Telefone (opcional)"
+                  style={{ width: '100%', padding: '6px 9px', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12, outline: 'none', boxSizing: 'border-box' as const, color: '#0f172a' }} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => { setSlotNewCustMode(false); setSlotNewCustName(''); setSlotNewCustPhone(''); }}
+                    style={{ flex: 1, padding: '6px', background: '#fff', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 11, fontWeight: 700, color: '#64748b', cursor: 'pointer' }}>Voltar</button>
+                  <button disabled={!slotNewCustName.trim() || slotCreating}
+                    onClick={async () => {
+                      if (!slotNewCustName.trim()) return;
+                      setSlotCreating(true);
+                      try {
+                        const created = await onAddCustomer({ tenantId, name: slotNewCustName.trim(), phone: slotNewCustPhone.trim(), email: '' });
+                        setSlotCustId(created.id);
+                        setSlotCustQ(created.name);
+                        setSlotNewCustMode(false);
+                      } catch { toast.error('Erro ao criar cliente.'); }
+                      finally { setSlotCreating(false); }
+                    }}
+                    style={{ flex: 2, padding: '6px', background: (!slotNewCustName.trim() || slotCreating) ? '#94a3b8' : '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, color: '#fff', cursor: (!slotNewCustName.trim() || slotCreating) ? 'not-allowed' : 'pointer' }}>
+                    {slotCreating ? 'Criando…' : 'Criar cliente'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Serviço */}
+          <div>
+            <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>Serviço</label>
+            <select value={slotSrvId} onChange={e => setSlotSrvId(e.target.value)}
+              style={{ width: '100%', padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 12, outline: 'none', background: '#fff', color: '#0f172a', boxSizing: 'border-box' as const }}>
+              <option value="">Selecionar…</option>
+              {myServices.map(s => <option key={s.id} value={s.id}>{s.name} — R${s.price}</option>)}
+            </select>
+          </div>
+          {/* Profissional */}
+          <div>
+            <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>Profissional</label>
+            <select value={slotProfId} onChange={e => setSlotProfId(e.target.value)}
+              style={{ width: '100%', padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 12, outline: 'none', background: '#fff', color: '#0f172a', boxSizing: 'border-box' as const }}>
+              <option value="">Qualquer</option>
+              {myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+            <button onClick={closeAll} style={{ flex: 1, padding: '8px', background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#64748b', cursor: 'pointer' }}>Cancelar</button>
+            <button onClick={handleSlotSubmit} disabled={!slotCustId || !slotSrvId || slotSaving}
+              style={{ flex: 2, padding: '8px', background: (!slotCustId || !slotSrvId || slotSaving) ? '#94a3b8' : '#031D3C', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#fff', cursor: (!slotCustId || !slotSrvId || slotSaving) ? 'not-allowed' : 'pointer' }}>
+              {slotSaving ? 'Agendando…' : 'Agendar →'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── Painel de detalhes do agendamento ── */}
+    {apptPanel && (() => {
+      const srv  = myServices.find(s => s.id === apptPanel.serviceId);
+      const prof = myProfessionals.find(p => p.id === apptPanel.professionalId);
+      const sc   = STATUS_COLOR[apptPanel.status] ?? STATUS_COLOR.pending;
+      const statusLabel: Record<string, string> = { confirmed: 'Confirmado', pending: 'Pendente', attended: 'Concluído', cancelled: 'Cancelado' };
+      return (
+        <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: panelPy, left: panelPx, width: 280, zIndex: 1001, background: '#fff', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', overflow: 'hidden', fontFamily: 'Outfit, sans-serif' }}>
+          {/* Header */}
+          <div style={{ background: '#031D3C', padding: '12px 14px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <div>
+              <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sc.bg, color: sc.text, marginBottom: 4 }}>{statusLabel[apptPanel.status] ?? apptPanel.status}</span>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{apptPanel.customerName}</p>
+              <p style={{ margin: '3px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>
+                {DAYS_PT[new Date(apptPanel.date + 'T12:00:00').getDay()]}, {apptPanel.date.slice(8)}/{apptPanel.date.slice(5,7)} · {apptPanel.time.slice(0,5)}
+                {srv && ` · ${srv.durationMinutes}min`}
+                {apptPanel.price > 0 && ` · R$${apptPanel.price}`}
+              </p>
+              {srv  && <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{srv.name}{prof ? ` · ${prof.name}` : ''}</p>}
+            </div>
+            <button onClick={closeAll} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 2, flexShrink: 0 }}><X size={14} /></button>
+          </div>
+
+          <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {!reschedMode ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  <button onClick={() => setReschedMode(true)}
+                    style={{ padding: '9px 6px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#0f172a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                    📅 Reagendar
+                  </button>
+                  <button onClick={async () => { await handleResend(apptPanel.id); }}
+                    style={{ padding: '9px 6px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#15803d', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                    💬 Lembrete
+                  </button>
+                </div>
+                {apptPanel.status !== 'attended' && apptPanel.status !== 'cancelled' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    <button onClick={() => { onCompleteAppointment(apptPanel); closeAll(); }}
+                      style={{ padding: '9px 6px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#1d4ed8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                      ✓ Concluir
+                    </button>
+                    <button onClick={() => { onUpdateAppointmentStatus(apptPanel.id, 'cancelled'); closeAll(); }}
+                      style={{ padding: '9px 6px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                      ✗ Cancelar
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Reagendar para</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 10, color: '#94a3b8', marginBottom: 3 }}>Data</label>
+                    <input type="date" value={reschedDate} onChange={e => setReschedDate(e.target.value)}
+                      style={{ width: '100%', padding: '7px 8px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 10, color: '#94a3b8', marginBottom: 3 }}>Hora</label>
+                    <input type="time" value={reschedTime} onChange={e => setReschedTime(e.target.value)}
+                      style={{ width: '100%', padding: '7px 8px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => setReschedMode(false)} style={{ flex: 1, padding: '8px', background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#64748b', cursor: 'pointer' }}>Voltar</button>
+                  <button onClick={handleReschedule} disabled={rescheduling}
+                    style={{ flex: 2, padding: '8px', background: rescheduling ? '#94a3b8' : '#031D3C', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#fff', cursor: rescheduling ? 'not-allowed' : 'pointer' }}>
+                    {rescheduling ? 'Salvando…' : 'Confirmar →'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    })()}
+    </>
   );
 }

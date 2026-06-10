@@ -17,6 +17,7 @@ import { useToast } from '../hooks/useToast';
 import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import LogoCropModal from './LogoCropModal';
+import TourOverlay, { TourStep } from './TourOverlay';
 import AgendaTab       from './tabs/AgendaTab';
 import AgendamentosTab from './tabs/AgendamentosTab';
 import FinanceiroTab   from './tabs/FinanceiroTab';
@@ -43,6 +44,7 @@ interface Props {
   onUpdateProductStock: (id: string, stock: number) => void;
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
+  onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
   onAddPayment: (pay: Omit<Payment, 'id'>) => void;
   onAddCustomer: (c: Omit<Customer, 'id'>) => Promise<Customer>;
   onUpdateCustomer: (id: string, updates: { name?: string; phone?: string; email?: string }) => Promise<void>;
@@ -80,7 +82,7 @@ export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
   onAddProfessional, onUpdateProfessional, onAddProduct, onUpdateProductStock,
-  onAddAppointment, onUpdateAppointmentStatus, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
+  onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
   openSubscriptionTab, onSubscriptionTabOpened,
 }: Props) {
@@ -123,6 +125,19 @@ export default function ClientAdminPanel({
   const [supportMsg,     setSupportMsg]     = useState('');
   const [supportSending, setSupportSending] = useState(false);
   const [supportSent,    setSupportSent]    = useState(false);
+
+  const TOUR_KEY = `workagenda_tour_done_${activeTenant.id}`;
+  const [tourOpen, setTourOpen] = useState(() => !localStorage.getItem(TOUR_KEY));
+  const finishTour = () => { localStorage.setItem(TOUR_KEY, '1'); setTourOpen(false); };
+
+  const TOUR_STEPS: TourStep[] = [
+    { navId: 'agenda',        emoji: '📅', title: 'Agenda',        description: 'Visualize todos os atendimentos do dia em um calendário visual. Clique em qualquer horário para criar um novo agendamento rapidamente.' },
+    { navId: 'agendamentos',  emoji: '📋', title: 'Agendamentos',  description: 'Acompanhe todos os pedidos de agendamento feitos pelos seus clientes. Confirme, cancele ou remarque com um único clique.' },
+    { navId: 'clientes',      emoji: '👥', title: 'Clientes',      description: 'Gerencie sua base de clientes, veja o histórico de atendimentos e o total gasto por cada um.' },
+    { navId: 'negocio',       emoji: '🏪', title: 'Meu Negócio',   description: 'Configure os serviços oferecidos, sua equipe de profissionais, produtos e os horários de funcionamento.' },
+    { navId: 'automacoes',    emoji: '💬', title: 'Automações',    description: 'Ative mensagens automáticas de confirmação e lembrete via WhatsApp para reduzir faltas e melhorar a comunicação.' },
+    { navId: 'configuracoes', emoji: '⚙️', title: 'Configurações', description: 'Gerencie sua assinatura, personalize a página de agendamento online e configure as preferências da sua conta.' },
+  ];
   const [billingModal, setBillingModal] = useState<null | {
     plan: 'mensal' | 'trimestral' | 'anual';
     step: 'form' | 'loading' | 'payment' | 'success';
@@ -453,7 +468,7 @@ export default function ClientAdminPanel({
               const active = activeTab === id;
               const badge = id === 'agendamentos' ? pendingCount : id === 'agenda' ? todayAppts.length : 0;
               return (
-                <motion.button key={id} onClick={() => setActiveTab(id)}
+                <motion.button key={id} id={`tour-nav-${id}`} onClick={() => setActiveTab(id)}
                   whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '10px 0' : '10px 12px', justifyContent: collapsed ? 'center' : 'flex-start', borderRadius: 10, cursor: 'pointer', border: active ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent', background: active ? 'rgba(255,255,255,0.08)' : 'transparent', color: active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.42)', fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: active ? 700 : 500, width: '100%', position: 'relative', transition: 'background 150ms, color 150ms' }}>
                   <Icon size={16} strokeWidth={active ? 2.5 : 2} style={{ flexShrink: 0 }} />
@@ -492,12 +507,12 @@ export default function ClientAdminPanel({
         </motion.aside>
 
         {/* ── Main content ── */}
-        <main style={{ flex: 1, padding: '24px', overflowX: 'hidden', overflowY: 'auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <main style={{ flex: 1, padding: activeTab === 'agenda' ? '0' : '24px', overflow: 'hidden', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
           <AnimatePresence mode="wait">
-            <motion.div key={activeTab} {...PAGE_TRANSITION} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <motion.div key={activeTab} {...PAGE_TRANSITION} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: activeTab === 'agenda' ? 'hidden' : 'auto', overscrollBehavior: 'contain' }}>
 
               {/* Page header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0 }}>
+              {activeTab !== 'agenda' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0 }}>
                 <div>
                   <h2 style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0, letterSpacing: '-0.3px' }}>{PAGE_TITLES[activeTab]}</h2>
                   {activeTab === 'agenda' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{todayAppts.length} atendimentos hoje</p>}
@@ -519,16 +534,16 @@ export default function ClientAdminPanel({
                     </motion.button>
                   )}
                 </div>
-              </div>
+              </div>}
 
               {/* ─────────── AGENDA ─────────── */}
               {activeTab === 'agenda' && (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0 }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: showApptForm ? 16 : 0, minHeight: 0 }}>
                   {/* Quick add form */}
                   <AnimatePresence>
                     {showApptForm && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22 }}
-                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 14, padding: 20, overflow: 'hidden', flexShrink: 0 }}>
+                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 0, padding: '16px 20px', overflow: 'hidden', flexShrink: 0 }}>
                         <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 14px' }}>Novo Agendamento</p>
                         <form onSubmit={handleManualAppointment}>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
@@ -574,8 +589,10 @@ export default function ClientAdminPanel({
                       myCustomers={myCustomers}
                       onUpdateAppointmentStatus={onUpdateAppointmentStatus}
                       onAddAppointment={onAddAppointment}
+                      onAddCustomer={onAddCustomer}
                       onCompleteAppointment={handleCompleteAppointment}
                       onResendReminder={apptId => remindAppointmentWhatsApp(activeTenant.id, apptId)}
+                      onRescheduleAppointment={onRescheduleAppointment}
                       tenantId={activeTenant.id}
                     />
                   </div>
@@ -1577,6 +1594,9 @@ export default function ClientAdminPanel({
           </AnimatePresence>
         </main>
       </div>
+
+      {/* ── Tour ──────────────────────────────────────────────────────────────── */}
+      {tourOpen && <TourOverlay steps={TOUR_STEPS} onFinish={finishTour} />}
 
       {/* ── Modal de Suporte ──────────────────────────────────────────────────── */}
       {supportModal && (

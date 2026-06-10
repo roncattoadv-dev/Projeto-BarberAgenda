@@ -154,11 +154,11 @@ export async function getAppointments(tenantId: string, limit = 200): Promise<Ap
   return (data ?? []).map(mapAppointment);
 }
 
-export async function getOccupiedSlots(professionalId: string, date: string): Promise<string[]> {
+export async function getOccupiedSlots(professionalId: string, date: string): Promise<{time: string; duration: number}[]> {
   const { data } = await supabase.from('appointments')
-    .select('scheduled_time').eq('professional_id', professionalId)
+    .select('scheduled_time, duration_minutes').eq('professional_id', professionalId)
     .eq('scheduled_date', date).neq('status', 'cancelled');
-  return (data ?? []).map(a => a.scheduled_time.substring(0, 5));
+  return (data ?? []).map(a => ({ time: a.scheduled_time.substring(0, 5), duration: a.duration_minutes ?? 60 }));
 }
 
 export async function createAppointment(a: Omit<Appointment, 'id'>): Promise<Appointment> {
@@ -188,6 +188,12 @@ export async function remindAppointmentWhatsApp(tenantId: string, appointmentId:
 
 export async function updateAppointmentStatus(id: string, status: Appointment['status']) {
   const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function rescheduleAppointment(id: string, date: string, time: string): Promise<void> {
+  const { error } = await supabase.from('appointments')
+    .update({ scheduled_date: date, scheduled_time: time }).eq('id', id);
   if (error) throw error;
 }
 

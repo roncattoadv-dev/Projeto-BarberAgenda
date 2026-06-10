@@ -34,7 +34,7 @@ interface CustomerBookingFlowProps {
   onUpdateAppointmentStatus: (apptId: string, status: Appointment['status']) => void;
   onAddCustomer: (customer: Omit<Customer, 'id'>) => void;
   onRegisterReview: (stars: number, comment: string, apptId: string) => void;
-  onGetOccupiedSlots?: (professionalId: string, date: string) => Promise<string[]>;
+  onGetOccupiedSlots?: (professionalId: string, date: string) => Promise<{time: string; duration: number}[]>;
 }
 
 export default function CustomerBookingFlow({
@@ -81,7 +81,7 @@ export default function CustomerBookingFlow({
   const [reviewingApptId, setReviewingApptId] = useState<string | null>(null);
 
   // Occupied slots fetched from DB (authoritative source)
-  const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
+  const [occupiedSlots, setOccupiedSlots] = useState<{time: string; duration: number}[]>([]);
   useEffect(() => {
     if (!selectedProfId || !selectedDate || !onGetOccupiedSlots) {
       setOccupiedSlots([]);
@@ -135,16 +135,25 @@ export default function CustomerBookingFlow({
       '18:10'
     ];
 
+  const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0); };
+  const newDur = selectedService?.durationMinutes ?? 60;
+
   const checkSlotOccupied = (timeSlot: string) => {
+    const slotStart = toMin(timeSlot);
+    const slotEnd   = slotStart + newDur;
     if (onGetOccupiedSlots) {
-      return occupiedSlots.includes(timeSlot);
+      return occupiedSlots.some(a => {
+        const aStart = toMin(a.time);
+        const aEnd   = aStart + (a.duration ?? 60);
+        return slotStart < aEnd && slotEnd > aStart;
+      });
     }
-    return myAppointments.some(appt =>
-      appt.date === selectedDate &&
-      appt.time === timeSlot &&
-      appt.professionalId === selectedProfId &&
-      appt.status !== 'cancelled'
-    );
+    return myAppointments.some(appt => {
+      if (appt.date !== selectedDate || appt.professionalId !== selectedProfId || appt.status === 'cancelled') return false;
+      const aStart = toMin(appt.time);
+      const aEnd   = aStart + (appt.durationMinutes ?? 60);
+      return slotStart < aEnd && slotEnd > aStart;
+    });
   };
 
   const getInitials = (name: string) => {
