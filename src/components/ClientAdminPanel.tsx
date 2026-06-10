@@ -14,7 +14,7 @@ import {
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
 import { useToast } from '../hooks/useToast';
-import { uploadTenantLogo, remindAppointmentWhatsApp } from '../lib/db';
+import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import LogoCropModal from './LogoCropModal';
 import AgendaTab       from './tabs/AgendaTab';
@@ -98,7 +98,6 @@ export default function ClientAdminPanel({
     }
   }, [openSubscriptionTab]);
   const [collapsed,    setCollapsed]    = useState(false);
-  const [fabOpen,      setFabOpen]      = useState(false);
   const [cmdOpen,      setCmdOpen]      = useState(false);
   const [cmdQuery,     setCmdQuery]     = useState('');
   const cmdRef = useRef<HTMLInputElement>(null);
@@ -118,7 +117,12 @@ export default function ClientAdminPanel({
   const [linkCopied,      setLinkCopied]      = useState(false);
   const [deleteStep,      setDeleteStep]      = useState<'idle' | 'confirm' | 'deleting'>('idle');
   const [deleteInput,     setDeleteInput]     = useState('');
-  const [pixCopied,    setPixCopied]    = useState(false);
+  const [pixCopied,      setPixCopied]      = useState(false);
+  const [supportModal,   setSupportModal]   = useState(false);
+  const [supportTitle,   setSupportTitle]   = useState('');
+  const [supportMsg,     setSupportMsg]     = useState('');
+  const [supportSending, setSupportSending] = useState(false);
+  const [supportSent,    setSupportSent]    = useState(false);
   const [billingModal, setBillingModal] = useState<null | {
     plan: 'mensal' | 'trimestral' | 'anual';
     step: 'form' | 'loading' | 'payment' | 'success';
@@ -270,7 +274,7 @@ export default function ClientAdminPanel({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setCmdOpen(o => !o); }
-      if (e.key === 'Escape') { setCmdOpen(false); setFabOpen(false); }
+      if (e.key === 'Escape') { setCmdOpen(false); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -355,7 +359,7 @@ export default function ClientAdminPanel({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ backgroundColor: '#031D3C', minHeight: '100vh', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ backgroundColor: '#031D3C', flex: 1, minHeight: 0, overflow: 'hidden', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Crop modal ── */}
       {cropSrc && <LogoCropModal imageSrc={cropSrc} onConfirm={handleCropConfirm} onCancel={() => setCropSrc(null)} />}
@@ -412,54 +416,26 @@ export default function ClientAdminPanel({
       </AnimatePresence>
 
       {/* ── Topbar ── */}
-      <header style={{ height: 48, background: '#021340', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12, position: 'sticky', top: 0, zIndex: 50, flexShrink: 0 }}>
-        {/* Collapse toggle */}
+      <header style={{ height: 40, background: '#021340', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 8, flexShrink: 0 }}>
         <button onClick={() => setCollapsed(c => !c)}
-          style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.45)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Menu size={14} />
+          style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Menu size={13} />
         </button>
-
-        {/* Breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, overflow: 'hidden' }}>
-          {(tenantLogo?.startsWith('http') || tenantLogo?.startsWith('data:'))
-            ? <div style={{ width: 22, height: 22, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}><img src={tenantLogo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></div>
-            : <Scissors size={14} style={{ color: 'rgba(255,255,255,0.35)', flexShrink: 0 }} />
-          }
-          <span style={{ fontWeight: 700, color: 'rgba(255,255,255,0.38)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '1.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTenant.name}</span>
-          <ChevronRight size={12} style={{ color: 'rgba(255,255,255,0.18)', flexShrink: 0 }} />
-          <span style={{ fontWeight: 700, color: 'rgba(255,255,255,0.75)' }}>{PAGE_TITLES[activeTab]}</span>
-        </div>
-
         <div style={{ flex: 1 }} />
-
-        {/* ⌘K search */}
-        <button onClick={() => setCmdOpen(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: 'rgba(255,255,255,0.38)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-          <Search size={12} />
-          <span style={{ display: 'none' }} className="sm-show">Buscar</span>
-          <kbd style={{ fontSize: 10, background: 'rgba(255,255,255,0.07)', borderRadius: 4, padding: '1px 5px', color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>⌘K</kbd>
-        </button>
-
-        {/* Pendentes badge */}
         {pendingCount > 0 && (
           <button onClick={() => setActiveTab('agendamentos')}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 20, color: '#fcd34d', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 20, color: '#fcd34d', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b' }} />
             {pendingCount} pendente{pendingCount > 1 ? 's' : ''}
           </button>
         )}
-
-        {/* Status + link público */}
-        <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', background: activeTenant.status === 'active' ? '#E6F4EC' : '#FEF9EC', color: activeTenant.status === 'active' ? '#0A4A2C' : '#7A4B0A' }}>
-          {activeTenant.status === 'active' ? 'Ativo' : 'Teste'}
-        </span>
         <button onClick={() => onSwitchToBookingFlow(activeTenant.slug)}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-          Link <ExternalLink size={11} />
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 7, color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+          Link público <ExternalLink size={10} />
         </button>
         <button onClick={handleCopyLink} title="Copiar link de agendamento"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: linkCopied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)', border: `1px solid ${linkCopied ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 8, color: linkCopied ? '#4ade80' : 'rgba(255,255,255,0.55)', cursor: 'pointer', transition: 'all 200ms' }}>
-          {linkCopied ? <CheckCheck size={13} /> : <Copy size={13} />}
+          style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: linkCopied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${linkCopied ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 7, color: linkCopied ? '#4ade80' : 'rgba(255,255,255,0.5)', cursor: 'pointer', transition: 'all 200ms' }}>
+          {linkCopied ? <CheckCheck size={12} /> : <Copy size={12} />}
         </button>
       </header>
 
@@ -470,7 +446,7 @@ export default function ClientAdminPanel({
         <motion.aside
           animate={{ width: collapsed ? SIDEBAR_W.closed : SIDEBAR_W.open }}
           transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-          style={{ background: '#021340', borderRight: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, position: 'sticky', top: 48, height: 'calc(100vh - 48px)' }}
+          style={{ background: '#021340', borderRight: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, alignSelf: 'stretch' }}
         >
           <nav style={{ flex: 1, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
             {NAV.map(({ id, label, Icon }) => {
@@ -499,19 +475,24 @@ export default function ClientAdminPanel({
             })}
           </nav>
 
-          {/* CTA novo agendamento */}
-          <div style={{ padding: '12px 8px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-              onClick={() => { setActiveTab('agenda'); setShowApptForm(true); }}
-              style={{ width: '100%', padding: collapsed ? '10px 0' : '10px 14px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
-              <Plus size={14} />
-              {!collapsed && 'Novo Agendamento'}
-            </motion.button>
-          </div>
+          {/* Sidebar footer */}
+          {!collapsed && (
+            <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
+              <button onClick={() => { setSupportSent(false); setSupportTitle(''); setSupportMsg(''); setSupportModal(true); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'Outfit, sans-serif', padding: '2px 0', transition: 'color 150ms' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}>
+                Suporte
+              </button>
+              <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.18)', fontFamily: 'Outfit, sans-serif', letterSpacing: '0.5px' }}>
+                © WorkAgenda {new Date().getFullYear()}
+              </p>
+            </div>
+          )}
         </motion.aside>
 
         {/* ── Main content ── */}
-        <main style={{ flex: 1, padding: '24px', overflowX: 'hidden', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <main style={{ flex: 1, padding: '24px', overflowX: 'hidden', overflowY: 'auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} {...PAGE_TRANSITION} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
 
@@ -523,13 +504,21 @@ export default function ClientAdminPanel({
                   {activeTab === 'agendamentos' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{myAppointments.filter(a => a.status !== 'cancelled').length} no total · {pendingCount} pendentes</p>}
                   {activeTab === 'clientes' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{myCustomers.length} clientes cadastrados</p>}
                 </div>
-                {activeTab === 'agenda' && (
-                  <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                    onClick={() => setShowApptForm(o => !o)}
-                    style={{ padding: '9px 18px', background: showApptForm ? '#ffffff' : 'rgba(255,255,255,0.07)', color: showApptForm ? '#031D3C' : 'rgba(255,255,255,0.75)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
-                    <Plus size={13} /> {showApptForm ? 'Fechar' : 'Agendar'}
-                  </motion.button>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={() => setCmdOpen(true)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9, color: 'rgba(255,255,255,0.38)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                    <Search size={13} />
+                    <span>Buscar</span>
+                    <kbd style={{ fontSize: 10, background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '1px 5px', color: 'rgba(255,255,255,0.22)', fontFamily: 'monospace' }}>⌘K</kbd>
+                  </button>
+                  {activeTab === 'agenda' && (
+                    <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                      onClick={() => setShowApptForm(o => !o)}
+                      style={{ padding: '9px 18px', background: showApptForm ? '#ffffff' : 'rgba(255,255,255,0.07)', color: showApptForm ? '#031D3C' : 'rgba(255,255,255,0.75)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
+                      <Plus size={13} /> {showApptForm ? 'Fechar' : 'Agendar'}
+                    </motion.button>
+                  )}
+                </div>
               </div>
 
               {/* ─────────── AGENDA ─────────── */}
@@ -1448,8 +1437,8 @@ export default function ClientAdminPanel({
                                       position: 'relative' as const,
                                       background: isCurrent ? `${p.color}18` : 'rgba(255,255,255,0.03)',
                                       border: `1.5px solid ${isCurrent ? p.color + '66' : p.key === 'trimestral' ? p.color + '33' : 'rgba(255,255,255,0.09)'}`,
-                                      borderRadius: 14,
-                                      padding: '22px 14px 14px',
+                                      borderRadius: 8,
+                                      padding: '24px 16px 16px',
                                       display: 'flex',
                                       flexDirection: 'column' as const,
                                       gap: 10,
@@ -1457,7 +1446,7 @@ export default function ClientAdminPanel({
                                       {/* Badge topo */}
                                       {(p.badge || isCurrent) && (
                                         <div style={{ position: 'absolute' as const, top: -11, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
-                                          <span style={{ background: isCurrent ? '#22c55e' : p.color, color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.5px', whiteSpace: 'nowrap' as const }}>
+                                          <span style={{ background: isCurrent ? '#22c55e' : p.color, color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 4, letterSpacing: '0.5px', whiteSpace: 'nowrap' as const }}>
                                             {isCurrent ? '✓ PLANO ATUAL' : p.badge}
                                           </span>
                                         </div>
@@ -1478,16 +1467,16 @@ export default function ClientAdminPanel({
 
                                       {/* Total e economia */}
                                       {p.months > 1 ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 2 }}>
-                                          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', margin: 0 }}>
-                                            Total: R$ {total.toFixed(2).replace('.', ',')}
+                                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                                          <p style={{ fontSize: 14, fontWeight: 800, color: '#fff', margin: 0 }}>
+                                            R$ {total.toFixed(2).replace('.', ',')}
                                           </p>
                                           <p style={{ fontSize: 10, color: '#4ade80', fontWeight: 700, margin: 0 }}>
                                             Economia de R$ {saving.toFixed(2).replace('.', ',')}
                                           </p>
                                         </div>
                                       ) : (
-                                        <div style={{ height: 30 }} />
+                                        <div style={{ height: 34 }} />
                                       )}
 
                                       <button
@@ -1499,7 +1488,7 @@ export default function ClientAdminPanel({
                                           background: isRenew ? p.color : isCurrent && !isTrial ? 'rgba(255,255,255,0.07)' : p.color,
                                           color: '#fff',
                                           border: isCurrent && !isTrial && !isRenew ? '1px solid rgba(255,255,255,0.15)' : 'none',
-                                          borderRadius: 8,
+                                          borderRadius: 6,
                                           fontSize: 12,
                                           fontWeight: 700,
                                           cursor: isCurrent && !isTrial && !isRenew ? 'default' : 'pointer',
@@ -1589,35 +1578,75 @@ export default function ClientAdminPanel({
         </main>
       </div>
 
-      {/* ── FAB ── */}
-      <div style={{ position: 'fixed', bottom: 28, right: 28, zIndex: 100 }}>
-        <AnimatePresence>
-          {fabOpen && (
-            <motion.div initial={{ opacity: 0, y: 12, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.95 }} transition={{ duration: 0.18 }}
-              style={{ position: 'absolute', bottom: 62, right: 0, background: '#021340', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, overflow: 'hidden', minWidth: 200, boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}>
-              {[
-                { icon: <Calendar size={14} />, label: 'Novo Agendamento', action: () => { setActiveTab('agenda'); setShowApptForm(true); setFabOpen(false); } },
-                { icon: <Users size={14} />,    label: 'Novo Cliente',      action: () => { setActiveTab('clientes'); setFabOpen(false); } },
-                { icon: <MessageSquare size={14} />, label: 'Enviar Aviso', action: () => { setActiveTab('automacoes'); setFabOpen(false); } },
-              ].map((item, i) => (
-                <motion.button key={i} onClick={item.action}
-                  initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.06)' : 'none', color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', textAlign: 'left', transition: 'background 120ms' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  {item.icon} {item.label}
-                </motion.button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.93 }} onClick={() => setFabOpen(o => !o)}
-          style={{ width: 52, height: 52, borderRadius: '50%', background: fabOpen ? '#ffffff' : '#ffffff', color: '#031D3C', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', transition: 'transform 0.15s' }}>
-          <motion.div animate={{ rotate: fabOpen ? 45 : 0 }} transition={{ duration: 0.18 }}>
-            <Plus size={22} strokeWidth={2.5} />
-          </motion.div>
-        </motion.button>
-      </div>
+      {/* ── Modal de Suporte ──────────────────────────────────────────────────── */}
+      {supportModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.82)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => setSupportModal(false)}>
+          <div style={{ background: '#fff', borderRadius: 20, width: 440, maxWidth: '100%', boxShadow: '0 30px 80px rgba(0,0,0,0.5)', overflow: 'hidden' }}
+            onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ background: '#031D3C', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff', fontFamily: 'Outfit, sans-serif' }}>Central de Suporte</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Outfit, sans-serif' }}>Envie uma mensagem para nossa equipe</p>
+              </div>
+              <button onClick={() => setSupportModal(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: 4 }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {supportSent ? (
+              <div style={{ padding: '40px 24px', textAlign: 'center' }}>
+                <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                  <Check size={24} style={{ color: '#16a34a' }} />
+                </div>
+                <h4 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#0f172a', fontFamily: 'Outfit, sans-serif' }}>Mensagem enviada!</h4>
+                <p style={{ margin: 0, fontSize: 13, color: '#64748b', fontFamily: 'Outfit, sans-serif' }}>Nossa equipe responderá em breve. Acompanhe pela aba Suporte.</p>
+                <button onClick={() => setSupportModal(false)} style={{ marginTop: 24, padding: '10px 28px', background: '#031D3C', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                  Fechar
+                </button>
+              </div>
+            ) : (
+              <div style={{ padding: '24px' }}>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 6, fontFamily: 'Outfit, sans-serif' }}>
+                    Assunto
+                  </label>
+                  <input value={supportTitle} onChange={e => setSupportTitle(e.target.value)}
+                    placeholder="Ex: Problema com agendamentos…"
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontFamily: 'Outfit, sans-serif', outline: 'none', color: '#0f172a', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ marginBottom: 18 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 6, fontFamily: 'Outfit, sans-serif' }}>
+                    Mensagem
+                  </label>
+                  <textarea value={supportMsg} onChange={e => setSupportMsg(e.target.value)}
+                    placeholder="Descreva o problema ou dúvida com o máximo de detalhes…"
+                    rows={5}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontFamily: 'Outfit, sans-serif', outline: 'none', color: '#0f172a', resize: 'vertical', boxSizing: 'border-box' }} />
+                </div>
+                <button
+                  disabled={!supportTitle.trim() || !supportMsg.trim() || supportSending}
+                  onClick={async () => {
+                    if (!supportTitle.trim() || !supportMsg.trim()) return;
+                    setSupportSending(true);
+                    try {
+                      await createSupportTicket(activeTenant.id, activeTenant.name, supportTitle.trim(), supportMsg.trim());
+                      setSupportSent(true);
+                    } catch (e) {
+                      console.error('[Support] error:', e);
+                    } finally {
+                      setSupportSending(false);
+                    }
+                  }}
+                  style={{ width: '100%', padding: '12px', background: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? '#94a3b8' : '#031D3C', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'background 150ms' }}>
+                  {supportSending ? 'Enviando…' : 'Enviar mensagem'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Modal de Assinatura ─────────────────────────────────────────────── */}
       {billingModal && (() => {
@@ -1672,7 +1701,7 @@ export default function ClientAdminPanel({
               {/* Cabeçalho */}
               <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: '1.5px', margin: '0 0 2px' }}>BarberFlow · Assinatura</p>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: '1.5px', margin: '0 0 2px' }}>WorkAgenda · Assinatura</p>
                   <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0f172a', margin: 0 }}>
                     {billingModal.step === 'payment' ? 'Concluir pagamento' : 'Assinar plano'}
                   </h3>
@@ -1789,7 +1818,7 @@ export default function ClientAdminPanel({
                     </div>
                     <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: '0 0 10px' }}>Pagamento confirmado!</h3>
                     <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6, margin: '0 0 6px' }}>
-                      Obrigado por assinar o BarberFlow! 🎉
+                      Obrigado por assinar o WorkAgenda! 🎉
                     </p>
                     <p style={{ fontSize: 13, color: '#94a3b8', margin: '0 0 24px' }}>
                       Sua conta foi ativada. Recarregando em instantes…

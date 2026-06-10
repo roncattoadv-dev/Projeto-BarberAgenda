@@ -97,7 +97,7 @@ export async function createSubscription(customerId: string, plan = 'mensal', tr
       value,
       cycle:        planInfo.cycle,
       nextDueDate,
-      description:  `BarberFlow — ${planInfo.label}`,
+      description:  `WorkAgenda — ${planInfo.label}`,
     }),
   });
 }

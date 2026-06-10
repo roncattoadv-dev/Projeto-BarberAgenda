@@ -295,7 +295,7 @@ export function buildConfirmationMsg(appt: ApptData): string {
     appt.tenantPhone ? `📞 ${appt.tenantPhone}` : '',
     '',
     'Para cancelar ou remarcar, responda esta mensagem.',
-    '_Powered by BarberFlow_ 💈',
+    '_Powered by WorkAgenda_ 💈',
   ].filter(l => l !== null).join('\n');
 }
 
@@ -311,7 +311,7 @@ export function buildReminderMsg(appt: ApptData): string {
     `📍 ${appt.tenantName}`,
     '',
     'Te esperamos! Se precisar cancelar, responda esta mensagem.',
-    '_BarberFlow_ 💈',
+    '_WorkAgenda_ 💈',
   ].join('\n');
 }
 
@@ -324,7 +324,7 @@ export function buildCancellationMsg(appt: ApptData): string {
     'Para reagendar, acesse nosso link ou responda esta mensagem.',
     '',
     `📍 ${appt.tenantName}`,
-    '_BarberFlow_ 💈',
+    '_WorkAgenda_ 💈',
   ].join('\n');
 }
 

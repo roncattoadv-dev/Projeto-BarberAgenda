@@ -1293,7 +1293,7 @@ async function sendReminders(): Promise<void> {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`[Server] BarberFlow API rodando na porta ${PORT}`);
+  console.log(`[Server] WorkAgenda API rodando na porta ${PORT}`);
   console.log(`[Server] Supabase: ${SUPABASE_URL ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Asaas: ${process.env.ASAAS_API_KEY ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Modo: ${process.env.ASAAS_SANDBOX === 'true' ? 'SANDBOX' : 'PRODUÇÃO'}`);

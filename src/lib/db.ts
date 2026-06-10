@@ -303,6 +303,9 @@ function mapAuditLog(r: any): AuditLog {
 function mapCoupon(r: any): Coupon {
   return { id: r.id, code: r.code, discountPercentage: r.discount_percentage, status: r.status, usageCount: r.usage_count, expiresAt: r.expires_at };
 }
+function mapSupportTicket(r: any): SupportTicket {
+  return { id: r.id, tenantId: r.tenant_id, tenantName: r.tenant_name, title: r.title, status: r.status, createdAt: r.created_at, messages: r.messages ?? [] };
+}
 
 // ── REVERSE MAPPERS (camelCase → snake_case for INSERT) ────────────────────────
 function dbTenant(t: Partial<Tenant>): any {
@@ -336,4 +339,33 @@ function dbPayment(p: Omit<Payment, 'id'>): any {
 }
 function dbProduct(p: Omit<Product, 'id'>): any {
   return { tenant_id: p.tenantId, name: p.name, price: p.price, cost_price: p.costPrice, stock: p.stock, min_stock: p.minStock, category: p.category, is_active: true };
+}
+
+// ── SUPPORT TICKETS ────────────────────────────────────────────────────────────
+
+export async function getSupportTickets(): Promise<SupportTicket[]> {
+  const { data, error } = await supabase
+    .from('support_tickets').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapSupportTicket);
+}
+
+export async function createSupportTicket(tenantId: string, tenantName: string, title: string, message: string): Promise<SupportTicket> {
+  const firstMsg = { sender: 'tenant', content: message, timestamp: new Date().toISOString() };
+  const { data, error } = await supabase.from('support_tickets')
+    .insert({ tenant_id: tenantId, tenant_name: tenantName, title, messages: [firstMsg] })
+    .select().single();
+  if (error) throw error;
+  return mapSupportTicket(data);
+}
+
+export async function resolveTicket(ticketId: string, replyMessage: string): Promise<void> {
+  const { data: ticket, error: fetchErr } = await supabase
+    .from('support_tickets').select('messages').eq('id', ticketId).single();
+  if (fetchErr) throw fetchErr;
+  const replyMsg = { sender: 'superadmin', content: replyMessage, timestamp: new Date().toISOString() };
+  const { error } = await supabase.from('support_tickets')
+    .update({ status: 'resolved', messages: [...(ticket.messages ?? []), replyMsg] })
+    .eq('id', ticketId);
+  if (error) throw error;
 }

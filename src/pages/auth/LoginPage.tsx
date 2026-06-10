@@ -66,7 +66,7 @@ export default function LoginPage() {
           <div className="flex flex-col items-center mb-8">
             <img
               src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"
-              alt="BarberFlow"
+              alt="WorkAgenda"
               style={{ height: 220, objectFit: 'contain', marginBottom: 12 }}
             />
           </div>
@@ -78,7 +78,7 @@ export default function LoginPage() {
               Conta Google conectada
             </p>
             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginBottom: 24, lineHeight: 1.5 }}>
-              Esta conta ainda não tem uma barbearia cadastrada no BarberFlow.
+              Esta conta ainda não tem uma barbearia cadastrada no WorkAgenda.
             </p>
             <button
               onClick={() => navigate('/cadastro')}
@@ -109,7 +109,7 @@ export default function LoginPage() {
         <div className="flex flex-col items-center mb-10">
           <img
             src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"
-            alt="BarberFlow"
+            alt="WorkAgenda"
             style={{ height: 288, objectFit: 'contain' }}
             className="mb-4"
           />

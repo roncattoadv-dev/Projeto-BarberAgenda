@@ -73,7 +73,7 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
               Seu período de teste encerrou
             </h2>
             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, lineHeight: 1.7, margin: '0 0 8px' }}>
-              Esperamos que tenha aproveitado o BarberFlow! 😊
+              Esperamos que tenha aproveitado o WorkAgenda! 😊
             </p>
             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, lineHeight: 1.7, margin: '0 0 28px' }}>
               Para continuar usando o sistema e manter seus agendamentos e clientes, realize o pagamento da assinatura mensal.
@@ -193,7 +193,7 @@ export default function TenantAdminPage() {
   const handleExpiryClick = () => setOpenSubscription(true);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
       {/* Barra de aviso de vencimento */}
       {daysUntilExpiry !== null && (
         <button onClick={handleExpiryClick} style={{ width: '100%', background: '#f59e0b', color: '#1c1000', padding: '8px 20px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'Outfit, sans-serif', border: 'none', cursor: 'pointer' }}>
@@ -210,48 +210,30 @@ export default function TenantAdminPage() {
         </button>
       )}
       {/* Top bar */}
-      <div
-        style={{
-          backgroundColor: '#021340',
-          borderBottom: '1px solid rgba(255,255,255,0.09)',
-          padding: '6px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ backgroundColor: '#021340', borderBottom: '1px solid rgba(255,255,255,0.09)', padding: '0 20px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <img
             src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"
-            alt="BarberFlow"
-            style={{ height: 40, objectFit: 'contain' }}
+            alt="WorkAgenda"
+            style={{ height: 36, objectFit: 'contain' }}
           />
           {tenant && (
             <>
-              <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.18)' }} />
-              <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 14, fontWeight: 500 }}>{tenant.name}</span>
+              <span style={{ width: 1, height: 22, background: 'rgba(255,255,255,0.12)' }} />
+              {(tenant.logo?.startsWith('http') || tenant.logo?.startsWith('data:')) && (
+                <div style={{ width: 28, height: 28, borderRadius: 7, overflow: 'hidden', flexShrink: 0 }}>
+                  <img src={tenant.logo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                </div>
+              )}
+              <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 14, fontWeight: 600, fontFamily: 'Outfit, sans-serif' }}>{tenant.name}</span>
             </>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13 }}>{profile?.name}</span>
-          <button
-            onClick={signOut}
-            style={{
-              color: 'rgba(255,255,255,0.65)',
-              background: 'none',
-              border: '1px solid rgba(255,255,255,0.18)',
-              borderRadius: 8,
-              padding: '5px 14px',
-              fontSize: 12,
-              cursor: 'pointer',
-              fontFamily: 'Outfit, sans-serif',
-              fontWeight: 600,
-            }}
-          >
-            Sair
-          </button>
-        </div>
+        <button onClick={signOut} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.28)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', fontWeight: 500, padding: '4px 8px', borderRadius: 6, transition: 'color 150ms' }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.28)')}>
+          Sair
+        </button>
       </div>
 
       {loading ? (
