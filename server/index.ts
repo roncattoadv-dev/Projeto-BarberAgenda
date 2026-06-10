@@ -473,7 +473,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
     // Busca o tenant pelo asaas_subscription_id
     const { data: tenant } = await supabase
       .from('tenants')
-      .select('id, name, status')
+      .select('id, name, status, subscription_ends_at')
       .eq('asaas_subscription_id', subscriptionId)
       .maybeSingle();
 
@@ -489,8 +489,12 @@ app.post('/api/webhook/asaas', async (req, res) => {
     switch (event) {
       case 'PAYMENT_RECEIVED':
       case 'PAYMENT_CONFIRMED': {
-        // Próxima renovação = dueDate do pagamento + 30 dias (cobre antecipados e atrasados)
-        const base = payment?.dueDate ? new Date(payment.dueDate + 'T12:00:00Z') : new Date();
+        // Base = max(dias restantes do plano atual, dueDate do pagamento)
+        // Garante que dias restantes não são perdidos ao trocar/renovar plano
+        const today     = new Date();
+        const dueBase   = payment?.dueDate ? new Date(payment.dueDate + 'T12:00:00Z') : today;
+        const currentEnd = tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at + 'T12:00:00Z') : today;
+        const base = currentEnd > dueBase ? currentEnd : dueBase;
         base.setMonth(base.getMonth() + 1);
         const subscriptionEndsAt = base.toISOString().split('T')[0];
         await supabase.from('tenants').update({
@@ -554,7 +558,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
 app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { data: tenant } = await supabase
-    .from('tenants').select('asaas_subscription_id, asaas_customer_id, status').eq('id', tenantId).maybeSingle();
+    .from('tenants').select('asaas_subscription_id, asaas_customer_id, status, subscription_ends_at').eq('id', tenantId).maybeSingle();
 
   if (!tenant?.asaas_customer_id && !tenant?.asaas_subscription_id) {
     return res.status(404).json({ error: 'Assinatura não encontrada.' });
@@ -584,9 +588,12 @@ app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
       return res.json({ activated: false, message: 'Nenhum pagamento confirmado encontrado.' });
     }
 
-    const base = confirmed.dueDate ? new Date(confirmed.dueDate + 'T12:00:00Z') : new Date();
-    base.setMonth(base.getMonth() + 1);
-    const subscriptionEndsAt = base.toISOString().split('T')[0];
+    const today2      = new Date();
+    const dueBase2    = confirmed.dueDate ? new Date(confirmed.dueDate + 'T12:00:00Z') : today2;
+    const currentEnd2 = tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at + 'T12:00:00Z') : today2;
+    const base2 = currentEnd2 > dueBase2 ? currentEnd2 : dueBase2;
+    base2.setMonth(base2.getMonth() + 1);
+    const subscriptionEndsAt = base2.toISOString().split('T')[0];
     await supabase.from('tenants').update({
       status: 'active', plan: 'mensal', mrr: 89.90,
       subscription_ends_at: subscriptionEndsAt,
