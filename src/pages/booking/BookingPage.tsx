@@ -55,9 +55,13 @@ export default function BookingPage() {
       className="min-h-screen flex items-center justify-center"
       style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
     >
-      <div className="text-center space-y-4">
-        <div style={{ fontSize: 40 }} className="animate-pulse">💈</div>
-        <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13, fontWeight: 500 }}>Carregando agendamento…</p>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+        <div style={{ position: 'relative', width: 48, height: 48 }}>
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.08)' }} />
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid transparent', borderTopColor: 'rgba(255,255,255,0.7)', animation: 'spin 0.85s linear infinite' }} />
+        </div>
+        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, fontWeight: 500, letterSpacing: '0.5px' }}>Carregando agendamento…</p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </div>
   );

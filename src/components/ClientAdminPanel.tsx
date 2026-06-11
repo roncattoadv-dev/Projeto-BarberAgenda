@@ -10,10 +10,12 @@ import {
   Check, X, RefreshCw, Scissors, CreditCard, Package,
   Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck, Pencil,
   Palette, Phone, MapPin, Instagram, Eye, EyeOff,
+  Mail, Lock, Clock, Shield,
 } from 'lucide-react';
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
 import { useToast } from '../hooks/useToast';
+import { useAuth } from '../contexts/AuthContext';
 import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import LogoCropModal from './LogoCropModal';
@@ -87,6 +89,16 @@ export default function ClientAdminPanel({
   openSubscriptionTab, onSubscriptionTabOpened,
 }: Props) {
   const toast = useToast();
+  const { user } = useAuth();
+
+  // ── Conta / senha ─────────────────────────────────────────────────────────
+  const [senhaAtual,     setSenhaAtual]     = useState('');
+  const [novaSenha,      setNovaSenha]      = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
+  const [showSenhaAtual, setShowSenhaAtual] = useState(false);
+  const [showNovaSenha,  setShowNovaSenha]  = useState(false);
+  const [showConfSenha,  setShowConfSenha]  = useState(false);
+  const [salvandoSenha,  setSalvandoSenha]  = useState(false);
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const [activeTab,    setActiveTab]    = useState<Tab>('agenda');
@@ -117,9 +129,14 @@ export default function ClientAdminPanel({
   const pendingCount = myAppointments.filter(a => a.status === 'pending').length;
 
   const [linkCopied,      setLinkCopied]      = useState(false);
+  const [deleteCustomerPending, setDeleteCustomerPending] = useState<{ id: string; name: string } | null>(null);
+  const [deletingCustomer,      setDeletingCustomer]      = useState(false);
   const [deleteStep,      setDeleteStep]      = useState<'idle' | 'confirm' | 'deleting'>('idle');
   const [deleteInput,     setDeleteInput]     = useState('');
   const [pixCopied,      setPixCopied]      = useState(false);
+  const [wppConnState,   setWppConnState]   = useState<string>('checking');
+  const [wppConnName,    setWppConnName]    = useState<string | null>(null);
+  const [privacyModal,   setPrivacyModal]   = useState(false);
   const [supportModal,   setSupportModal]   = useState(false);
   const [supportTitle,   setSupportTitle]   = useState('');
   const [supportMsg,     setSupportMsg]     = useState('');
@@ -499,6 +516,12 @@ export default function ClientAdminPanel({
                 onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}>
                 Suporte
               </button>
+              <button onClick={() => setPrivacyModal(true)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'Outfit, sans-serif', padding: '2px 0', transition: 'color 150ms' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}>
+                Política de Privacidade
+              </button>
               <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.18)', fontFamily: 'Outfit, sans-serif', letterSpacing: '0.5px' }}>
                 © WorkAgenda {new Date().getFullYear()}
               </p>
@@ -518,6 +541,18 @@ export default function ClientAdminPanel({
                   {activeTab === 'agenda' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{todayAppts.length} atendimentos hoje</p>}
                   {activeTab === 'agendamentos' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{myAppointments.filter(a => a.status !== 'cancelled').length} no total · {pendingCount} pendentes</p>}
                   {activeTab === 'clientes' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{myCustomers.length} clientes cadastrados</p>}
+                  {activeTab === 'automacoes' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: wppConnState === 'open' ? '#4ade80' : wppConnState === 'connecting' ? '#fbbf24' : '#ef4444', flexShrink: 0, ...(wppConnState === 'open' ? { animation: 'pulse 2s infinite' } : {}) }} />
+                      <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>
+                        {wppConnState === 'open'
+                          ? <>WhatsApp conectado{wppConnName ? <> · <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>{wppConnName}</span></> : null}</>
+                          : wppConnState === 'connecting' ? 'Aguardando conexão…'
+                          : wppConnState === 'checking'   ? 'Verificando…'
+                          : 'WhatsApp desconectado'}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button onClick={() => setCmdOpen(true)}
@@ -665,12 +700,7 @@ export default function ClientAdminPanel({
                               {isEditing ? <X size={12} /> : <Pencil size={12} />}
                             </button>
                             <button
-                              onClick={async () => {
-                                if (!window.confirm(`Apagar ${c.name}? Esta ação não pode ser desfeita.`)) return;
-                                if (isEditing) cancelEditCust();
-                                await onDeleteCustomer(c.id);
-                                toast.success('Cliente apagado.');
-                              }}
+                              onClick={() => { if (isEditing) cancelEditCust(); setDeleteCustomerPending({ id: c.id, name: c.name }); }}
                               title="Apagar cliente"
                               style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                               <X size={12} />
@@ -685,7 +715,8 @@ export default function ClientAdminPanel({
 
               {/* ─────────── AUTOMAÇÕES ─────────── */}
               {activeTab === 'automacoes' && (
-                <WhatsAppTab activeTenant={activeTenant} myAppointments={myAppointments} myServices={myServices} myProfessionals={myProfessionals} />
+                <WhatsAppTab activeTenant={activeTenant} myAppointments={myAppointments} myServices={myServices} myProfessionals={myProfessionals}
+                  onStatusChange={(state, name) => { setWppConnState(state); setWppConnName(name); }} />
               )}
 
               {/* ─────────── MEU NEGÓCIO + CONFIGURAÇÕES (sub-nav compartilhado) ─────────── */}
@@ -1406,8 +1437,7 @@ export default function ClientAdminPanel({
 
                               {/* Alerta de vencimento próximo */}
                               {showAlert && (
-                                <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                                  <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                                <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '12px 14px' }}>
                                   <p style={{ fontSize: 13, color: '#fcd34d', margin: 0, lineHeight: 1.5 }}>
                                     {isTrial
                                       ? `Seu trial encerra em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Escolha um plano abaixo para continuar sem interrupção.`
@@ -1527,8 +1557,133 @@ export default function ClientAdminPanel({
                         );
                       })()}
 
-                      {cfgTab === 'conta' && (
+                      {cfgTab === 'conta' && (() => {
+                        const createdAt  = user?.created_at ? new Date(user.created_at) : null;
+                        const ageDays    = createdAt ? Math.floor((Date.now() - createdAt.getTime()) / 86_400_000) : null;
+                        const ageText    = ageDays === null ? '—'
+                          : ageDays === 0 ? 'Hoje'
+                          : ageDays < 30  ? `${ageDays} dia${ageDays > 1 ? 's' : ''}`
+                          : ageDays < 365 ? `${Math.floor(ageDays / 30)} mês${Math.floor(ageDays / 30) > 1 ? 'es' : ''}`
+                          : `${Math.floor(ageDays / 365)} ano${Math.floor(ageDays / 365) > 1 ? 's' : ''}`;
+                        const dataCadastro = createdAt
+                          ? createdAt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+                          : '—';
+
+                        const isGoogleUser = user?.app_metadata?.provider === 'google'
+                          || (user?.identities ?? []).some((id: { provider: string }) => id.provider === 'google');
+
+                        const handleTrocarSenha = async (e: React.FormEvent) => {
+                          e.preventDefault();
+                          if (novaSenha.length < 6) { toast.error('A nova senha deve ter ao menos 6 caracteres.'); return; }
+                          if (novaSenha !== confirmarSenha) { toast.error('As senhas não coincidem.'); return; }
+                          setSalvandoSenha(true);
+                          if (!isGoogleUser) {
+                            if (!senhaAtual) { setSalvandoSenha(false); toast.error('Informe sua senha atual.'); return; }
+                            const { error: authError } = await supabase.auth.signInWithPassword({ email: user?.email ?? '', password: senhaAtual });
+                            if (authError) { setSalvandoSenha(false); toast.error('Senha atual incorreta.'); return; }
+                          }
+                          const { error } = await supabase.auth.updateUser({ password: novaSenha });
+                          setSalvandoSenha(false);
+                          if (error) { toast.error('Erro ao trocar senha: ' + error.message); return; }
+                          toast.success('Senha definida com sucesso!');
+                          setSenhaAtual(''); setNovaSenha(''); setConfirmarSenha('');
+                        };
+
+                        const infoRow: React.CSSProperties = {
+                          display: 'flex', alignItems: 'center', gap: 14,
+                          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                          borderRadius: 12, padding: '14px 18px',
+                        };
+                        const iconWrap: React.CSSProperties = {
+                          width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)',
+                        };
+
+                        return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                          {/* Informações da conta */}
+                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: '0 0 6px' }}>
+                              Informações da Conta
+                            </h4>
+                            <div style={infoRow}>
+                              <div style={iconWrap}><Mail style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} /></div>
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 2 }}>E-mail</div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)', fontFamily: 'monospace' }}>{user?.email ?? '—'}</div>
+                              </div>
+                            </div>
+                            <div style={infoRow}>
+                              <div style={iconWrap}><Clock style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} /></div>
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 2 }}>Membro há</div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{ageText}</div>
+                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.32)', marginTop: 2 }}>Desde {dataCadastro}</div>
+                              </div>
+                            </div>
+                            <div style={infoRow}>
+                              <div style={iconWrap}><Shield style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} /></div>
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 4 }}>Status</div>
+                                <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700,
+                                  background: activeTenant.status === 'active' ? '#E6F4EC' : activeTenant.status === 'trial' ? '#FEF9EC' : '#FEECEC',
+                                  color: activeTenant.status === 'active' ? '#0A4A2C' : activeTenant.status === 'trial' ? '#7A4B0A' : '#7A0A0A' }}>
+                                  {activeTenant.status === 'active' ? 'Plano Ativo' : activeTenant.status === 'trial' ? 'Em Teste' : 'Inadimplente'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Trocar / Definir senha */}
+                          <form onSubmit={handleTrocarSenha} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <Lock style={{ width: 12, height: 12 }} /> {isGoogleUser ? 'Definir Senha' : 'Trocar Senha'}
+                            </h4>
+                            {isGoogleUser && (
+                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: 0, lineHeight: 1.6 }}>
+                                Sua conta usa login pelo Google. Você pode definir uma senha para também acessar por e-mail e senha.
+                              </p>
+                            )}
+                            {!isGoogleUser && (
+                              <div style={{ position: 'relative' as const }}>
+                                <input type={showSenhaAtual ? 'text' : 'password'} placeholder="Senha atual"
+                                  value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} required
+                                  className="navy-input" style={{ paddingRight: 44 }} />
+                                <button type="button" onClick={() => setShowSenhaAtual(v => !v)}
+                                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }}>
+                                  {showSenhaAtual ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
+                                </button>
+                              </div>
+                            )}
+                            <div style={{ position: 'relative' as const }}>
+                              <input type={showNovaSenha ? 'text' : 'password'} placeholder="Nova senha (mín. 6 caracteres)"
+                                value={novaSenha} onChange={e => setNovaSenha(e.target.value)} required
+                                className="navy-input" style={{ paddingRight: 44 }} />
+                              <button type="button" onClick={() => setShowNovaSenha(v => !v)}
+                                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }}>
+                                {showNovaSenha ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
+                              </button>
+                            </div>
+                            <div style={{ position: 'relative' as const }}>
+                              <input type={showConfSenha ? 'text' : 'password'} placeholder="Confirmar nova senha"
+                                value={confirmarSenha} onChange={e => setConfirmarSenha(e.target.value)} required
+                                className="navy-input" style={{ paddingRight: 44 }} />
+                              <button type="button" onClick={() => setShowConfSenha(v => !v)}
+                                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }}>
+                                {showConfSenha ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
+                              </button>
+                            </div>
+                            {novaSenha && confirmarSenha && novaSenha !== confirmarSenha && (
+                              <p style={{ fontSize: 12, color: '#fca5a5', margin: 0 }}>As senhas não coincidem.</p>
+                            )}
+                            <button type="submit" disabled={salvandoSenha}
+                              style={{ padding: '12px', background: salvandoSenha ? 'rgba(255,255,255,0.3)' : '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: salvandoSenha ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}>
+                              {salvandoSenha ? 'Salvando…' : isGoogleUser ? 'Definir Senha' : 'Alterar Senha'}
+                            </button>
+                          </form>
+
                           <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 16, padding: 24 }}>
                             <h4 style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(239,68,68,0.15)', paddingBottom: 12, margin: '0 0 16px' }}>Excluir Conta</h4>
 
@@ -1584,7 +1739,8 @@ export default function ClientAdminPanel({
                             )}
                           </div>
                         </div>
-                      )}
+                        );
+                      })()}
                     </motion.div>
                   </AnimatePresence>
                 </div>
@@ -1595,8 +1751,137 @@ export default function ClientAdminPanel({
         </main>
       </div>
 
+      {/* ── Modal: confirmar exclusão de cliente ──────────────────────────────── */}
+      {deleteCustomerPending && (
+        <div
+          onClick={() => { if (!deletingCustomer) setDeleteCustomerPending(null); }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#0d2240', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+          >
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+              <X size={20} color="#f87171" />
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: 'rgba(255,255,255,0.9)', margin: '0 0 8px', fontFamily: 'Outfit, sans-serif' }}>
+              Apagar cliente?
+            </h3>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', margin: '0 0 6px', lineHeight: 1.6, fontFamily: 'Outfit, sans-serif' }}>
+              <strong style={{ color: 'rgba(255,255,255,0.85)' }}>{deleteCustomerPending.name}</strong> será removido permanentemente.
+            </p>
+            <p style={{ fontSize: 12, color: '#fca5a5', margin: '0 0 24px', lineHeight: 1.6, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 8, padding: '8px 12px', fontFamily: 'Outfit, sans-serif' }}>
+              ⚠️ Todos os agendamentos deste cliente também serão apagados.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteCustomerPending(null)}
+                disabled={deletingCustomer}
+                style={{ flex: 1, padding: '11px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: 'rgba(255,255,255,0.65)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setDeletingCustomer(true);
+                  await onDeleteCustomer(deleteCustomerPending.id);
+                  setDeletingCustomer(false);
+                  setDeleteCustomerPending(null);
+                  toast.success('Cliente apagado.');
+                }}
+                disabled={deletingCustomer}
+                style={{ flex: 1, padding: '11px', background: deletingCustomer ? 'rgba(239,68,68,0.4)' : '#ef4444', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: deletingCustomer ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}
+              >
+                {deletingCustomer ? 'Apagando…' : 'Sim, apagar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Tour ──────────────────────────────────────────────────────────────── */}
       {tourOpen && <TourOverlay steps={TOUR_STEPS} onFinish={finishTour} />}
+
+      {/* ── Modal: Política de Privacidade ────────────────────────────────────── */}
+      {privacyModal && (
+        <div onClick={() => setPrivacyModal(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.82)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#0d2240', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff', fontFamily: 'Outfit, sans-serif' }}>Política de Privacidade</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'Outfit, sans-serif' }}>WorkAgenda · Atualizada em junho de 2025</p>
+              </div>
+              <button onClick={() => setPrivacyModal(false)}
+                style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{ overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: 'Outfit, sans-serif' }} className="no-scrollbar">
+              {([
+                {
+                  title: '1. Quem somos',
+                  text: 'A WorkAgenda é uma plataforma SaaS de gestão para barbearias e salões de beleza. Operamos como controladora dos dados pessoais coletados nesta plataforma, em conformidade com a Lei Geral de Proteção de Dados (LGPD — Lei nº 13.709/2018).',
+                },
+                {
+                  title: '2. Dados que coletamos',
+                  text: 'Coletamos dados fornecidos diretamente por você (nome, e-mail, telefone, dados de estabelecimento) e dados gerados pelo uso da plataforma (agendamentos, histórico de atendimentos, movimentações financeiras). Não coletamos dados de pagamento sensíveis — as transações são processadas por parceiros certificados.',
+                },
+                {
+                  title: '3. Como usamos seus dados',
+                  text: 'Seus dados são usados exclusivamente para: (a) fornecer e melhorar os serviços da plataforma; (b) enviar notificações operacionais via WhatsApp, como confirmações e lembretes de agendamento; (c) gerar relatórios financeiros e de desempenho para o seu negócio; (d) cumprir obrigações legais.',
+                },
+                {
+                  title: '4. Compartilhamento',
+                  text: 'Não vendemos nem alugamos seus dados. Compartilhamos apenas com prestadores de serviço essenciais à operação da plataforma (infraestrutura de nuvem, gateway de WhatsApp), sempre sob acordos de confidencialidade e com as mesmas obrigações desta política.',
+                },
+                {
+                  title: '5. Retenção de dados',
+                  text: 'Mantemos seus dados enquanto sua conta estiver ativa. Após solicitação de exclusão, os dados são removidos em até 30 dias, exceto os que precisamos reter por obrigação legal (ex.: registros fiscais, conforme legislação vigente).',
+                },
+                {
+                  title: '6. Seus direitos (LGPD)',
+                  text: 'Você tem o direito de: acessar seus dados, corrigir informações incorretas, solicitar a exclusão (através da opção "Excluir Conta" em Configurações → Conta), revogar consentimento e obter informações sobre o tratamento realizado. Para exercer esses direitos, entre em contato pelo Suporte.',
+                },
+                {
+                  title: '7. Segurança',
+                  text: 'Adotamos medidas técnicas e organizacionais para proteger seus dados contra acesso não autorizado, incluindo criptografia em trânsito (TLS), autenticação segura e controles de acesso por função. Ainda assim, nenhum sistema é 100% inviolável — notificaremos você em caso de incidente que afete seus dados.',
+                },
+                {
+                  title: '8. Cookies e rastreamento',
+                  text: 'Utilizamos apenas cookies estritamente necessários à sessão de autenticação. Não utilizamos cookies de rastreamento ou publicidade de terceiros.',
+                },
+                {
+                  title: '9. Alterações nesta política',
+                  text: 'Podemos atualizar esta política periodicamente. Alterações relevantes serão comunicadas por e-mail ou por aviso dentro da plataforma com antecedência mínima de 15 dias.',
+                },
+                {
+                  title: '10. Contato',
+                  text: 'Dúvidas ou solicitações relacionadas à privacidade podem ser enviadas pelo canal de Suporte da plataforma. Responderemos em até 5 dias úteis.',
+                },
+              ] as { title: string; text: string }[]).map(({ title, text }) => (
+                <div key={title}>
+                  <h4 style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h4>
+                  <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7 }}>{text}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+              <button onClick={() => setPrivacyModal(false)}
+                style={{ width: '100%', padding: '11px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal de Suporte ──────────────────────────────────────────────────── */}
       {supportModal && (

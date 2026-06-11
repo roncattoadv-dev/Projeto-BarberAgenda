@@ -12,6 +12,7 @@ export interface Tenant {
   phone: string;
   address: string;
   instagram: string;
+  contactEmail?: string;
   status: 'active' | 'blocked' | 'trial';
   plan: 'mensal' | 'trimestral' | 'anual' | 'trial';
   trialEndsAt: string;
@@ -90,6 +91,7 @@ export interface Appointment {
   customerId: string;
   customerName: string;
   customerPhone: string;
+  customerEmail?: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
   durationMinutes: number;
@@ -98,6 +100,7 @@ export interface Appointment {
   notes?: string;
   wppConfirmSent?: boolean;
   wppReminderSent?: boolean;
+  emailConfirmSent?: boolean;
 }
 
 export interface Payment {

@@ -116,6 +116,8 @@ export async function updateCustomer(id: string, updates: { name?: string; phone
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
+  const { error: apptError } = await supabase.from('appointments').delete().eq('customer_id', id);
+  if (apptError) throw apptError;
   const { error } = await supabase.from('customers').delete().eq('id', id);
   if (error) throw error;
 }
@@ -283,6 +285,7 @@ function mapTenant(r: any): Tenant {
     businessHoursByDay: r.business_hours_by_day ?? {},
     blockedDates: r.blocked_dates ?? [],
     bookingPageConfig: r.booking_page_config ?? undefined,
+    contactEmail: r.contact_email ?? undefined,
   };
 }
 function mapService(r: any): Service {
@@ -295,7 +298,7 @@ function mapCustomer(r: any): Customer {
   return { id: r.id, tenantId: r.tenant_id, name: r.name, email: r.email ?? '', phone: r.phone, notes: r.notes, createdAt: r.created_at };
 }
 function mapAppointment(r: any): Appointment {
-  return { id: r.id, tenantId: r.tenant_id, serviceId: r.service_id, professionalId: r.professional_id, customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone, date: r.scheduled_date, time: r.scheduled_time?.substring(0,5) ?? '', durationMinutes: r.duration_minutes, price: Number(r.price), status: r.status, notes: r.notes, wppConfirmSent: r.wpp_confirm_sent ?? false, wppReminderSent: r.wpp_reminder_sent ?? false };
+  return { id: r.id, tenantId: r.tenant_id, serviceId: r.service_id, professionalId: r.professional_id, customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone, customerEmail: r.customer_email ?? '', date: r.scheduled_date, time: r.scheduled_time?.substring(0,5) ?? '', durationMinutes: r.duration_minutes, price: Number(r.price), status: r.status, notes: r.notes, wppConfirmSent: r.wpp_confirm_sent ?? false, wppReminderSent: r.wpp_reminder_sent ?? false, emailConfirmSent: r.email_confirm_sent ?? false };
 }
 function mapPayment(r: any): Payment {
   return { id: r.id, tenantId: r.tenant_id, appointmentId: r.appointment_id, amount: Number(r.amount), method: r.method, status: r.status, date: r.paid_at, description: r.description ?? '' };
@@ -329,6 +332,7 @@ function dbTenant(t: Partial<Tenant>): any {
     ...(t.businessHoursByDay !== undefined && { business_hours_by_day: t.businessHoursByDay }),
     ...(t.blockedDates        !== undefined && { blocked_dates: t.blockedDates }),
     ...(t.bookingPageConfig   !== undefined && { booking_page_config: t.bookingPageConfig }),
+    ...(t.contactEmail        !== undefined && { contact_email: t.contactEmail }),
   };
 }
 function dbService(s: Omit<Service, 'id'>): any {
@@ -338,7 +342,7 @@ function dbProfessional(p: Omit<Professional, 'id'>): any {
   return { tenant_id: p.tenantId, name: p.name, role: p.role, avatar: p.avatar ?? null, rating: p.rating, commission_percentage: p.commissionPercentage, business_days: p.businessDays ?? [], business_hours_by_day: p.businessHoursByDay ?? {}, is_active: true };
 }
 function dbAppointment(a: Omit<Appointment, 'id'>): any {
-  return { tenant_id: a.tenantId, service_id: a.serviceId, professional_id: a.professionalId, customer_id: a.customerId, customer_name: a.customerName, customer_phone: a.customerPhone, scheduled_date: a.date, scheduled_time: a.time, duration_minutes: a.durationMinutes, price: a.price, status: a.status, notes: a.notes ?? null };
+  return { tenant_id: a.tenantId, service_id: a.serviceId, professional_id: a.professionalId, customer_id: a.customerId, customer_name: a.customerName, customer_phone: a.customerPhone, customer_email: a.customerEmail ?? null, scheduled_date: a.date, scheduled_time: a.time, duration_minutes: a.durationMinutes, price: a.price, status: a.status, notes: a.notes ?? null };
 }
 function dbPayment(p: Omit<Payment, 'id'>): any {
   return { tenant_id: p.tenantId, appointment_id: p.appointmentId ?? null, amount: p.amount, method: p.method, status: p.status, description: p.description };

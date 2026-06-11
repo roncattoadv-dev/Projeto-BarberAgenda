@@ -273,6 +273,7 @@ export default function CustomerBookingFlow({
       customerId: matchedCustomer.id,
       customerName: matchedCustomer.name,
       customerPhone: matchedCustomer.phone,
+      customerEmail: clientEmail.trim() || undefined,
       date: selectedDate,
       time: selectedTime,
       durationMinutes: selectedService.durationMinutes,

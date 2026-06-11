@@ -210,16 +210,15 @@ async function serverFetch<T>(path: string, token: string, options: RequestInit 
 }
 
 /** Verifica status da instância via servidor */
-export async function checkStatusServer(tenantId: string, token: string): Promise<ConnectionState> {
+export async function checkStatusServer(tenantId: string, token: string): Promise<{ state: ConnectionState; name: string | null }> {
   try {
-    const data = await serverFetch<{ ok: boolean; connected: boolean; loggedIn: boolean }>(
+    const data = await serverFetch<{ ok: boolean; connected: boolean; loggedIn: boolean; name?: string | null }>(
       `/api/whatsapp/status?tenantId=${tenantId}`, token
     );
-    if (data.loggedIn)  return 'open';
-    if (data.connected) return 'connecting';
-    return 'close';
+    const state: ConnectionState = data.loggedIn ? 'open' : data.connected ? 'connecting' : 'close';
+    return { state, name: data.name ?? null };
   } catch {
-    return 'error';
+    return { state: 'error', name: null };
   }
 }
 

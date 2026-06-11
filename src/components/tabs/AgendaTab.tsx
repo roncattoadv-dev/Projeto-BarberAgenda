@@ -144,6 +144,8 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
   // ── Novo agendamento via clique no slot ──────────────────────────────────────
   type NewSlot = { date: string; time: string; px: number; py: number };
   const [newSlot,    setNewSlot]    = useState<NewSlot | null>(null);
+  const [slotEditDate, setSlotEditDate] = useState('');
+  const [slotEditTime, setSlotEditTime] = useState('');
   const [slotCustId, setSlotCustId] = useState('');
   const [slotCustQ,  setSlotCustQ]  = useState('');
   const [slotSrvId,  setSlotSrvId]  = useState('');
@@ -178,6 +180,8 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
     setSlotCustId(''); setSlotCustQ(''); setSlotSrvId(''); setSlotProfId('');
     setSlotNewCustMode(false); setSlotNewCustName(''); setSlotNewCustPhone('');
     setApptPanel(null);
+    setSlotEditDate(dateKey);
+    setSlotEditTime(time);
     setNewSlot({ date: dateKey, time, px, py });
   };
 
@@ -202,7 +206,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
       await onAddAppointment({
         tenantId, serviceId: slotSrvId, professionalId: slotProfId || myProfessionals[0]?.id || '',
         customerId: cust.id, customerName: cust.name, customerPhone: cust.phone,
-        date: newSlot.date, time: newSlot.time, durationMinutes: srv.durationMinutes,
+        date: slotEditDate || newSlot.date, time: slotEditTime || newSlot.time, durationMinutes: srv.durationMinutes,
         price: srv.price, status: 'confirmed', notes: '',
         wppConfirmSent: false, wppReminderSent: false,
       });
@@ -657,13 +661,24 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
     {newSlot && (
       <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: newSlot.py, left: newSlot.px, width: 280, zIndex: 1001, background: '#fff', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', overflow: 'hidden', fontFamily: 'Outfit, sans-serif' }}>
         <div style={{ background: '#031D3C', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1px' }}>Novo agendamento</p>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff' }}>
-              {DAYS_PT[new Date(newSlot.date + 'T12:00:00').getDay()]}, {newSlot.date.slice(8)}/{newSlot.date.slice(5,7)} · {newSlot.time}
-            </p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: '0 0 6px', fontSize: 10, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1px' }}>Novo agendamento</p>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input
+                type="date"
+                value={slotEditDate}
+                onChange={e => setSlotEditDate(e.target.value)}
+                style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '4px 7px', fontSize: 12, fontWeight: 700, color: '#fff', outline: 'none', fontFamily: 'Outfit, sans-serif', colorScheme: 'dark' }}
+              />
+              <input
+                type="time"
+                value={slotEditTime}
+                onChange={e => setSlotEditTime(e.target.value)}
+                style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '4px 7px', fontSize: 12, fontWeight: 700, color: '#fff', outline: 'none', fontFamily: 'Outfit, sans-serif', colorScheme: 'dark', width: 82 }}
+              />
+            </div>
           </div>
-          <button onClick={closeAll} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.45)', cursor: 'pointer', padding: 2 }}><X size={14} /></button>
+          <button onClick={closeAll} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.45)', cursor: 'pointer', padding: 2, flexShrink: 0 }}><X size={14} /></button>
         </div>
         <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {/* Cliente */}
@@ -760,6 +775,16 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
       const prof = myProfessionals.find(p => p.id === apptPanel.professionalId);
       const sc   = STATUS_COLOR[apptPanel.status] ?? STATUS_COLOR.pending;
       const statusLabel: Record<string, string> = { confirmed: 'Confirmado', pending: 'Pendente', attended: 'Concluído', cancelled: 'Cancelado' };
+
+      // ── Cálculo do horário programado do lembrete (60 min antes por padrão) ──
+      const reminderMinutes = 60;
+      const [apptHH, apptMM] = apptPanel.time.slice(0, 5).split(':').map(Number);
+      const totalMin = apptHH * 60 + apptMM - reminderMinutes;
+      const remTime  = totalMin >= 0
+        ? `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`
+        : null;
+      const hasPhone = !!apptPanel.customerPhone;
+
       return (
         <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: panelPy, left: panelPx, width: 280, zIndex: 1001, background: '#fff', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', overflow: 'hidden', fontFamily: 'Outfit, sans-serif' }}>
           {/* Header */}
@@ -827,6 +852,46 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                 </div>
               </>
             )}
+
+            {/* WhatsApp status */}
+            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <p style={{ margin: 0, fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>WhatsApp</p>
+              {!hasPhone ? (
+                <p style={{ margin: 0, fontSize: 11, color: '#94a3b8' }}>Sem telefone cadastrado</p>
+              ) : (
+                <>
+                  {/* Confirmação */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 13, lineHeight: 1 }}>{apptPanel.wppConfirmSent ? '✅' : '⬜'}</span>
+                    <div>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: apptPanel.wppConfirmSent ? '#15803d' : '#64748b' }}>
+                        Confirmação
+                      </span>
+                      <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 5 }}>
+                        {apptPanel.wppConfirmSent ? 'enviada' : 'não enviada'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Lembrete */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 13, lineHeight: 1 }}>{apptPanel.wppReminderSent ? '✅' : '🕐'}</span>
+                    <div>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: apptPanel.wppReminderSent ? '#15803d' : '#64748b' }}>
+                        Lembrete
+                      </span>
+                      <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 5 }}>
+                        {apptPanel.wppReminderSent
+                          ? 'enviado'
+                          : remTime
+                            ? `programado para ${remTime} (${apptPanel.date.slice(8)}/${apptPanel.date.slice(5, 7)})`
+                            : 'agendamento muito cedo para lembrete'}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       );
