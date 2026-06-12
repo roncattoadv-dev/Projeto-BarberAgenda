@@ -26,8 +26,8 @@ import FinanceiroTab   from './tabs/FinanceiroTab';
 import WhatsAppTab     from './tabs/WhatsAppTab';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Tab = 'agenda' | 'agendamentos' | 'clientes' | 'negocio' | 'automacoes' | 'configuracoes';
-type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro' | 'pagina-cliente' | 'assinatura' | 'conta';
+type Tab = 'agenda' | 'agendamentos' | 'financeiro' | 'clientes' | 'negocio' | 'automacoes' | 'configuracoes';
+type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'pagina-cliente' | 'assinatura' | 'conta';
 
 interface Props {
   activeTenant: Tenant;
@@ -68,6 +68,7 @@ const SIDEBAR_W = { open: 220, closed: 64 };
 const NAV: { id: Tab; label: string; Icon: React.ElementType }[] = [
   { id: 'agenda',        label: 'Agenda',       Icon: Calendar      },
   { id: 'agendamentos',  label: 'Agendamentos', Icon: List          },
+  { id: 'financeiro',    label: 'Financeiro',   Icon: CreditCard    },
   { id: 'clientes',      label: 'Clientes',     Icon: Users         },
   { id: 'negocio',       label: 'Meu Negócio',  Icon: Store         },
   { id: 'automacoes',    label: 'Automações',   Icon: MessageSquare },
@@ -75,8 +76,8 @@ const NAV: { id: Tab; label: string; Icon: React.ElementType }[] = [
 ];
 
 const PAGE_TITLES: Record<Tab, string> = {
-  agenda: 'Agenda', agendamentos: 'Agendamentos', clientes: 'Clientes',
-  negocio: 'Meu Negócio', automacoes: 'Automações', configuracoes: 'Configurações',
+  agenda: 'Agenda', agendamentos: 'Agendamentos', financeiro: 'Financeiro',
+  clientes: 'Clientes', negocio: 'Meu Negócio', automacoes: 'Automações', configuracoes: 'Configurações',
 };
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
@@ -152,8 +153,9 @@ export default function ClientAdminPanel({
   const TOUR_STEPS: TourStep[] = [
     { navId: 'agenda',        emoji: '📅', title: 'Agenda',        description: 'Visualize todos os atendimentos do dia em um calendário visual. Clique em qualquer horário para criar um novo agendamento rapidamente.' },
     { navId: 'agendamentos',  emoji: '📋', title: 'Agendamentos',  description: 'Acompanhe todos os pedidos de agendamento feitos pelos seus clientes. Confirme, cancele ou remarque com um único clique.' },
+    { navId: 'financeiro',    emoji: '💰', title: 'Financeiro',    description: 'Acompanhe KPIs de faturamento, despesas, lucro e gráficos mensais. Lance receitas avulsas, despesas e visualize comissões da equipe.' },
     { navId: 'clientes',      emoji: '👥', title: 'Clientes',      description: 'Gerencie sua base de clientes, veja o histórico de atendimentos e o total gasto por cada um.' },
-    { navId: 'negocio',       emoji: '🏪', title: 'Meu Negócio',   description: 'Configure os serviços oferecidos, sua equipe de profissionais, produtos e os horários de funcionamento.' },
+    { navId: 'negocio',       emoji: '🏪', title: 'Meu Negócio',   description: 'Configure os serviços oferecidos, sua equipe de profissionais e os horários de funcionamento.' },
     { navId: 'automacoes',    emoji: '💬', title: 'Automações',    description: 'Ative mensagens automáticas de confirmação e lembrete via WhatsApp para reduzir faltas e melhorar a comunicação.' },
     { navId: 'configuracoes', emoji: '⚙️', title: 'Configurações', description: 'Gerencie sua assinatura, personalize a página de agendamento online e configure as preferências da sua conta.' },
   ];
@@ -322,7 +324,7 @@ export default function ClientAdminPanel({
 
   useEffect(() => { if (cmdOpen) setTimeout(() => cmdRef.current?.focus(), 50); }, [cmdOpen]);
 
-  const NEGOCIO_TABS: CfgTab[] = ['identidade', 'horarios', 'equipe', 'catalogo', 'financeiro'];
+  const NEGOCIO_TABS: CfgTab[] = ['identidade', 'horarios', 'equipe', 'catalogo'];
   const CONFIG_TABS:  CfgTab[] = ['assinatura', 'conta'];
   useEffect(() => {
     if (activeTab === 'negocio'       && !NEGOCIO_TABS.includes(cfgTab)) setCfgTab('identidade');
@@ -653,6 +655,18 @@ export default function ClientAdminPanel({
                 />
               )}
 
+              {/* ─────────── FINANCEIRO ─────────── */}
+              {activeTab === 'financeiro' && (
+                <FinanceiroTab
+                  activeTenant={activeTenant}
+                  myPayments={myPayments}
+                  myProfessionals={myProfessionals}
+                  myAppointments={myAppointments}
+                  myServices={myServices}
+                  onAddPayment={onAddPayment}
+                />
+              )}
+
               {/* ─────────── CLIENTES ─────────── */}
               {activeTab === 'clientes' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 20 }}>
@@ -733,7 +747,7 @@ export default function ClientAdminPanel({
                   {/* Sub-nav — tabs dinâmicos conforme o menu ativo */}
                   <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0, overflowX: 'auto' }} className="no-scrollbar">
                     {(activeTab === 'negocio'
-                      ? [['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro'], ['pagina-cliente','Página do Cliente']] as [CfgTab, string][]
+                      ? [['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['pagina-cliente','Página do Cliente']] as [CfgTab, string][]
                       : [['assinatura','Assinatura'], ['conta','Conta']] as [CfgTab, string][]
                     ).map(([id, label]) => (
                       <button key={id} onClick={() => setCfgTab(id)}
@@ -1345,11 +1359,6 @@ export default function ClientAdminPanel({
                           </div>
                         );
                       })()}
-
-                      {/* Financeiro */}
-                      {cfgTab === 'financeiro' && (
-                        <FinanceiroTab activeTenant={activeTenant} myPayments={myPayments} myProfessionals={myProfessionals} myAppointments={myAppointments} myServices={myServices} onAddPayment={onAddPayment} />
-                      )}
 
                       {/* ── Página do Cliente ── */}
                       {cfgTab === 'pagina-cliente' && (
