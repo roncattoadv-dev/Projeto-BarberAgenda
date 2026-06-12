@@ -412,7 +412,7 @@ export default function FinanceiroTab({
   const byService = useMemo(() => {
     const map: Record<string, { count: number; revenue: number }> = {};
     myAppointments
-      .filter(a => a.date.startsWith(periodStr) && a.status === 'attended')
+      .filter(apptFilter)
       .forEach(a => {
         const svc = myServices.find(s => s.id === a.serviceId);
         const name = svc ? `${svc.name} (${svc.category})` : 'Serviço removido';
@@ -423,7 +423,7 @@ export default function FinanceiroTab({
     return Object.entries(map)
       .map(([name, v]) => ({ name, ...v }))
       .sort((a, b) => b.revenue - a.revenue);
-  }, [myAppointments, myServices, periodStr]);
+  }, [myAppointments, myServices, dateRange, filterProfId]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fade-in">
