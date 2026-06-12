@@ -37,12 +37,13 @@ interface Props {
   customers: Customer[];
   appointments: Appointment[];
   payments: Payment[];
-  onAddService: (s: Omit<Service, 'id'>) => void;
+  onAddService: (s: Omit<Service, 'id'>) => Promise<Service | void>;
   onUpdateService: (id: string, s: Partial<Omit<Service, 'id'>>) => void | Promise<void>;
   onDeleteService: (id: string) => void | Promise<void>;
   onAddProfessional: (p: Omit<Professional, 'id'>) => void;
   onUpdateProfessional: (id: string, p: Partial<Omit<Professional, 'id' | 'tenantId'>>) => void;
   onDeleteProfessional: (id: string) => Promise<void>;
+  onSetServiceProfessionals: (serviceId: string, profIds: string[]) => Promise<void>;
   onAddProduct: (p: Omit<Product, 'id'>) => void;
   onUpdateProductStock: (id: string, stock: number) => void;
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
@@ -84,7 +85,7 @@ const STATUS_DOT: Record<string, string> = { confirmed: '#22c55e', pending: '#f5
 export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
-  onAddProfessional, onUpdateProfessional, onDeleteProfessional, onAddProduct, onUpdateProductStock,
+  onAddProfessional, onUpdateProfessional, onDeleteProfessional, onSetServiceProfessionals, onAddProduct, onUpdateProductStock,
   onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
   openSubscriptionTab, onSubscriptionTabOpened,
@@ -260,6 +261,9 @@ export default function ClientAdminPanel({
   const [srvDuration,    setSrvDuration]    = useState(30);
   const [srvCategory,    setSrvCategory]    = useState<Service['category']>('Cabelo');
   const [editingSrv,     setEditingSrv]     = useState<Service | null>(null);
+  const [srvProfPanel,   setSrvProfPanel]   = useState<Service | null>(null);
+  const profPanelRef = useRef<HTMLDivElement>(null);
+  const [hiddenPresets,  setHiddenPresets]  = useState<string[]>([]);
   const [profName,       setProfName]       = useState('');
   const [profRole,       setProfRole]       = useState('Barbeiro');
   const [profCommission, setProfCommission] = useState(40);
@@ -321,6 +325,12 @@ export default function ClientAdminPanel({
     if (activeTab === 'negocio'       && !NEGOCIO_TABS.includes(cfgTab)) setCfgTab('identidade');
     if (activeTab === 'configuracoes' && !CONFIG_TABS.includes(cfgTab))  setCfgTab('assinatura');
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!srvProfPanel) return;
+    const t = setTimeout(() => profPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
+    return () => clearTimeout(t);
+  }, [srvProfPanel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cmdResults = useMemo(() => {
     if (!cmdQuery.trim()) return [];
@@ -1071,12 +1081,14 @@ export default function ClientAdminPanel({
                       {/* Catálogo */}
                       {cfgTab === 'catalogo' && (() => {
                         const isAdded = (name: string) => myServices.some(s => s.name === name);
+                        const visiblePresets = PRESET_SERVICES.filter(p => !hiddenPresets.includes(p.name));
                         const addPreset = (preset: typeof PRESET_SERVICES[0]) => {
                           if (isAdded(preset.name)) return;
                           onAddService({ tenantId: activeTenant.id, name: preset.name, price: presetPrices[preset.name] || 0, durationMinutes: preset.durationMinutes, category: preset.category });
                           toast.success(`"${preset.name}" adicionado!`);
                         };
-                        const allPresetsAdded = PRESET_SERVICES.every(p => isAdded(p.name));
+                        const allPresetsAdded = visiblePresets.length === 0 || visiblePresets.every(p => isAdded(p.name));
+                        const selectedProfService = srvProfPanel;
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -1103,7 +1115,7 @@ export default function ClientAdminPanel({
                               </div>
 
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
-                                {PRESET_SERVICES.map(preset => {
+                                {visiblePresets.map(preset => {
                                   const added = isAdded(preset.name);
                                   return (
                                     <motion.div key={preset.name} layout
@@ -1114,7 +1126,21 @@ export default function ClientAdminPanel({
                                           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{preset.category} · {preset.durationMinutes} min</div>
                                         </div>
                                         {added && (
-                                          <span style={{ fontSize: 10, fontWeight: 700, color: '#86efac', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.2)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', flexShrink: 0 }}>✓ Adicionado</span>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#86efac', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.2)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>✓ Adicionado</span>
+                                            <button type="button"
+                                              onClick={async () => {
+                                                const srv = myServices.find(s => s.name === preset.name);
+                                                if (!srv) return;
+                                                if (!window.confirm(`Remover "${preset.name}" do catálogo?`)) return;
+                                                await onDeleteService(srv.id);
+                                                toast.success(`"${preset.name}" removido.`);
+                                              }}
+                                              title="Remover do catálogo"
+                                              style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                              <X size={11} />
+                                            </button>
+                                          </div>
                                         )}
                                       </div>
                                       {!added && (
@@ -1138,6 +1164,12 @@ export default function ClientAdminPanel({
                                             style={{ padding: '8px 12px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
                                             + Add
                                           </motion.button>
+                                          <button type="button"
+                                            onClick={() => setHiddenPresets(h => [...h, preset.name])}
+                                            title="Remover da lista"
+                                            style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            <X size={12} />
+                                          </button>
                                         </div>
                                       )}
                                     </motion.div>
@@ -1148,7 +1180,14 @@ export default function ClientAdminPanel({
 
                             {/* ── Serviço personalizado + lista ── */}
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                              <form onSubmit={e => { e.preventDefault(); if (!srvName.trim()) return; onAddService({ tenantId: activeTenant.id, name: srvName, price: srvPrice, durationMinutes: srvDuration, category: srvCategory }); toast.success(`"${srvName}" cadastrado!`); setSrvName(''); }}
+                              <form onSubmit={async e => {
+                                  e.preventDefault();
+                                  if (!srvName.trim()) return;
+                                  const created = await onAddService({ tenantId: activeTenant.id, name: srvName, price: srvPrice, durationMinutes: srvDuration, category: srvCategory });
+                                  toast.success(`"${srvName}" cadastrado!`);
+                                  setSrvName('');
+                                  if (created) setSrvProfPanel(created);
+                                }}
                                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
                                 <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Serviço Personalizado</p>
                                 <input placeholder="Nome do serviço" value={srvName} onChange={e => setSrvName(e.target.value)} required className="navy-input" />
@@ -1168,100 +1207,98 @@ export default function ClientAdminPanel({
                                 <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 4px' }}>
                                   Serviços Ativos <span style={{ fontFamily: 'monospace', color: 'rgba(255,255,255,0.2)' }}>({myServices.length})</span>
                                 </p>
-                                <div className="no-scrollbar" style={{ maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div className="no-scrollbar" style={{ maxHeight: 400, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
                                   {myServices.length === 0 ? (
                                     <div style={{ textAlign: 'center', padding: '24px 0', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>Nenhum serviço cadastrado</div>
                                   ) : myServices.map(s => {
                                     const isEditing = editingSrv?.id === s.id;
+                                    const profOpen = srvProfPanel?.id === s.id;
                                     return (
-                                      <AnimatePresence key={s.id} mode="wait">
+                                      <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                         {isEditing ? (
-                                          /* ── Edição inline ── */
-                                          <motion.div key="edit"
-                                            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                                            style={{ padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                            <input
-                                              value={editingSrv!.name}
-                                              onChange={e => setEditingSrv(v => v && ({ ...v, name: e.target.value }))}
-                                              className="navy-input" style={{ fontSize: 13 }} />
+                                          <div style={{ padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            <input value={editingSrv!.name} onChange={e => setEditingSrv(v => v && ({ ...v, name: e.target.value }))} className="navy-input" style={{ fontSize: 13 }} />
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-                                              <div>
-                                                <label className="navy-label">Preço R$</label>
-                                                <input type="number" min={0} value={editingSrv!.price}
-                                                  onChange={e => setEditingSrv(v => v && ({ ...v, price: Number(e.target.value) }))}
-                                                  className="navy-input" />
-                                              </div>
-                                              <div>
-                                                <label className="navy-label">Duração min</label>
-                                                <input type="number" min={5} value={editingSrv!.durationMinutes}
-                                                  onChange={e => setEditingSrv(v => v && ({ ...v, durationMinutes: Number(e.target.value) }))}
-                                                  className="navy-input" />
-                                              </div>
-                                              <div>
-                                                <label className="navy-label">Categoria</label>
-                                                <select value={editingSrv!.category}
-                                                  onChange={e => setEditingSrv(v => v && ({ ...v, category: e.target.value as Service['category'] }))}
-                                                  className="navy-select">
+                                              <div><label className="navy-label">Preço R$</label><input type="number" min={0} value={editingSrv!.price} onChange={e => setEditingSrv(v => v && ({ ...v, price: Number(e.target.value) }))} className="navy-input" /></div>
+                                              <div><label className="navy-label">Duração min</label><input type="number" min={5} value={editingSrv!.durationMinutes} onChange={e => setEditingSrv(v => v && ({ ...v, durationMinutes: Number(e.target.value) }))} className="navy-input" /></div>
+                                              <div><label className="navy-label">Categoria</label>
+                                                <select value={editingSrv!.category} onChange={e => setEditingSrv(v => v && ({ ...v, category: e.target.value as Service['category'] }))} className="navy-select">
                                                   <option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option>
                                                 </select>
                                               </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: 6 }}>
-                                              <button
-                                                onClick={async () => {
-                                                  if (!editingSrv) return;
-                                                  await onUpdateService(editingSrv.id, { name: editingSrv.name, price: editingSrv.price, durationMinutes: editingSrv.durationMinutes, category: editingSrv.category });
-                                                  toast.success('Serviço atualizado!');
-                                                  setEditingSrv(null);
-                                                }}
-                                                style={{ flex: 2, padding: '8px 0', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                                                Salvar
-                                              </button>
-                                              <button onClick={() => setEditingSrv(null)}
-                                                style={{ flex: 1, padding: '8px 0', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                                                Cancelar
-                                              </button>
+                                              <button onClick={async () => { if (!editingSrv) return; await onUpdateService(editingSrv.id, { name: editingSrv.name, price: editingSrv.price, durationMinutes: editingSrv.durationMinutes, category: editingSrv.category }); toast.success('Serviço atualizado!'); setEditingSrv(null); }} style={{ flex: 2, padding: '8px 0', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar</button>
+                                              <button onClick={() => setEditingSrv(null)} style={{ flex: 1, padding: '8px 0', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
                                             </div>
-                                          </motion.div>
+                                          </div>
                                         ) : (
-                                          /* ── Linha normal com ações no hover ── */
-                                          <motion.div key="view" layout
-                                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                                            whileHover="hovered"
-                                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, cursor: 'default' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px', background: profOpen ? 'rgba(96,165,250,0.06)' : 'rgba(255,255,255,0.03)', border: `1px solid ${profOpen ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10 }}>
                                             <div style={{ minWidth: 0 }}>
                                               <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
                                               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>{s.category} · {s.durationMinutes} min</div>
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                              <span style={{ fontWeight: 800, color: s.price > 0 ? '#4ade80' : 'rgba(255,255,255,0.2)', fontFamily: 'monospace', fontSize: 13, minWidth: 72, textAlign: 'right' }}>
+                                              <span style={{ fontWeight: 800, color: s.price > 0 ? '#4ade80' : 'rgba(255,255,255,0.2)', fontFamily: 'monospace', fontSize: 13, minWidth: 60, textAlign: 'right' }}>
                                                 {s.price > 0 ? `R$ ${s.price.toFixed(2)}` : '—'}
                                               </span>
-                                              <button
-                                                onClick={() => setEditingSrv({ ...s })}
-                                                title="Editar"
-                                                style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                              <button onClick={() => { setSrvProfPanel(profOpen ? null : s); setEditingSrv(null); }} title="Definir profissionais"
+                                                style={{ width: 28, height: 28, borderRadius: 7, background: profOpen ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${profOpen ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.09)'}`, color: profOpen ? '#93c5fd' : 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                <Users size={12} />
                                               </button>
-                                              <button
-                                                onClick={async () => {
-                                                  if (!window.confirm(`Remover "${s.name}"?`)) return;
-                                                  await onDeleteService(s.id);
-                                                  toast.success(`"${s.name}" removido.`);
-                                                }}
-                                                title="Remover"
+                                              <button onClick={() => { setEditingSrv({ ...s }); setSrvProfPanel(null); }} title="Editar"
+                                                style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                <Pencil size={12} />
+                                              </button>
+                                              <button onClick={async () => { if (!window.confirm(`Remover "${s.name}"?`)) return; await onDeleteService(s.id); toast.success(`"${s.name}" removido.`); }} title="Remover"
                                                 style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                                 <X size={12} />
                                               </button>
                                             </div>
-                                          </motion.div>
+                                          </div>
                                         )}
-                                      </AnimatePresence>
+                                      </div>
                                     );
                                   })}
                                 </div>
                               </div>
                             </div>
+
+                            {/* ── Painel profissionais por serviço ── */}
+                            {selectedProfService && (
+                              <div ref={profPanelRef} style={{ background: 'rgba(96,165,250,0.07)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 16, padding: 20 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                                  <div>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Profissionais — {selectedProfService.name}</p>
+                                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: '3px 0 0' }}>Marque quem realiza este serviço no agendamento</p>
+                                  </div>
+                                  <button onClick={() => setSrvProfPanel(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 4 }}><X size={16} /></button>
+                                </div>
+                                {myProfessionals.length === 0 ? (
+                                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Nenhum colaborador cadastrado ainda. Adicione na aba Equipe.</p>
+                                ) : (
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                                    {myProfessionals.map(p => {
+                                      const checked = p.services.includes(selectedProfService.id);
+                                      return (
+                                        <label key={p.id} onClick={async () => {
+                                          const newIds = checked
+                                            ? myProfessionals.filter(x => x.services.includes(selectedProfService.id) && x.id !== p.id).map(x => x.id)
+                                            : myProfessionals.filter(x => x.services.includes(selectedProfService.id)).map(x => x.id).concat(p.id);
+                                          await onSetServiceProfessionals(selectedProfService.id, newIds);
+                                        }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, background: checked ? 'rgba(96,165,250,0.12)' : 'rgba(255,255,255,0.04)', border: `1px solid ${checked ? 'rgba(96,165,250,0.35)' : 'rgba(255,255,255,0.08)'}`, cursor: 'pointer', transition: 'all 150ms' }}>
+                                          <img src={p.avatar} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                                          <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: checked ? '#93c5fd' : 'rgba(255,255,255,0.75)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{checked ? '✓ Selecionado' : 'Clique para add'}</div>
+                                          </div>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                           </div>
                         );
