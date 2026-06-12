@@ -262,11 +262,18 @@ app.get('/api/billing/payment-link', async (req, res) => {
       } catch {}
     }
 
-    // Cria cliente + assinatura
+    // Cria ou atualiza cliente no Asaas
     let customerId = tenant.asaas_customer_id;
     if (!customerId) {
       const customer = await createAsaasCustomer({ name: tenant.name, email: user.email!, cpfCnpj });
       customerId = customer.id;
+    } else if (cpfCnpj) {
+      // Atualiza CPF no cliente existente (pode ter sido criado sem CPF)
+      await fetch(`${asaasBase}/customers/${customerId}`, {
+        method: 'PUT',
+        headers: { 'access_token': asaasKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cpfCnpj }),
+      }).catch(e => console.warn('[PaymentLink] CPF update warning:', e.message));
     }
 
     const subscription = await createSubscription(customerId, plan, 0);
@@ -466,10 +473,13 @@ app.post('/api/register-google', async (req, res) => {
 // Recebe eventos do Asaas — ativa ou bloqueia tenants conforme pagamento
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/webhook/asaas', async (req, res) => {
+  const receivedToken = (req.headers['asaas-access-token'] || req.headers['authorization'] || '') as string;
+  console.log(`[Webhook] Recebido — token: ${receivedToken ? receivedToken.slice(0, 12) + '…' : '(none)'}`);
+
   // Verifica token de segurança se configurado
   if (WEBHOOK_SECRET) {
-    const token = req.headers['asaas-access-token'] || req.headers['authorization'];
-    if (token !== WEBHOOK_SECRET && token !== `Bearer ${WEBHOOK_SECRET}`) {
+    if (receivedToken !== WEBHOOK_SECRET && receivedToken !== `Bearer ${WEBHOOK_SECRET}`) {
+      console.warn(`[Webhook] Token inválido — esperado: ${WEBHOOK_SECRET.slice(0, 12)}…`);
       return res.status(401).json({ error: 'Unauthorized' });
     }
   }
