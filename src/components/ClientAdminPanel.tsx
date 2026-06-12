@@ -1215,6 +1215,36 @@ export default function ClientAdminPanel({
                                     </div>
                                   )}
                                 </div>
+                              ) : editingSrv ? (
+                                <form onSubmit={async e => {
+                                    e.preventDefault();
+                                    if (!editingSrv) return;
+                                    await onUpdateService(editingSrv.id, { name: editingSrv.name, price: editingSrv.price, durationMinutes: editingSrv.durationMinutes, category: editingSrv.category });
+                                    toast.success('Serviço atualizado!');
+                                    setEditingSrv(null);
+                                  }}
+                                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.65)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                                      Editando: {editingSrv.name}
+                                    </p>
+                                    <button type="button" onClick={() => setEditingSrv(null)}
+                                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                  <input placeholder="Nome do serviço" value={editingSrv.name} onChange={e => setEditingSrv(v => v && ({ ...v, name: e.target.value }))} required className="navy-input" />
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                                    <div><label className="navy-label">Preço R$</label><input type="number" min={0} value={editingSrv.price} onChange={e => setEditingSrv(v => v && ({ ...v, price: Number(e.target.value) }))} className="navy-input" /></div>
+                                    <div><label className="navy-label">Duração min</label><input type="number" min={5} value={editingSrv.durationMinutes} onChange={e => setEditingSrv(v => v && ({ ...v, durationMinutes: Number(e.target.value) }))} className="navy-input" /></div>
+                                    <div><label className="navy-label">Categoria</label>
+                                      <select value={editingSrv.category} onChange={e => setEditingSrv(v => v && ({ ...v, category: e.target.value as Service['category'] }))} className="navy-select">
+                                        <option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <button type="submit" style={{ padding: 12, background: '#3b82f6', color: '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar alterações</button>
+                                </form>
                               ) : (
                                 <form onSubmit={async e => {
                                     e.preventDefault();
@@ -1272,49 +1302,28 @@ export default function ClientAdminPanel({
                                     const isEditing = editingSrv?.id === s.id;
                                     const profOpen = srvProfPanel?.id === s.id;
                                     return (
-                                      <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        {isEditing ? (
-                                          <div style={{ padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                            <input value={editingSrv!.name} onChange={e => setEditingSrv(v => v && ({ ...v, name: e.target.value }))} className="navy-input" style={{ fontSize: 13 }} />
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-                                              <div><label className="navy-label">Preço R$</label><input type="number" min={0} value={editingSrv!.price} onChange={e => setEditingSrv(v => v && ({ ...v, price: Number(e.target.value) }))} className="navy-input" /></div>
-                                              <div><label className="navy-label">Duração min</label><input type="number" min={5} value={editingSrv!.durationMinutes} onChange={e => setEditingSrv(v => v && ({ ...v, durationMinutes: Number(e.target.value) }))} className="navy-input" /></div>
-                                              <div><label className="navy-label">Categoria</label>
-                                                <select value={editingSrv!.category} onChange={e => setEditingSrv(v => v && ({ ...v, category: e.target.value as Service['category'] }))} className="navy-select">
-                                                  <option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option>
-                                                </select>
-                                              </div>
-                                            </div>
-                                            <div style={{ display: 'flex', gap: 6 }}>
-                                              <button onClick={async () => { if (!editingSrv) return; await onUpdateService(editingSrv.id, { name: editingSrv.name, price: editingSrv.price, durationMinutes: editingSrv.durationMinutes, category: editingSrv.category }); toast.success('Serviço atualizado!'); setEditingSrv(null); }} style={{ flex: 2, padding: '8px 0', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar</button>
-                                              <button onClick={() => setEditingSrv(null)} style={{ flex: 1, padding: '8px 0', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px', background: profOpen ? 'rgba(96,165,250,0.06)' : 'rgba(255,255,255,0.03)', border: `1px solid ${profOpen ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10 }}>
-                                            <div style={{ minWidth: 0 }}>
-                                              <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
-                                              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>{s.category} · {s.durationMinutes} min</div>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                              <span style={{ fontWeight: 800, color: s.price > 0 ? '#4ade80' : 'rgba(255,255,255,0.2)', fontFamily: 'monospace', fontSize: 13, minWidth: 60, textAlign: 'right' }}>
-                                                {s.price > 0 ? `R$ ${s.price.toFixed(2)}` : '—'}
-                                              </span>
-                                              <button onClick={() => { setSrvProfPanel(profOpen ? null : s); setEditingSrv(null); }} title="Definir profissionais"
-                                                style={{ width: 28, height: 28, borderRadius: 7, background: profOpen ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${profOpen ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.09)'}`, color: profOpen ? '#93c5fd' : 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                <Users size={12} />
-                                              </button>
-                                              <button onClick={() => { setEditingSrv({ ...s }); setSrvProfPanel(null); }} title="Editar"
-                                                style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                <Pencil size={12} />
-                                              </button>
-                                              <button onClick={async () => { if (!window.confirm(`Remover "${s.name}"?`)) return; await onDeleteService(s.id); toast.success(`"${s.name}" removido.`); }} title="Remover"
-                                                style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                <X size={12} />
-                                              </button>
-                                            </div>
-                                          </div>
-                                        )}
+                                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px', background: isEditing ? 'rgba(59,130,246,0.06)' : profOpen ? 'rgba(96,165,250,0.06)' : 'rgba(255,255,255,0.03)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.35)' : profOpen ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10 }}>
+                                        <div style={{ minWidth: 0 }}>
+                                          <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
+                                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>{s.category} · {s.durationMinutes} min</div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                          <span style={{ fontWeight: 800, color: s.price > 0 ? '#4ade80' : 'rgba(255,255,255,0.2)', fontFamily: 'monospace', fontSize: 13, minWidth: 60, textAlign: 'right' }}>
+                                            {s.price > 0 ? `R$ ${s.price.toFixed(2)}` : '—'}
+                                          </span>
+                                          <button onClick={() => { setSrvProfPanel(profOpen ? null : s); setEditingSrv(null); }} title="Definir profissionais"
+                                            style={{ width: 28, height: 28, borderRadius: 7, background: profOpen ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${profOpen ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.09)'}`, color: profOpen ? '#93c5fd' : 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            <Users size={12} />
+                                          </button>
+                                          <button onClick={() => { setEditingSrv(isEditing ? null : { ...s }); setSrvProfPanel(null); }} title="Editar"
+                                            style={{ width: 28, height: 28, borderRadius: 7, background: isEditing ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.09)'}`, color: isEditing ? '#60a5fa' : 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            {isEditing ? <X size={12} /> : <Pencil size={12} />}
+                                          </button>
+                                          <button onClick={async () => { if (!window.confirm(`Remover "${s.name}"?`)) return; await onDeleteService(s.id); toast.success(`"${s.name}" removido.`); }} title="Remover"
+                                            style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            <X size={12} />
+                                          </button>
+                                        </div>
                                       </div>
                                     );
                                   })}
