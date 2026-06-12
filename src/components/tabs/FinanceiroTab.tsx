@@ -94,7 +94,7 @@ export default function FinanceiroTab({
   const [view, setView] = useState<'dashboard' | 'relatorio'>('dashboard');
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-
+  const [filterProfId, setFilterProfId] = useState('');
 
   const [directSaleDesc, setDirectSaleDesc] = useState('');
   const [directSaleAmount, setDirectSaleAmount] = useState(0);
@@ -106,60 +106,87 @@ export default function FinanceiroTab({
   const prevDate = new Date(selectedYear, selectedMonth - 1, 1);
   const prevPeriodStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
-  const periodPayments = myPayments.filter(p => p.date.startsWith(periodStr));
-  const prevPayments = myPayments.filter(p => p.date.startsWith(prevPeriodStr));
+  // Appointment IDs belonging to the filtered professional (for payment lookup)
+  const profApptIds = useMemo(() => {
+    if (!filterProfId) return null;
+    return new Set(myAppointments.filter(a => a.professionalId === filterProfId).map(a => a.id));
+  }, [myAppointments, filterProfId]);
+
+  const apptFilter = (a: { date: string; status: string; professionalId: string }) =>
+    a.date.startsWith(periodStr) && a.status === 'attended' && (!filterProfId || a.professionalId === filterProfId);
+
+  const prevApptFilter = (a: { date: string; status: string; professionalId: string }) =>
+    a.date.startsWith(prevPeriodStr) && a.status === 'attended' && (!filterProfId || a.professionalId === filterProfId);
+
+  // Payments: when filtered by prof, only include appointment-linked payments for that prof
+  const periodPayments = useMemo(() => myPayments.filter(p => {
+    if (!p.date.startsWith(periodStr)) return false;
+    if (filterProfId) return !!p.appointmentId && !!profApptIds?.has(p.appointmentId);
+    return true;
+  }), [myPayments, periodStr, filterProfId, profApptIds]);
+
+  const prevPayments = useMemo(() => myPayments.filter(p => {
+    if (!p.date.startsWith(prevPeriodStr)) return false;
+    if (filterProfId) return !!p.appointmentId && !!profApptIds?.has(p.appointmentId);
+    return true;
+  }), [myPayments, prevPeriodStr, filterProfId, profApptIds]);
 
   const totalRevenue = periodPayments.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
   const totalExpenses = periodPayments.filter(p => p.status === 'refunded').reduce((s, p) => s + p.amount, 0);
   const netProfit = totalRevenue - totalExpenses;
-  const periodAtendimentos = myAppointments.filter(a => a.date.startsWith(periodStr) && a.status === 'attended').length;
+  const periodAtendimentos = myAppointments.filter(apptFilter).length;
 
   const prevRevenue = prevPayments.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
   const prevExpenses = prevPayments.filter(p => p.status === 'refunded').reduce((s, p) => s + p.amount, 0);
-  const prevAtendimentos = myAppointments.filter(a => a.date.startsWith(prevPeriodStr) && a.status === 'attended').length;
+  const prevAtendimentos = myAppointments.filter(prevApptFilter).length;
 
   const chartData = useMemo(() => {
     return Array.from({ length: 6 }, (_, i) => {
       const d = new Date(selectedYear, selectedMonth - 5 + i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const rev = myPayments.filter(p => p.status === 'paid' && p.date.startsWith(key)).reduce((s, p) => s + p.amount, 0);
-      const exp = myPayments.filter(p => p.status === 'refunded' && p.date.startsWith(key)).reduce((s, p) => s + p.amount, 0);
+      const apptIdsInMonth = filterProfId
+        ? new Set(myAppointments.filter(a => a.professionalId === filterProfId).map(a => a.id))
+        : null;
+      const pay = myPayments.filter(p => p.date.startsWith(key) && (!filterProfId || (!!p.appointmentId && !!apptIdsInMonth?.has(p.appointmentId))));
+      const rev = pay.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
+      const exp = pay.filter(p => p.status === 'refunded').reduce((s, p) => s + p.amount, 0);
       return { month: MONTHS[d.getMonth()], Receitas: rev, Despesas: exp };
     });
-  }, [myPayments, selectedMonth, selectedYear]);
+  }, [myPayments, myAppointments, selectedMonth, selectedYear, filterProfId]);
 
   const [pieMode, setPieMode] = useState<'servico' | 'profissional'>('servico');
 
   const pieData = useMemo(() => {
     const map: Record<string, number> = {};
-    myAppointments
-      .filter(a => a.date.startsWith(periodStr) && a.status === 'attended')
-      .forEach(a => {
-        const svc = myServices.find(s => s.id === a.serviceId);
-        const cat = svc?.category ?? 'Outros';
-        map[cat] = (map[cat] || 0) + a.price;
-      });
+    myAppointments.filter(apptFilter).forEach(a => {
+      const svc = myServices.find(s => s.id === a.serviceId);
+      const cat = svc?.category ?? 'Outros';
+      map[cat] = (map[cat] || 0) + a.price;
+    });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [myAppointments, myServices, periodStr]);
+  }, [myAppointments, myServices, periodStr, filterProfId]);
 
   const pieDataByProf = useMemo(() => {
     const map: Record<string, number> = {};
-    myAppointments
-      .filter(a => a.date.startsWith(periodStr) && a.status === 'attended')
-      .forEach(a => {
-        const prof = myProfessionals.find(p => p.id === a.professionalId);
-        const name = prof?.name ?? 'Sem profissional';
-        map[name] = (map[name] || 0) + a.price;
-      });
+    myAppointments.filter(apptFilter).forEach(a => {
+      const prof = myProfessionals.find(p => p.id === a.professionalId);
+      const name = prof?.name ?? 'Sem profissional';
+      map[name] = (map[name] || 0) + a.price;
+    });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [myAppointments, myProfessionals, periodStr]);
+  }, [myAppointments, myProfessionals, periodStr, filterProfId]);
 
-  const commissions = myProfessionals.map(prof => {
-    const closed = myAppointments.filter(a => a.professionalId === prof.id && a.status === 'attended' && a.date.startsWith(periodStr));
-    const total = closed.reduce((s, a) => s + a.price, 0);
-    const comm = total * (prof.commissionPercentage / 100);
-    return { id: prof.id, name: prof.name, closedCount: closed.length, commissionPct: prof.commissionPercentage, totalEarned: total, dueCommission: comm };
-  });
+  const commissions = useMemo(() => {
+    const profsToShow = filterProfId
+      ? myProfessionals.filter(p => p.id === filterProfId)
+      : myProfessionals;
+    return profsToShow.map(prof => {
+      const closed = myAppointments.filter(a => a.professionalId === prof.id && a.status === 'attended' && a.date.startsWith(periodStr));
+      const total = closed.reduce((s, a) => s + a.price, 0);
+      const comm = total * (prof.commissionPercentage / 100);
+      return { id: prof.id, name: prof.name, closedCount: closed.length, commissionPct: prof.commissionPercentage, totalEarned: total, dueCommission: comm };
+    });
+  }, [myProfessionals, myAppointments, periodStr, filterProfId]);
 
   const handleDirectSale = (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,6 +209,7 @@ export default function FinanceiroTab({
   // ── Print: open new window with clean HTML document ───────────────────────
   const handlePrint = () => {
     const periodLabel = `${MONTHS[selectedMonth]} ${selectedYear}`;
+    const profName = filterProfId ? myProfessionals.find(p => p.id === filterProfId)?.name : '';
     const genDate = now.toLocaleDateString('pt-BR');
     const genTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
@@ -254,6 +282,7 @@ export default function FinanceiroTab({
     <div style="text-align:right;">
       <div style="font-size:16px;font-weight:700;">Relatório Mensal</div>
       <div style="font-size:13px;color:#475569;margin-top:2px;">${periodLabel}</div>
+      ${profName ? `<div style="font-size:12px;color:#0EA5E9;font-weight:600;margin-top:2px;">${profName}</div>` : ''}
       <div style="font-size:11px;color:#94A3B8;margin-top:2px;">Gerado em ${genDate} às ${genTime}</div>
     </div>
   </div>
@@ -355,6 +384,17 @@ export default function FinanceiroTab({
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
+          {myProfessionals.length > 0 && (
+            <select
+              value={filterProfId}
+              onChange={e => setFilterProfId(e.target.value)}
+              className="navy-select"
+              style={{ maxWidth: 180 }}
+            >
+              <option value="">Todos os profissionais</option>
+              {myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          )}
         </div>
         <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: 4, gap: 2 }}>
           {([['dashboard', LayoutDashboard, 'Dashboard'], ['relatorio', FileText, 'Relatório']] as const).map(([v, Icon, label]) => (
@@ -392,6 +432,7 @@ export default function FinanceiroTab({
               <div style={{ textAlign: 'right' }}>
                 <p style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: 0 }}>Relatório Mensal</p>
                 <p style={{ fontSize: 13, color: '#64748B', margin: '2px 0 0' }}>{MONTHS[selectedMonth]} {selectedYear}</p>
+                {filterProfId && <p style={{ fontSize: 12, color: '#0EA5E9', fontWeight: 600, margin: '2px 0 0' }}>{myProfessionals.find(p => p.id === filterProfId)?.name}</p>}
                 <p style={{ fontSize: 11, color: '#94A3B8', margin: '2px 0 0' }}>Gerado em {now.toLocaleDateString('pt-BR')}</p>
               </div>
             </div>
