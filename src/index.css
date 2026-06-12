@@ -142,3 +142,20 @@
   color: rgba(255,255,255,0.38);
   margin-bottom: 6px;
 }
+
+/* ── Print: monthly report isolation ─────────────────────────────────── */
+@media print {
+  body.print-report-active * { visibility: hidden !important; }
+  body.print-report-active #monthly-report,
+  body.print-report-active #monthly-report * { visibility: visible !important; }
+  body.print-report-active #monthly-report {
+    position: fixed;
+    inset: 0;
+    background: #fff !important;
+    padding: 24px 32px;
+    margin: 0;
+    overflow: visible;
+  }
+  .no-print { display: none !important; }
+  @page { margin: 12mm; size: A4; }
+}

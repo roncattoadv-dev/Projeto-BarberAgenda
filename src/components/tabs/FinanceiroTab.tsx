@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Payment, Professional, Appointment, Service, Tenant } from '../../types';
 import {
   TrendingUp, TrendingDown, DollarSign, Users,
   ShoppingBag, Trash2, RefreshCw, Calendar,
-  ArrowUpRight, ArrowDownRight, Minus,
+  ArrowUpRight, ArrowDownRight, Printer, LayoutDashboard, FileText,
 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import {
@@ -91,8 +91,18 @@ export default function FinanceiroTab({
   const now = new Date();
   const nowStr = now.toISOString().replace('T', ' ').substring(0, 19);
 
+  const [view, setView] = useState<'dashboard' | 'relatorio'>('dashboard');
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+
+  useEffect(() => {
+    if (view === 'relatorio') {
+      document.body.classList.add('print-report-active');
+    } else {
+      document.body.classList.remove('print-report-active');
+    }
+    return () => document.body.classList.remove('print-report-active');
+  }, [view]);
 
   const [directSaleDesc, setDirectSaleDesc] = useState('');
   const [directSaleAmount, setDirectSaleAmount] = useState(0);
@@ -177,34 +187,220 @@ export default function FinanceiroTab({
 
   const methodLabel: Record<string, string> = { pix: 'PIX', cash: 'Dinheiro', credit_card: 'Cartão' };
 
+  // ── By service (for report) ──────────────────────────────────────────────
+  const byService = useMemo(() => {
+    const map: Record<string, { count: number; revenue: number }> = {};
+    myAppointments
+      .filter(a => a.date.startsWith(periodStr) && a.status === 'attended')
+      .forEach(a => {
+        const svc = myServices.find(s => s.id === a.serviceId);
+        const name = svc ? `${svc.name} (${svc.category})` : 'Serviço removido';
+        if (!map[name]) map[name] = { count: 0, revenue: 0 };
+        map[name].count++;
+        map[name].revenue += a.price;
+      });
+    return Object.entries(map)
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [myAppointments, myServices, periodStr]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fade-in">
 
-      {/* Period selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Calendar size={15} style={{ color: 'rgba(255,255,255,0.35)' }} />
-        <select
-          value={selectedMonth}
-          onChange={e => setSelectedMonth(Number(e.target.value))}
-          className="navy-select"
-          style={{ maxWidth: 130 }}
-        >
-          {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
-        </select>
-        <select
-          value={selectedYear}
-          onChange={e => setSelectedYear(Number(e.target.value))}
-          className="navy-select"
-          style={{ maxWidth: 100 }}
-        >
-          {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map(y => (
-            <option key={y} value={y}>{y}</option>
+      {/* Top bar: period + view toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Calendar size={15} style={{ color: 'rgba(255,255,255,0.35)' }} />
+          <select
+            value={selectedMonth}
+            onChange={e => setSelectedMonth(Number(e.target.value))}
+            className="navy-select"
+            style={{ maxWidth: 130 }}
+          >
+            {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+          </select>
+          <select
+            value={selectedYear}
+            onChange={e => setSelectedYear(Number(e.target.value))}
+            className="navy-select"
+            style={{ maxWidth: 100 }}
+          >
+            {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: 4, gap: 2 }}>
+          {([['dashboard', LayoutDashboard, 'Dashboard'], ['relatorio', FileText, 'Relatório']] as const).map(([v, Icon, label]) => (
+            <button key={v} onClick={() => setView(v)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: 12, fontWeight: 600, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: view === v ? 'rgba(255,255,255,0.12)' : 'transparent', color: view === v ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', transition: 'all 150ms' }}>
+              <Icon size={13} /> {label}
+            </button>
           ))}
-        </select>
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginLeft: 4 }}>
-          {MONTHS[selectedMonth]} {selectedYear}
-        </span>
+        </div>
       </div>
+
+      {/* ── REPORT VIEW ── */}
+      {view === 'relatorio' && (
+        <>
+          {/* Print button (hidden when printing) */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: '#38BDF8', color: '#0C1A26', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+              className="no-print">
+              <Printer size={15} /> Imprimir / Exportar PDF
+            </button>
+          </div>
+
+          {/* A4 report body */}
+          <div id="monthly-report" style={{ background: '#fff', color: '#0F172A', borderRadius: 16, padding: '40px 48px', maxWidth: 900, width: '100%', margin: '0 auto', fontFamily: 'Outfit, sans-serif', lineHeight: 1.5 }}>
+
+            {/* Report header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, paddingBottom: 20, borderBottom: '2px solid #E2E8F0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                {activeTenant.logo && (
+                  <img src={activeTenant.logo} alt="Logo" style={{ width: 56, height: 56, borderRadius: 12, objectFit: 'cover', flexShrink: 0 }} />
+                )}
+                <div>
+                  <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.4px' }}>{activeTenant.name}</h1>
+                  {activeTenant.address && <p style={{ fontSize: 12, color: '#64748B', margin: '2px 0 0' }}>{activeTenant.address}</p>}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: 0 }}>Relatório Mensal</p>
+                <p style={{ fontSize: 13, color: '#64748B', margin: '2px 0 0' }}>{MONTHS[selectedMonth]} {selectedYear}</p>
+                <p style={{ fontSize: 11, color: '#94A3B8', margin: '2px 0 0' }}>Gerado em {now.toLocaleDateString('pt-BR')}</p>
+              </div>
+            </div>
+
+            {/* KPI summary */}
+            <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#94A3B8', marginBottom: 12 }}>Resumo do Período</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 32 }}>
+              {[
+                { label: 'Faturamento Bruto', value: totalRevenue, color: '#10B981', bg: '#ECFDF5' },
+                { label: 'Despesas Totais',   value: totalExpenses, color: '#EF4444', bg: '#FEF2F2' },
+                { label: 'Lucro Líquido',     value: netProfit,    color: netProfit >= 0 ? '#10B981' : '#EF4444', bg: netProfit >= 0 ? '#ECFDF5' : '#FEF2F2' },
+                { label: 'Atendimentos',      value: periodAtendimentos, color: '#0EA5E9', bg: '#F0F9FF', isCnt: true },
+              ].map(k => (
+                <div key={k.label} style={{ background: k.bg, borderRadius: 12, padding: '16px 18px' }}>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 6px' }}>{k.label}</p>
+                  <p style={{ fontSize: 22, fontWeight: 800, color: k.color, margin: 0, fontFamily: 'monospace' }}>{k.isCnt ? String(k.value) : fmtCurrency(Number(k.value))}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* By service */}
+            {byService.length > 0 && (
+              <div style={{ marginBottom: 32 }}>
+                <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#94A3B8', marginBottom: 12 }}>Desempenho por Serviço</h2>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#F8FAFC' }}>
+                      {['Serviço', 'Atendimentos', 'Faturamento', '% do Total'].map(h => (
+                        <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Serviço' ? 'left' : 'right', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#94A3B8', borderBottom: '1px solid #E2E8F0' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byService.map((s, i) => (
+                      <tr key={s.name} style={{ background: i % 2 === 0 ? '#fff' : '#F8FAFC' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 600, color: '#0F172A', borderBottom: '1px solid #E2E8F0' }}>{s.name}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>{s.count}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#10B981', fontFamily: 'monospace', borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(s.revenue)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#64748B', borderBottom: '1px solid #E2E8F0' }}>{totalRevenue > 0 ? ((s.revenue / totalRevenue) * 100).toFixed(1) + '%' : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* By professional */}
+            {commissions.filter(c => c.closedCount > 0).length > 0 && (
+              <div style={{ marginBottom: 32 }}>
+                <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#94A3B8', marginBottom: 12 }}>Desempenho por Profissional</h2>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#F8FAFC' }}>
+                      {['Profissional', 'Atendimentos', 'Faturamento', 'Comissão (%)', 'Valor Comissão', 'Repasse Salão'].map(h => (
+                        <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Profissional' ? 'left' : 'right', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#94A3B8', borderBottom: '1px solid #E2E8F0' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {commissions.filter(c => c.closedCount > 0).map((c, i) => (
+                      <tr key={c.id} style={{ background: i % 2 === 0 ? '#fff' : '#F8FAFC' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 600, color: '#0F172A', borderBottom: '1px solid #E2E8F0' }}>{c.name}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>{c.closedCount}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#10B981', fontFamily: 'monospace', borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(c.totalEarned)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#64748B', borderBottom: '1px solid #E2E8F0' }}>{c.commissionPct}%</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#EF4444', fontFamily: 'monospace', fontWeight: 700, borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(c.dueCommission)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#0F172A', fontFamily: 'monospace', fontWeight: 700, borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(c.totalEarned - c.dueCommission)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Transactions */}
+            <div style={{ marginBottom: 24 }}>
+              <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#94A3B8', marginBottom: 12 }}>Lançamentos do Período</h2>
+              {periodPayments.length > 0 ? (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#F8FAFC' }}>
+                      {['Data', 'Descrição', 'Profissional', 'Método', 'Valor', 'Status'].map(h => (
+                        <th key={h} style={{ padding: '9px 12px', textAlign: h === 'Valor' || h === 'Status' ? 'right' : 'left', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#94A3B8', borderBottom: '1px solid #E2E8F0' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...periodPayments].reverse().map((p, i) => {
+                      const appt = p.appointmentId ? myAppointments.find(a => a.id === p.appointmentId) : undefined;
+                      const prof = appt ? myProfessionals.find(pr => pr.id === appt.professionalId) : undefined;
+                      return (
+                        <tr key={p.id} style={{ background: i % 2 === 0 ? '#fff' : '#F8FAFC' }}>
+                          <td style={{ padding: '9px 12px', color: '#64748B', fontFamily: 'monospace', fontSize: 11, borderBottom: '1px solid #E2E8F0' }}>{p.date.substring(0, 10)}</td>
+                          <td style={{ padding: '9px 12px', fontWeight: 600, color: '#0F172A', borderBottom: '1px solid #E2E8F0' }}>{p.description}</td>
+                          <td style={{ padding: '9px 12px', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>{prof?.name ?? '—'}</td>
+                          <td style={{ padding: '9px 12px', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>{methodLabel[p.method] ?? p.method}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: p.status === 'refunded' ? '#EF4444' : '#10B981', borderBottom: '1px solid #E2E8F0' }}>
+                            {p.status === 'refunded' ? '−' : '+'} {fmtCurrency(p.amount)}
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', borderBottom: '1px solid #E2E8F0' }}>
+                            <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: p.status === 'paid' ? '#ECFDF5' : '#FEF2F2', color: p.status === 'paid' ? '#10B981' : '#EF4444' }}>
+                              {p.status === 'paid' ? 'Pago' : 'Saída'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: '#F1F5F9' }}>
+                      <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, fontSize: 12, color: '#475569' }}>Total do Período</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, fontFamily: 'monospace', color: netProfit >= 0 ? '#10B981' : '#EF4444' }}>
+                        {netProfit >= 0 ? '+' : ''} {fmtCurrency(netProfit)}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              ) : (
+                <p style={{ color: '#94A3B8', fontSize: 13 }}>Nenhuma transação em {MONTHS[selectedMonth]} {selectedYear}.</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: '#CBD5E1' }}>Gerado pelo WorkAgenda · workagenda.org</span>
+              <span style={{ fontSize: 11, color: '#CBD5E1' }}>{now.toLocaleDateString('pt-BR')} às {now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── DASHBOARD VIEW ── */}
+      {view === 'dashboard' && (<>
 
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16 }}>
@@ -472,6 +668,8 @@ export default function FinanceiroTab({
           </table>
         </div>
       </div>
+      </>)}
+
     </div>
   );
 }
