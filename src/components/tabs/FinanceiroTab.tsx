@@ -126,6 +126,8 @@ export default function FinanceiroTab({
     });
   }, [myPayments, selectedMonth, selectedYear]);
 
+  const [pieMode, setPieMode] = useState<'servico' | 'profissional'>('servico');
+
   const pieData = useMemo(() => {
     const map: Record<string, number> = {};
     myAppointments
@@ -137,6 +139,18 @@ export default function FinanceiroTab({
       });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
   }, [myAppointments, myServices, periodStr]);
+
+  const pieDataByProf = useMemo(() => {
+    const map: Record<string, number> = {};
+    myAppointments
+      .filter(a => a.date.startsWith(periodStr) && a.status === 'attended')
+      .forEach(a => {
+        const prof = myProfessionals.find(p => p.id === a.professionalId);
+        const name = prof?.name ?? 'Sem profissional';
+        map[name] = (map[name] || 0) + a.price;
+      });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [myAppointments, myProfessionals, periodStr]);
 
   const commissions = myProfessionals.map(prof => {
     const closed = myAppointments.filter(a => a.professionalId === prof.id && a.status === 'attended' && a.date.startsWith(periodStr));
@@ -270,53 +284,56 @@ export default function FinanceiroTab({
         </div>
 
         {/* Pie chart */}
-        <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Faturamento por Serviço</span>
-          {pieData.length > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    paddingAngle={3}
-                  >
-                    {pieData.map((_, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="transparent" />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(v: number) => fmtCurrency(v)}
-                    contentStyle={{ background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, fontSize: 12 }}
-                    labelStyle={{ color: 'rgba(255,255,255,0.6)' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {pieData.map((d, i) => (
-                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
-                      <span style={{ color: 'rgba(255,255,255,0.6)' }}>{d.name}</span>
-                    </div>
-                    <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 700, fontFamily: 'monospace', fontSize: 11 }}>
-                      {fmtCurrency(d.value)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>
-              Nenhum atendimento neste período.
+        <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Faturamento</span>
+            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 3, gap: 2 }}>
+              {(['servico', 'profissional'] as const).map(mode => (
+                <button key={mode} onClick={() => setPieMode(mode)} style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: pieMode === mode ? 'rgba(255,255,255,0.14)' : 'transparent', color: pieMode === mode ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', transition: 'all 150ms' }}>
+                  {mode === 'servico' ? 'Serviço' : 'Profissional'}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+          {(() => {
+            const data = pieMode === 'servico' ? pieData : pieDataByProf;
+            return data.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={190}>
+                  <PieChart>
+                    <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3}>
+                      {data.map((_, i) => (
+                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="transparent" />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: number) => fmtCurrency(v)}
+                      contentStyle={{ background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, fontSize: 12 }}
+                      labelStyle={{ color: 'rgba(255,255,255,0.6)' }}
+                      itemStyle={{ color: '#fff' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {data.map((d, i) => (
+                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
+                        <span style={{ color: 'rgba(255,255,255,0.6)' }}>{d.name}</span>
+                      </div>
+                      <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 700, fontFamily: 'monospace', fontSize: 11 }}>
+                        {fmtCurrency(d.value)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>
+                Nenhum atendimento neste período.
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -415,33 +432,40 @@ export default function FinanceiroTab({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#1E293B', borderBottom: '1px solid rgba(255,255,255,0.09)' }}>
-                {['Data', 'Descrição', 'Método', 'Valor', 'Status'].map(h => (
+                {['Data', 'Descrição', 'Profissional', 'Método', 'Valor', 'Status'].map(h => (
                   <th key={h} style={{ padding: '11px 14px', textAlign: h === 'Status' ? 'right' : 'left', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.38)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {periodPayments.length > 0 ? [...periodPayments].reverse().map((p, idx) => (
-                <tr key={p.id} style={{ background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <td style={{ padding: '12px 14px', fontSize: 11, color: '#94A3B8', fontFamily: 'monospace' }}>{p.date.substring(0, 10)}</td>
-                  <td style={{ padding: '12px 14px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>{p.description}</td>
-                  <td style={{ padding: '12px 14px' }}>
-                    <span style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', fontFamily: 'monospace' }}>{methodLabel[p.method] ?? p.method}</span>
-                  </td>
-                  <td style={{ padding: '12px 14px', fontWeight: 800, fontFamily: 'monospace' }}>
-                    {p.status === 'refunded'
-                      ? <span style={{ color: '#fca5a5' }}>− {fmtCurrency(p.amount)}</span>
-                      : <span style={{ color: '#4ade80' }}>+ {fmtCurrency(p.amount)}</span>}
-                  </td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                    <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', background: p.status === 'paid' ? 'rgba(74,222,128,0.12)' : 'rgba(252,165,165,0.12)', color: p.status === 'paid' ? '#4ade80' : '#fca5a5' }}>
-                      {p.status === 'paid' ? 'Pago' : 'Saída'}
-                    </span>
-                  </td>
-                </tr>
-              )) : (
+              {periodPayments.length > 0 ? [...periodPayments].reverse().map((p, idx) => {
+                const appt = p.appointmentId ? myAppointments.find(a => a.id === p.appointmentId) : undefined;
+                const prof = appt ? myProfessionals.find(pr => pr.id === appt.professionalId) : undefined;
+                return (
+                  <tr key={p.id} style={{ background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <td style={{ padding: '12px 14px', fontSize: 11, color: '#94A3B8', fontFamily: 'monospace' }}>{p.date.substring(0, 10)}</td>
+                    <td style={{ padding: '12px 14px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>{p.description}</td>
+                    <td style={{ padding: '12px 14px', fontSize: 12, color: prof ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.2)' }}>
+                      {prof?.name ?? '—'}
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <span style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', fontFamily: 'monospace' }}>{methodLabel[p.method] ?? p.method}</span>
+                    </td>
+                    <td style={{ padding: '12px 14px', fontWeight: 800, fontFamily: 'monospace' }}>
+                      {p.status === 'refunded'
+                        ? <span style={{ color: '#fca5a5' }}>− {fmtCurrency(p.amount)}</span>
+                        : <span style={{ color: '#4ade80' }}>+ {fmtCurrency(p.amount)}</span>}
+                    </td>
+                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                      <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', background: p.status === 'paid' ? 'rgba(74,222,128,0.12)' : 'rgba(252,165,165,0.12)', color: p.status === 'paid' ? '#4ade80' : '#fca5a5' }}>
+                        {p.status === 'paid' ? 'Pago' : 'Saída'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              }) : (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>Nenhuma transação em {MONTHS[selectedMonth]} {selectedYear}.</td>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>Nenhuma transação em {MONTHS[selectedMonth]} {selectedYear}.</td>
                 </tr>
               )}
             </tbody>
