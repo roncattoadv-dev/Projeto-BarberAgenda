@@ -445,9 +445,9 @@ export default function RegisterPage() {
           </div>
 
           {/* Steps indicator */}
-          <div className="flex items-center gap-2 mb-5">
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
             {[1, 2].map(s => (
-              <div key={s} className="flex items-center gap-2 flex-1">
+              <React.Fragment key={s}>
                 <div style={{
                   width: 26, height: 26, borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -459,9 +459,9 @@ export default function RegisterPage() {
                   {step > s ? '✓' : s}
                 </div>
                 {s === 1 && (
-                  <div style={{ flex: 1, height: 1, background: step > 1 ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.09)', transition: 'all 0.3s' }} />
+                  <div style={{ flex: 1, height: 1, margin: '0 8px', background: step > 1 ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.09)', transition: 'all 0.3s' }} />
                 )}
-              </div>
+              </React.Fragment>
             ))}
           </div>
 
