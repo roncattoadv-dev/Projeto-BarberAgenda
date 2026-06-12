@@ -40,7 +40,7 @@ const C = {
   textSm:      '#374151',  // 11:1
   textXs:      '#4b5563',  // 8:1 — ainda passa AA
   textMuted:   '#6b7280',  // 5:1 — para info menos crítica
-  today:       '#031D3C',
+  today:       '#0F172A',
   todayText:   '#ffffff',
 };
 
@@ -660,7 +660,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
     {/* ── Card de novo agendamento ── */}
     {newSlot && (
       <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: newSlot.py, left: newSlot.px, width: 280, zIndex: 1001, background: '#fff', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', overflow: 'hidden', fontFamily: 'Outfit, sans-serif' }}>
-        <div style={{ background: '#031D3C', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ background: '#0F172A', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ margin: '0 0 6px', fontSize: 10, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1px' }}>Novo agendamento</p>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -761,7 +761,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
           <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
             <button onClick={closeAll} style={{ flex: 1, padding: '8px', background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#64748b', cursor: 'pointer' }}>Cancelar</button>
             <button onClick={handleSlotSubmit} disabled={!slotCustId || !slotSrvId || slotSaving}
-              style={{ flex: 2, padding: '8px', background: (!slotCustId || !slotSrvId || slotSaving) ? '#94a3b8' : '#031D3C', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#fff', cursor: (!slotCustId || !slotSrvId || slotSaving) ? 'not-allowed' : 'pointer' }}>
+              style={{ flex: 2, padding: '8px', background: (!slotCustId || !slotSrvId || slotSaving) ? '#94a3b8' : '#0F172A', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#fff', cursor: (!slotCustId || !slotSrvId || slotSaving) ? 'not-allowed' : 'pointer' }}>
               {slotSaving ? 'Agendando…' : 'Agendar →'}
             </button>
           </div>
@@ -788,7 +788,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
       return (
         <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: panelPy, left: panelPx, width: 280, zIndex: 1001, background: '#fff', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', overflow: 'hidden', fontFamily: 'Outfit, sans-serif' }}>
           {/* Header */}
-          <div style={{ background: '#031D3C', padding: '12px 14px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div style={{ background: '#0F172A', padding: '12px 14px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
               <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sc.bg, color: sc.text, marginBottom: 4 }}>{statusLabel[apptPanel.status] ?? apptPanel.status}</span>
               <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{apptPanel.customerName}</p>
@@ -846,7 +846,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => setReschedMode(false)} style={{ flex: 1, padding: '8px', background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#64748b', cursor: 'pointer' }}>Voltar</button>
                   <button onClick={handleReschedule} disabled={rescheduling}
-                    style={{ flex: 2, padding: '8px', background: rescheduling ? '#94a3b8' : '#031D3C', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#fff', cursor: rescheduling ? 'not-allowed' : 'pointer' }}>
+                    style={{ flex: 2, padding: '8px', background: rescheduling ? '#94a3b8' : '#0F172A', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#fff', cursor: rescheduling ? 'not-allowed' : 'pointer' }}>
                     {rescheduling ? 'Salvando…' : 'Confirmar →'}
                   </button>
                 </div>

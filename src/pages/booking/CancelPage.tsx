@@ -133,7 +133,7 @@ export default function CancelPage() {
 
   // ── Loading ──────────────────────────────────────────────────────────────────
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#031D3C', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ minHeight: '100vh', background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ position: 'relative', width: 48, height: 48 }}>
         <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.08)' }} />
@@ -144,7 +144,7 @@ export default function CancelPage() {
 
   // ── Not found ────────────────────────────────────────────────────────────────
   if (notFound || !appt) return (
-    <div style={{ minHeight: '100vh', background: '#031D3C', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Outfit, sans-serif' }}>
       <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
         <p style={{ fontSize: 48, marginBottom: 16 }}>🔍</p>
         <p style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginBottom: 8 }}>Agendamento não encontrado</p>

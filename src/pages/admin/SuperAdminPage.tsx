@@ -53,11 +53,11 @@ export default function SuperAdminPage() {
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}>
       {/* Top bar */}
       <div
         style={{
-          backgroundColor: '#021340',
+          backgroundColor: '#1E293B',
           borderBottom: '1px solid rgba(255,255,255,0.09)',
           padding: '12px 24px',
           display: 'flex',

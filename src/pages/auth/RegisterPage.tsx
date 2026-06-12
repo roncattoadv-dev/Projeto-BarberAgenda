@@ -125,7 +125,7 @@ function BarberSetupForm({
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-4 py-12"
-      style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
+      style={{ backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}
     >
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
@@ -198,7 +198,7 @@ function BarberSetupForm({
               style={{
                 width: '100%', padding: '14px',
                 background: busy ? 'rgba(255,255,255,0.55)' : '#ffffff',
-                color: '#031D3C', fontWeight: 700, fontSize: 14,
+                color: '#0F172A', fontWeight: 700, fontSize: 14,
                 border: 'none', borderRadius: 12,
                 cursor: busy ? 'not-allowed' : 'pointer',
                 fontFamily: 'Outfit, sans-serif',
@@ -233,7 +233,7 @@ function SuccessScreen({ slug, trialEndsAt, onGoToDashboard }: { slug: string; t
     color: 'rgba(255,255,255,0.38)', marginBottom: 6,
   };
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}>
       <div className="w-full max-w-md text-center space-y-6">
         <div style={{ fontSize: 56 }}>🎉</div>
         <div>
@@ -259,7 +259,7 @@ function SuccessScreen({ slug, trialEndsAt, onGoToDashboard }: { slug: string; t
         </div>
         <button
           onClick={onGoToDashboard}
-          style={{ width: '100%', padding: '14px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+          style={{ width: '100%', padding: '14px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
         >
           Acessar o painel →
         </button>
@@ -362,7 +362,7 @@ export default function RegisterPage() {
 
   // Spinner enquanto verifica auth
   if (authLoading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#031D3C' }}>
+    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#0F172A' }}>
       <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin" />
     </div>
   );
@@ -392,7 +392,7 @@ export default function RegisterPage() {
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-4 py-12"
-      style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
+      style={{ backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}
     >
       <div className="w-full max-w-md">
 
@@ -453,7 +453,7 @@ export default function RegisterPage() {
               fontSize: 11, fontWeight: 700, transition: 'all 0.2s',
               background: step === 1 ? '#ffffff' : 'rgba(255,255,255,0.18)',
               border: `2px solid ${step === 1 ? '#ffffff' : 'rgba(255,255,255,0.38)'}`,
-              color: step === 1 ? '#031D3C' : 'rgba(255,255,255,0.65)',
+              color: step === 1 ? '#0F172A' : 'rgba(255,255,255,0.65)',
             }}>
               {step > 1 ? '✓' : '1'}
             </div>
@@ -466,7 +466,7 @@ export default function RegisterPage() {
               fontSize: 11, fontWeight: 700, transition: 'all 0.2s',
               background: step === 2 ? '#ffffff' : 'transparent',
               border: `2px solid ${step === 2 ? '#ffffff' : 'rgba(255,255,255,0.18)'}`,
-              color: step === 2 ? '#031D3C' : 'rgba(255,255,255,0.38)',
+              color: step === 2 ? '#0F172A' : 'rgba(255,255,255,0.38)',
             }}>
               2
             </div>
@@ -522,7 +522,7 @@ export default function RegisterPage() {
               <button
                 type="button"
                 onClick={() => { if (validate1()) setStep(2); }}
-                style={{ width: '100%', padding: '14px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+                style={{ width: '100%', padding: '14px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
               >
                 Continuar →
               </button>
@@ -575,7 +575,7 @@ export default function RegisterPage() {
 
               <button
                 type="submit" disabled={busy}
-                style={{ width: '100%', padding: '14px', background: busy ? 'rgba(255,255,255,0.55)' : '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}
+                style={{ width: '100%', padding: '14px', background: busy ? 'rgba(255,255,255,0.55)' : '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}
               >
                 {busy ? 'Criando sua conta…' : 'Criar conta grátis →'}
               </button>

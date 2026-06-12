@@ -130,7 +130,7 @@ export default function TourOverlay({ steps, onFinish }: Props) {
             }} />
 
             {/* Header colorido */}
-            <div style={{ background: '#031D3C', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ background: '#0F172A', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 22 }}>{current.emoji}</span>
                 <div>
@@ -160,7 +160,7 @@ export default function TourOverlay({ steps, onFinish }: Props) {
                     width: i === step ? 18 : 6,
                     height: 6,
                     borderRadius: 3,
-                    background: i === step ? '#031D3C' : '#e2e8f0',
+                    background: i === step ? '#0F172A' : '#e2e8f0',
                     transition: 'all 0.2s',
                   }} />
                 ))}
@@ -175,7 +175,7 @@ export default function TourOverlay({ steps, onFinish }: Props) {
                   </button>
                 )}
                 <button onClick={handleNext}
-                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 14px', background: '#031D3C', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 14px', background: '#0F172A', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                   {step < steps.length - 1 ? (
                     <><span>Próximo</span><ArrowRight size={13} /></>
                   ) : (

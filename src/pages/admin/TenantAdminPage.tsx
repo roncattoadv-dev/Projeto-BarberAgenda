@@ -102,7 +102,7 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
   const total   = parseFloat((monthly * pm.months).toFixed(2));
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif', padding: 20 }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif', padding: 20 }}>
       <div style={{ width: '100%', maxWidth: 460, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20, overflow: 'hidden' }}>
 
         {/* Header */}
@@ -321,7 +321,7 @@ export default function TenantAdminPage() {
   if (!tenant && !loading) return (
     <div
       className="min-h-screen flex items-center justify-center"
-      style={{ backgroundColor: '#031D3C', color: 'rgba(255,255,255,0.38)', fontFamily: 'Outfit, sans-serif' }}
+      style={{ backgroundColor: '#0F172A', color: 'rgba(255,255,255,0.38)', fontFamily: 'Outfit, sans-serif' }}
     >
       Tenant não encontrado. Contate o administrador.
     </div>
@@ -342,7 +342,7 @@ export default function TenantAdminPage() {
   const handleExpiryClick = () => setOpenSubscription(true);
 
   return (
-    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}>
       {/* Barra de aviso de vencimento */}
       {daysUntilExpiry !== null && (
         <button onClick={handleExpiryClick} style={{ width: '100%', background: '#f59e0b', color: '#1c1000', padding: '8px 20px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'Outfit, sans-serif', border: 'none', cursor: 'pointer' }}>
@@ -359,7 +359,7 @@ export default function TenantAdminPage() {
         </button>
       )}
       {/* Top bar */}
-      <div style={{ backgroundColor: '#021340', borderBottom: '1px solid rgba(255,255,255,0.09)', padding: '0 20px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+      <div style={{ backgroundColor: '#1E293B', borderBottom: '1px solid rgba(255,255,255,0.09)', padding: '0 20px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <img
             src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"

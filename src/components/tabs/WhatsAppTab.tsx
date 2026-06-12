@@ -249,7 +249,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
   const btnStyle = (key: string): React.CSSProperties => {
     const s = sendStates[key] || 'idle';
     const base: React.CSSProperties = { padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, border: 'none', cursor: s === 'sending' ? 'wait' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' };
-    if (s === 'idle')    return { ...base, background: 'rgba(255,255,255,0.88)', color: '#031D3C' };
+    if (s === 'idle')    return { ...base, background: 'rgba(255,255,255,0.88)', color: '#0F172A' };
     if (s === 'sending') return { ...base, background: '#FEF9EC', color: '#7A4B0A' };
     if (s === 'done')    return { ...base, background: '#E6F4EC', color: '#0A4A2C' };
     return { ...base, background: '#FEECEC', color: '#7A0A0A' };
@@ -305,7 +305,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
               borderRadius: 20,
               border: `1px solid ${activeView===t.id ? '#ffffff' : 'rgba(255,255,255,0.09)'}`,
               background: activeView===t.id ? '#ffffff' : 'rgba(255,255,255,0.04)',
-              color: activeView===t.id ? '#031D3C' : 'rgba(255,255,255,0.55)',
+              color: activeView===t.id ? '#0F172A' : 'rgba(255,255,255,0.55)',
               cursor: 'pointer',
               fontFamily: 'Outfit, sans-serif',
               transition: 'all 0.15s',
@@ -537,7 +537,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
           </div>
 
           <button onClick={handleSaveAutoTpls} disabled={tplSaving}
-            style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: tplSaving ? 'wait' : 'pointer', opacity: tplSaving ? 0.7 : 1, fontFamily: 'Outfit, sans-serif' }}>
+            style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: tplSaving ? 'wait' : 'pointer', opacity: tplSaving ? 0.7 : 1, fontFamily: 'Outfit, sans-serif' }}>
             {tplSaving ? 'Salvando…' : 'Salvar Notificações Automáticas'}
           </button>
         </div>
@@ -564,7 +564,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
                 />
               </div>
             ))}
-            <button onClick={handleSaveTpls} style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar Modelos</button>
+            <button onClick={handleSaveTpls} style={{ width: '100%', padding: '13px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar Modelos</button>
           </div>
 
           {/* Preview estilo WhatsApp — mantém dark theme original */}
@@ -574,7 +574,7 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
               <div style={{ display: 'flex', gap: 6 }}>
                 {(['confirmation','reminder','cancellation'] as const).map(t => (
                   <button key={t} onClick={() => setActivePreview(t)}
-                    style={{ fontSize: 11, padding: '4px 12px', borderRadius: 20, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: activePreview===t ? '#ffffff' : 'rgba(255,255,255,0.07)', color: activePreview===t ? '#031D3C' : 'rgba(255,255,255,0.55)', border: `1px solid ${activePreview===t ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>
+                    style={{ fontSize: 11, padding: '4px 12px', borderRadius: 20, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: activePreview===t ? '#ffffff' : 'rgba(255,255,255,0.07)', color: activePreview===t ? '#0F172A' : 'rgba(255,255,255,0.55)', border: `1px solid ${activePreview===t ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>
                     {t==='confirmation'?'Confirm.':t==='reminder'?'Lembrete':'Cancel.'}
                   </button>
                 ))}

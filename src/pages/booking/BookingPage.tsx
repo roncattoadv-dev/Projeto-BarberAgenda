@@ -53,7 +53,7 @@ export default function BookingPage() {
   if (loading) return (
     <div
       className="min-h-screen flex items-center justify-center"
-      style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
+      style={{ backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
         <div style={{ position: 'relative', width: 48, height: 48 }}>
@@ -69,7 +69,7 @@ export default function BookingPage() {
   if (notFound || !tenant) return (
     <div
       className="min-h-screen flex items-center justify-center px-4"
-      style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
+      style={{ backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}
     >
       <div className="text-center space-y-4 max-w-sm">
         <div style={{ fontSize: 48 }}>🔍</div>

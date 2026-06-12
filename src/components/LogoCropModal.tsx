@@ -58,7 +58,7 @@ export default function LogoCropModal({ imageSrc, onConfirm, onCancel }: Props) 
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
     }}>
       <div style={{
-        background: '#021340', border: '1px solid rgba(255,255,255,0.1)',
+        background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)',
         borderRadius: 20, width: '100%', maxWidth: 420,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
@@ -108,7 +108,7 @@ export default function LogoCropModal({ imageSrc, onConfirm, onCancel }: Props) 
           <button
             onClick={handleConfirm}
             disabled={loading}
-            style={{ flex: 2, padding: '11px', background: '#ffffff', border: 'none', borderRadius: 10, color: '#031D3C', fontWeight: 700, fontSize: 13, cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1, fontFamily: 'Outfit, sans-serif' }}
+            style={{ flex: 2, padding: '11px', background: '#ffffff', border: 'none', borderRadius: 10, color: '#0F172A', fontWeight: 700, fontSize: 13, cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1, fontFamily: 'Outfit, sans-serif' }}
           >
             {loading ? 'Processando…' : 'Usar este enquadramento'}
           </button>

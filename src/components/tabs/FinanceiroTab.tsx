@@ -175,7 +175,7 @@ export default function FinanceiroTab({ activeTenant, myPayments, myProfessional
         <div className="overflow-x-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr style={{ background: '#021340', borderBottom: '1px solid rgba(255,255,255,0.09)' }}>
+              <tr style={{ background: '#1E293B', borderBottom: '1px solid rgba(255,255,255,0.09)' }}>
                 {['Data','Descrição','Método','Valor','Status'].map(h => (
                   <th key={h} style={{ padding: '11px 14px', textAlign: h === 'Status' ? 'right' : 'left', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.38)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}

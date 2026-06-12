@@ -391,7 +391,7 @@ export default function ClientAdminPanel({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ backgroundColor: '#031D3C', flex: 1, minHeight: 0, overflow: 'hidden', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ backgroundColor: '#0F172A', flex: 1, minHeight: 0, overflow: 'hidden', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Crop modal ── */}
       {cropSrc && <LogoCropModal imageSrc={cropSrc} onConfirm={handleCropConfirm} onCancel={() => setCropSrc(null)} />}
@@ -405,7 +405,7 @@ export default function ClientAdminPanel({
             <motion.div initial={{ opacity: 0, y: -16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -12, scale: 0.97 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
               onClick={e => e.stopPropagation()}
-              style={{ width: '100%', maxWidth: 520, background: '#021340', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+              style={{ width: '100%', maxWidth: 520, background: '#1E293B', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
               <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', gap: 10 }}>
                 <Search size={16} style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
                 <input ref={cmdRef} value={cmdQuery} onChange={e => setCmdQuery(e.target.value)}
@@ -448,7 +448,7 @@ export default function ClientAdminPanel({
       </AnimatePresence>
 
       {/* ── Topbar ── */}
-      <header style={{ height: 40, background: '#021340', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 8, flexShrink: 0 }}>
+      <header style={{ height: 40, background: '#1E293B', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 8, flexShrink: 0 }}>
         <button onClick={() => setCollapsed(c => !c)}
           style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Menu size={13} />
@@ -478,7 +478,7 @@ export default function ClientAdminPanel({
         <motion.aside
           animate={{ width: collapsed ? SIDEBAR_W.closed : SIDEBAR_W.open }}
           transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-          style={{ background: '#021340', borderRight: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, alignSelf: 'stretch' }}
+          style={{ background: '#1E293B', borderRight: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, alignSelf: 'stretch' }}
         >
           <nav style={{ flex: 1, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
             {NAV.map(({ id, label, Icon }) => {
@@ -564,7 +564,7 @@ export default function ClientAdminPanel({
                   {activeTab === 'agenda' && (
                     <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                       onClick={() => setShowApptForm(o => !o)}
-                      style={{ padding: '9px 18px', background: showApptForm ? '#ffffff' : 'rgba(255,255,255,0.07)', color: showApptForm ? '#031D3C' : 'rgba(255,255,255,0.75)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
+                      style={{ padding: '9px 18px', background: showApptForm ? '#ffffff' : 'rgba(255,255,255,0.07)', color: showApptForm ? '#0F172A' : 'rgba(255,255,255,0.75)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
                       <Plus size={13} /> {showApptForm ? 'Fechar' : 'Agendar'}
                     </motion.button>
                   )}
@@ -608,7 +608,7 @@ export default function ClientAdminPanel({
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <textarea placeholder="Notas (opcional)" value={apptNotes} onChange={e => setApptNotes(e.target.value)} className="navy-input" style={{ flex: 1, height: 52, resize: 'none' }} />
-                            <button type="submit" style={{ padding: '0 24px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Gravar</button>
+                            <button type="submit" style={{ padding: '0 24px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Gravar</button>
                           </div>
                         </form>
                       </motion.div>
@@ -665,7 +665,7 @@ export default function ClientAdminPanel({
                       <input placeholder="Nome completo" value={custName} onChange={e => setCustName(e.target.value)} required className="navy-input" />
                       <input placeholder="(DDD) Telefone" value={custPhone} onChange={e => setCustPhone(e.target.value)} required className="navy-input" />
                       <input placeholder="Email (opcional)" value={custEmail} onChange={e => setCustEmail(e.target.value)} className="navy-input" />
-                      <button type="submit" style={{ padding: 12, background: editingCust ? '#3b82f6' : '#ffffff', color: editingCust ? '#fff' : '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                      <button type="submit" style={{ padding: 12, background: editingCust ? '#3b82f6' : '#ffffff', color: editingCust ? '#fff' : '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                         {editingCust ? 'Salvar alterações' : 'Adicionar'}
                       </button>
                     </form>
@@ -756,7 +756,7 @@ export default function ClientAdminPanel({
                             <input value={tenantInstagram} onChange={e => setTenantInstagram(e.target.value)} placeholder="@instagram" className="navy-input" />
                           </div>
                           <input value={tenantAddress} onChange={e => setTenantAddress(e.target.value)} placeholder="Endereço" className="navy-input" />
-                          <button type="submit" style={{ padding: 13, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar Alterações</button>
+                          <button type="submit" style={{ padding: 13, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar Alterações</button>
                         </form>
                       )}
 
@@ -829,7 +829,7 @@ export default function ClientAdminPanel({
                                     const open   = editedDays.includes(d);
                                     return (
                                       <button key={d} type="button" onClick={() => setSelectedHoursDay(d)}
-                                        style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', position: 'relative', background: active ? '#ffffff' : 'rgba(255,255,255,0.05)', color: active ? '#031D3C' : open ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.25)', border: `1px solid ${active ? '#ffffff' : 'rgba(255,255,255,0.09)'}`, opacity: open ? 1 : 0.5 }}>
+                                        style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', position: 'relative', background: active ? '#ffffff' : 'rgba(255,255,255,0.05)', color: active ? '#0F172A' : open ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.25)', border: `1px solid ${active ? '#ffffff' : 'rgba(255,255,255,0.09)'}`, opacity: open ? 1 : 0.5 }}>
                                         {d}
                                       </button>
                                     );
@@ -891,7 +891,7 @@ export default function ClientAdminPanel({
                               </div>
 
                               <button onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { businessDays: editedDays, businessHoursByDay: editedHoursByDay, businessHours: editedHoursByDay['seg'] || [], blockedDates }); toast.success('Horários salvos!'); } catch { toast.error('Erro ao salvar.'); } }}
-                                style={{ padding: 13, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                style={{ padding: 13, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                                 Salvar Horários
                               </button>
                             </div>
@@ -1015,13 +1015,13 @@ export default function ClientAdminPanel({
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                               {['seg','ter','qua','qui','sex','sab','dom'].map(d => (
                                 <button key={d} type="button" onClick={() => setProfDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])}
-                                  style={{ padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', background: profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.07)', color: profDays.includes(d) ? '#031D3C' : 'rgba(255,255,255,0.38)', border: `1px solid ${profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>
+                                  style={{ padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', background: profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.07)', color: profDays.includes(d) ? '#0F172A' : 'rgba(255,255,255,0.38)', border: `1px solid ${profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>
                                   {d}
                                 </button>
                               ))}
                             </div>
                             <button type="submit"
-                              style={{ padding: 12, background: editingProf ? '#3b82f6' : '#ffffff', color: editingProf ? '#fff' : '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                              style={{ padding: 12, background: editingProf ? '#3b82f6' : '#ffffff', color: editingProf ? '#fff' : '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                               {editingProf ? 'Salvar alterações' : 'Adicionar'}
                             </button>
                           </form>
@@ -1119,7 +1119,7 @@ export default function ClientAdminPanel({
                                             type="button"
                                             whileTap={{ scale: 0.95 }}
                                             onClick={() => addPreset(preset)}
-                                            style={{ padding: '8px 12px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
+                                            style={{ padding: '8px 12px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
                                             + Add
                                           </motion.button>
                                         </div>
@@ -1145,7 +1145,7 @@ export default function ClientAdminPanel({
                                     </select>
                                   </div>
                                 </div>
-                                <button type="submit" style={{ padding: 12, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cadastrar Serviço</button>
+                                <button type="submit" style={{ padding: 12, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cadastrar Serviço</button>
                               </form>
 
                               <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1198,7 +1198,7 @@ export default function ClientAdminPanel({
                                                   toast.success('Serviço atualizado!');
                                                   setEditingSrv(null);
                                                 }}
-                                                style={{ flex: 2, padding: '8px 0', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                                style={{ flex: 2, padding: '8px 0', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                                                 Salvar
                                               </button>
                                               <button onClick={() => setEditingSrv(null)}
@@ -1323,7 +1323,7 @@ export default function ClientAdminPanel({
 
                             <button type="button"
                               onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { bookingPageConfig: { primaryColor: bookingPrimaryColor, showPhone: bookingShowPhone, showAddress: bookingShowAddress, showInstagram: bookingShowInstagram } }); toast.success('Página do cliente atualizada!'); } catch { toast.error('Erro ao salvar.'); } }}
-                              style={{ padding: 13, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                              style={{ padding: 13, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                               Salvar Configurações
                             </button>
                           </div>
@@ -1679,7 +1679,7 @@ export default function ClientAdminPanel({
                               <p style={{ fontSize: 12, color: '#fca5a5', margin: 0 }}>As senhas não coincidem.</p>
                             )}
                             <button type="submit" disabled={salvandoSenha}
-                              style={{ padding: '12px', background: salvandoSenha ? 'rgba(255,255,255,0.3)' : '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: salvandoSenha ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}>
+                              style={{ padding: '12px', background: salvandoSenha ? 'rgba(255,255,255,0.3)' : '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: salvandoSenha ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}>
                               {salvandoSenha ? 'Salvando…' : isGoogleUser ? 'Definir Senha' : 'Alterar Senha'}
                             </button>
                           </form>
@@ -1875,7 +1875,7 @@ export default function ClientAdminPanel({
             {/* Footer */}
             <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
               <button onClick={() => setPrivacyModal(false)}
-                style={{ width: '100%', padding: '11px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                style={{ width: '100%', padding: '11px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                 Entendi
               </button>
             </div>
@@ -1890,7 +1890,7 @@ export default function ClientAdminPanel({
           <div style={{ background: '#fff', borderRadius: 20, width: 440, maxWidth: '100%', boxShadow: '0 30px 80px rgba(0,0,0,0.5)', overflow: 'hidden' }}
             onClick={e => e.stopPropagation()}>
             {/* Header */}
-            <div style={{ background: '#031D3C', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ background: '#0F172A', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff', fontFamily: 'Outfit, sans-serif' }}>Central de Suporte</h3>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Outfit, sans-serif' }}>Envie uma mensagem para nossa equipe</p>
@@ -1907,7 +1907,7 @@ export default function ClientAdminPanel({
                 </div>
                 <h4 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#0f172a', fontFamily: 'Outfit, sans-serif' }}>Mensagem enviada!</h4>
                 <p style={{ margin: 0, fontSize: 13, color: '#64748b', fontFamily: 'Outfit, sans-serif' }}>Nossa equipe responderá em breve. Acompanhe pela aba Suporte.</p>
-                <button onClick={() => setSupportModal(false)} style={{ marginTop: 24, padding: '10px 28px', background: '#031D3C', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                <button onClick={() => setSupportModal(false)} style={{ marginTop: 24, padding: '10px 28px', background: '#0F172A', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                   Fechar
                 </button>
               </div>
@@ -1944,7 +1944,7 @@ export default function ClientAdminPanel({
                       setSupportSending(false);
                     }
                   }}
-                  style={{ width: '100%', padding: '12px', background: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? '#94a3b8' : '#031D3C', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'background 150ms' }}>
+                  style={{ width: '100%', padding: '12px', background: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? '#94a3b8' : '#0F172A', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'background 150ms' }}>
                   {supportSending ? 'Enviando…' : 'Enviar mensagem'}
                 </button>
               </div>

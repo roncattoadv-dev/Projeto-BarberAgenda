@@ -8,10 +8,10 @@
   --color-brand-50: #eff6ff;
 
   /* WorkAgenda Design System */
-  --color-navy:       #031D3C;
-  --color-navy-mid:   #0B1929;
-  --color-navy-card:  #021340;
-  --color-navy-light: #162840;
+  --color-navy:       #0F172A;
+  --color-navy-mid:   #0F172A;
+  --color-navy-card:  #1E293B;
+  --color-navy-light: #334155;
 
   /* White opacity tokens */
   --color-w100: rgba(255,255,255,1.00);
@@ -28,10 +28,10 @@
 }
 
 /* ── Navy utility classes ─────────────────────────────────────────────── */
-.bg-navy       { background-color: #031D3C; }
-.bg-navy-mid   { background-color: #0B1929; }
-.bg-navy-card  { background-color: #021340; }
-.bg-navy-light { background-color: #162840; }
+.bg-navy       { background-color: #0F172A; }
+.bg-navy-mid   { background-color: #0F172A; }
+.bg-navy-card  { background-color: #1E293B; }
+.bg-navy-light { background-color: #334155; }
 
 /* ── Glass-card (legacy, kept for compatibility) ──────────────────────── */
 .glass-card {
@@ -130,7 +130,7 @@
   font-family: inherit;
   appearance: none;
 }
-.navy-select option { background: #031D3C; color: rgba(255,255,255,0.88); }
+.navy-select option { background: #0F172A; color: rgba(255,255,255,0.88); }
 
 /* ── Label micro-caps ─────────────────────────────────────────────────── */
 .navy-label {

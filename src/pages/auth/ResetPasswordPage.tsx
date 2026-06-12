@@ -56,7 +56,7 @@ export default function ResetPasswordPage() {
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-4"
-      style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
+      style={{ backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}
     >
       <div className="w-full max-w-sm">
 
@@ -153,7 +153,7 @@ export default function ResetPasswordPage() {
 
                 <button
                   type="submit" disabled={busy}
-                  style={{ width: '100%', padding: '14px', background: busy ? 'rgba(255,255,255,0.55)' : '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: busy ? 'not-allowed' : 'pointer', transition: 'opacity 0.15s', fontFamily: 'Outfit, sans-serif' }}
+                  style={{ width: '100%', padding: '14px', background: busy ? 'rgba(255,255,255,0.55)' : '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: busy ? 'not-allowed' : 'pointer', transition: 'opacity 0.15s', fontFamily: 'Outfit, sans-serif' }}
                 >
                   {busy ? 'Salvando…' : 'Salvar nova senha'}
                 </button>

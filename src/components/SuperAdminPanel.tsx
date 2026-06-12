@@ -275,7 +275,7 @@ export default function SuperAdminPanel({
                     borderRadius: 8, border: 'none', cursor: 'pointer',
                     whiteSpace: 'nowrap', fontFamily: 'Outfit, sans-serif',
                     background: isActive ? '#ffffff' : 'transparent',
-                    color: isActive ? '#031D3C' : C.muted,
+                    color: isActive ? '#0F172A' : C.muted,
                     transition: 'all 0.15s',
                     position: 'relative',
                   }}
@@ -767,7 +767,7 @@ export default function SuperAdminPanel({
                     <input type="date" required value={newExpiry} onChange={e => setNewExpiry(e.target.value)} style={darkInput} />
                   </div>
                 </div>
-                <button type="submit" style={{ width: '100%', padding: '10px', background: '#ffffff', color: '#031D3C', fontSize: 13, fontWeight: 700, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                <button type="submit" style={{ width: '100%', padding: '10px', background: '#ffffff', color: '#0F172A', fontSize: 13, fontWeight: 700, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                   Criar Cupom
                 </button>
               </form>
@@ -888,7 +888,7 @@ export default function SuperAdminPanel({
                           placeholder="Responder…" style={{ ...darkInput, flex: 1 }}
                           onKeyDown={e => { if (e.key === 'Enter') handleSendReply(); }}
                         />
-                        <button onClick={handleSendReply} style={{ padding: '8px 14px', background: '#ffffff', color: '#031D3C', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <button onClick={handleSendReply} style={{ padding: '8px 14px', background: '#ffffff', color: '#0F172A', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                           <Send style={{ width: 14, height: 14 }} />
                         </button>
                       </div>
