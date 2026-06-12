@@ -227,23 +227,32 @@ export default function FinanceiroTab({
 
   const [pieMode, setPieMode] = useState<'servico' | 'profissional'>('servico');
 
+  // Use paid payments as source so the charts match KPI totals exactly
+  const paidPayments = useMemo(() =>
+    periodPayments.filter(p => p.status === 'paid'),
+  [periodPayments]);
+
   const pieData = useMemo(() => {
     const map: Record<string, number> = {};
-    myAppointments.filter(apptFilter).forEach(a => {
-      const svc = myServices.find(s => s.id === a.serviceId);
-      map[svc?.category ?? 'Outros'] = (map[svc?.category ?? 'Outros'] || 0) + a.price;
+    paidPayments.forEach(p => {
+      const appt = p.appointmentId ? myAppointments.find(a => a.id === p.appointmentId) : undefined;
+      const svc  = appt ? myServices.find(s => s.id === appt.serviceId) : undefined;
+      const cat  = svc?.category ?? (appt ? 'Outros' : 'Avulso');
+      map[cat] = (map[cat] || 0) + p.amount;
     });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [myAppointments, myServices, dateRange, filterProfId]);
+  }, [paidPayments, myAppointments, myServices]);
 
   const pieDataByProf = useMemo(() => {
     const map: Record<string, number> = {};
-    myAppointments.filter(apptFilter).forEach(a => {
-      const name = myProfessionals.find(p => p.id === a.professionalId)?.name ?? 'Sem profissional';
-      map[name] = (map[name] || 0) + a.price;
+    paidPayments.forEach(p => {
+      const appt = p.appointmentId ? myAppointments.find(a => a.id === p.appointmentId) : undefined;
+      const prof = appt ? myProfessionals.find(pr => pr.id === appt.professionalId) : undefined;
+      const name = prof?.name ?? (p.appointmentId ? 'Prof. removido' : 'Avulso');
+      map[name] = (map[name] || 0) + p.amount;
     });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [myAppointments, myProfessionals, dateRange, filterProfId]);
+  }, [paidPayments, myAppointments, myProfessionals]);
 
   const commissions = useMemo(() => {
     const profsToShow = filterProfId ? myProfessionals.filter(p => p.id === filterProfId) : myProfessionals;
@@ -411,19 +420,19 @@ export default function FinanceiroTab({
   // ── By service (for report) ──────────────────────────────────────────────
   const byService = useMemo(() => {
     const map: Record<string, { count: number; revenue: number }> = {};
-    myAppointments
-      .filter(apptFilter)
-      .forEach(a => {
-        const svc = myServices.find(s => s.id === a.serviceId);
-        const name = svc ? `${svc.name} (${svc.category})` : 'Serviço removido';
-        if (!map[name]) map[name] = { count: 0, revenue: 0 };
-        map[name].count++;
-        map[name].revenue += a.price;
-      });
+    paidPayments.forEach(p => {
+      const appt = p.appointmentId ? myAppointments.find(a => a.id === p.appointmentId) : undefined;
+      if (!appt) return;
+      const svc  = myServices.find(s => s.id === appt.serviceId);
+      const name = svc ? `${svc.name} (${svc.category})` : 'Serviço removido';
+      if (!map[name]) map[name] = { count: 0, revenue: 0 };
+      map[name].count++;
+      map[name].revenue += p.amount;
+    });
     return Object.entries(map)
       .map(([name, v]) => ({ name, ...v }))
       .sort((a, b) => b.revenue - a.revenue);
-  }, [myAppointments, myServices, dateRange, filterProfId]);
+  }, [paidPayments, myAppointments, myServices]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fade-in">
