@@ -263,7 +263,6 @@ export default function ClientAdminPanel({
   const [srvProfIds,     setSrvProfIds]     = useState<string[]>([]);
   const [editingSrv,     setEditingSrv]     = useState<Service | null>(null);
   const [srvProfPanel,   setSrvProfPanel]   = useState<Service | null>(null);
-  const profPanelRef = useRef<HTMLDivElement>(null);
   const [hiddenPresets,  setHiddenPresets]  = useState<string[]>([]);
   const [profName,       setProfName]       = useState('');
   const [profRole,       setProfRole]       = useState('Barbeiro');
@@ -326,12 +325,6 @@ export default function ClientAdminPanel({
     if (activeTab === 'negocio'       && !NEGOCIO_TABS.includes(cfgTab)) setCfgTab('identidade');
     if (activeTab === 'configuracoes' && !CONFIG_TABS.includes(cfgTab))  setCfgTab('assinatura');
   }, [activeTab]);
-
-  useEffect(() => {
-    if (!srvProfPanel) return;
-    const t = setTimeout(() => profPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
-    return () => clearTimeout(t);
-  }, [srvProfPanel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cmdResults = useMemo(() => {
     if (!cmdQuery.trim()) return [];
@@ -1089,7 +1082,6 @@ export default function ClientAdminPanel({
                           toast.success(`"${preset.name}" adicionado!`);
                         };
                         const allPresetsAdded = visiblePresets.length === 0 || visiblePresets.every(p => isAdded(p.name));
-                        const selectedProfService = srvProfPanel;
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -1179,51 +1171,96 @@ export default function ClientAdminPanel({
                               </div>
                             </div>
 
-                            {/* ── Serviço personalizado + lista ── */}
+                            {/* ── Serviço personalizado / Profissionais + lista ── */}
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                              <form onSubmit={async e => {
-                                  e.preventDefault();
-                                  if (!srvName.trim()) return;
-                                  const created = await onAddService({ tenantId: activeTenant.id, name: srvName, price: srvPrice, durationMinutes: srvDuration, category: srvCategory });
-                                  if (created && srvProfIds.length) await onSetServiceProfessionals(created.id, srvProfIds);
-                                  toast.success(`"${srvName}" cadastrado!`);
-                                  setSrvName('');
-                                  setSrvProfIds([]);
-                                  if (created) setSrvProfPanel(created);
-                                }}
-                                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Serviço Personalizado</p>
-                                <input placeholder="Nome do serviço" value={srvName} onChange={e => setSrvName(e.target.value)} required className="navy-input" />
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                                  <div><label className="navy-label">Preço R$</label><input type="number" min={0} value={srvPrice} onChange={e => setSrvPrice(Number(e.target.value))} className="navy-input" /></div>
-                                  <div><label className="navy-label">Duração min</label><input type="number" min={5} value={srvDuration} onChange={e => setSrvDuration(Number(e.target.value))} className="navy-input" /></div>
-                                  <div><label className="navy-label">Categoria</label>
-                                    <select value={srvCategory} onChange={e => setSrvCategory(e.target.value as any)} className="navy-select">
-                                      <option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option>
-                                    </select>
+
+                              {/* Coluna esquerda: form de novo serviço OU painel de profissionais */}
+                              {srvProfPanel ? (
+                                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                                    <div>
+                                      <p style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Profissionais</p>
+                                      <p style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: '4px 0 2px' }}>{srvProfPanel.name}</p>
+                                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Marque quem realiza este serviço</p>
+                                    </div>
+                                    <button onClick={() => setSrvProfPanel(null)}
+                                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 4, flexShrink: 0 }}>
+                                      <X size={16} />
+                                    </button>
                                   </div>
-                                </div>
-                                {myProfessionals.length > 0 && (
-                                  <div>
-                                    <label className="navy-label">Profissionais</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                                  {myProfessionals.length === 0 ? (
+                                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Nenhum colaborador cadastrado. Adicione na aba Equipe.</p>
+                                  ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                       {myProfessionals.map(p => {
-                                        const sel = srvProfIds.includes(p.id);
+                                        const checked = p.services.includes(srvProfPanel.id);
                                         return (
-                                          <button type="button" key={p.id}
-                                            onClick={() => setSrvProfIds(ids => sel ? ids.filter(id => id !== p.id) : [...ids, p.id])}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px 5px 6px', borderRadius: 20, background: sel ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.05)', border: `1px solid ${sel ? 'rgba(96,165,250,0.45)' : 'rgba(255,255,255,0.1)'}`, color: sel ? '#93c5fd' : 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'Outfit, sans-serif', transition: 'all 120ms' }}>
-                                            <img src={p.avatar} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                                            {p.name}
+                                          <button key={p.id} type="button" onClick={async () => {
+                                            const newIds = checked
+                                              ? myProfessionals.filter(x => x.services.includes(srvProfPanel.id) && x.id !== p.id).map(x => x.id)
+                                              : myProfessionals.filter(x => x.services.includes(srvProfPanel.id)).map(x => x.id).concat(p.id);
+                                            await onSetServiceProfessionals(srvProfPanel.id, newIds);
+                                          }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, background: checked ? 'rgba(96,165,250,0.12)' : 'rgba(255,255,255,0.04)', border: `1px solid ${checked ? 'rgba(96,165,250,0.35)' : 'rgba(255,255,255,0.08)'}`, cursor: 'pointer', transition: 'all 150ms', fontFamily: 'Outfit, sans-serif', textAlign: 'left' }}>
+                                            <img src={p.avatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                              <div style={{ fontSize: 13, fontWeight: 700, color: checked ? '#93c5fd' : 'rgba(255,255,255,0.8)' }}>{p.name}</div>
+                                              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{p.role}</div>
+                                            </div>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: checked ? '#93c5fd' : 'rgba(255,255,255,0.2)', flexShrink: 0 }}>
+                                              {checked ? '✓ Ativo' : '+ Add'}
+                                            </div>
                                           </button>
                                         );
                                       })}
                                     </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <form onSubmit={async e => {
+                                    e.preventDefault();
+                                    if (!srvName.trim()) return;
+                                    const created = await onAddService({ tenantId: activeTenant.id, name: srvName, price: srvPrice, durationMinutes: srvDuration, category: srvCategory });
+                                    if (created && srvProfIds.length) await onSetServiceProfessionals(created.id, srvProfIds);
+                                    toast.success(`"${srvName}" cadastrado!`);
+                                    setSrvName('');
+                                    setSrvProfIds([]);
+                                    if (created) setSrvProfPanel(created);
+                                  }}
+                                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Serviço Personalizado</p>
+                                  <input placeholder="Nome do serviço" value={srvName} onChange={e => setSrvName(e.target.value)} required className="navy-input" />
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                                    <div><label className="navy-label">Preço R$</label><input type="number" min={0} value={srvPrice} onChange={e => setSrvPrice(Number(e.target.value))} className="navy-input" /></div>
+                                    <div><label className="navy-label">Duração min</label><input type="number" min={5} value={srvDuration} onChange={e => setSrvDuration(Number(e.target.value))} className="navy-input" /></div>
+                                    <div><label className="navy-label">Categoria</label>
+                                      <select value={srvCategory} onChange={e => setSrvCategory(e.target.value as any)} className="navy-select">
+                                        <option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option>
+                                      </select>
+                                    </div>
                                   </div>
-                                )}
-                                <button type="submit" style={{ padding: 12, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cadastrar Serviço</button>
-                              </form>
+                                  {myProfessionals.length > 0 && (
+                                    <div>
+                                      <label className="navy-label">Profissionais</label>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                                        {myProfessionals.map(p => {
+                                          const sel = srvProfIds.includes(p.id);
+                                          return (
+                                            <button type="button" key={p.id}
+                                              onClick={() => setSrvProfIds(ids => sel ? ids.filter(id => id !== p.id) : [...ids, p.id])}
+                                              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px 5px 6px', borderRadius: 20, background: sel ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.05)', border: `1px solid ${sel ? 'rgba(96,165,250,0.45)' : 'rgba(255,255,255,0.1)'}`, color: sel ? '#93c5fd' : 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'Outfit, sans-serif', transition: 'all 120ms' }}>
+                                              <img src={p.avatar} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                                              {p.name}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                  <button type="submit" style={{ padding: 12, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cadastrar Serviço</button>
+                                </form>
+                              )}
 
+                              {/* Coluna direita: lista de serviços ativos */}
                               <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 4px' }}>
                                   Serviços Ativos <span style={{ fontFamily: 'monospace', color: 'rgba(255,255,255,0.2)' }}>({myServices.length})</span>
@@ -1284,42 +1321,6 @@ export default function ClientAdminPanel({
                                 </div>
                               </div>
                             </div>
-
-                            {/* ── Painel profissionais por serviço ── */}
-                            {selectedProfService && (
-                              <div ref={profPanelRef} style={{ background: 'rgba(96,165,250,0.07)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 16, padding: 20 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                                  <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Profissionais — {selectedProfService.name}</p>
-                                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: '3px 0 0' }}>Marque quem realiza este serviço no agendamento</p>
-                                  </div>
-                                  <button onClick={() => setSrvProfPanel(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 4 }}><X size={16} /></button>
-                                </div>
-                                {myProfessionals.length === 0 ? (
-                                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Nenhum colaborador cadastrado ainda. Adicione na aba Equipe.</p>
-                                ) : (
-                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
-                                    {myProfessionals.map(p => {
-                                      const checked = p.services.includes(selectedProfService.id);
-                                      return (
-                                        <label key={p.id} onClick={async () => {
-                                          const newIds = checked
-                                            ? myProfessionals.filter(x => x.services.includes(selectedProfService.id) && x.id !== p.id).map(x => x.id)
-                                            : myProfessionals.filter(x => x.services.includes(selectedProfService.id)).map(x => x.id).concat(p.id);
-                                          await onSetServiceProfessionals(selectedProfService.id, newIds);
-                                        }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, background: checked ? 'rgba(96,165,250,0.12)' : 'rgba(255,255,255,0.04)', border: `1px solid ${checked ? 'rgba(96,165,250,0.35)' : 'rgba(255,255,255,0.08)'}`, cursor: 'pointer', transition: 'all 150ms' }}>
-                                          <img src={p.avatar} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                                          <div style={{ minWidth: 0 }}>
-                                            <div style={{ fontSize: 12, fontWeight: 700, color: checked ? '#93c5fd' : 'rgba(255,255,255,0.75)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{checked ? '✓ Selecionado' : 'Clique para add'}</div>
-                                          </div>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            )}
 
                           </div>
                         );
