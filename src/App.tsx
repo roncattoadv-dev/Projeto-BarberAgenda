@@ -3,36 +3,40 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { RouteGuard } from './components/guards/RouteGuard';
-import LoginPage       from './pages/auth/LoginPage';
-import RegisterPage    from './pages/auth/RegisterPage';
+import LandingPage       from './pages/LandingPage';
+import LoginPage         from './pages/auth/LoginPage';
+import RegisterPage      from './pages/auth/RegisterPage';
+import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import SuperAdminPage  from './pages/admin/SuperAdminPage';
 import TenantAdminPage from './pages/admin/TenantAdminPage';
 import BookingPage     from './pages/booking/BookingPage';
 import CancelPage      from './pages/booking/CancelPage';
 
-// Redireciona para o painel correto após login
-function HomeRedirect() {
-  const { profile, loading } = useAuth();
+// Redireciona para o painel correto se autenticado, senão mostra a landing page
+function HomeRoute() {
+  const { profile, loading, needsOnboarding } = useAuth();
   if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
+    <div style={{ minHeight: '100vh', background: '#030F22', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.08)', borderTopColor: 'rgba(255,255,255,0.6)', animation: 'spin 0.8s linear infinite' }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
-  if (!profile) return <Navigate to="/login" replace />;
-  if (profile.role === 'super_admin')  return <Navigate to="/admin/super"  replace />;
-  if (profile.role === 'tenant_admin') return <Navigate to="/admin/painel" replace />;
-  return <Navigate to="/login" replace />;
+  if (needsOnboarding)                  return <Navigate to="/cadastro"    replace />;
+  if (profile?.role === 'super_admin')  return <Navigate to="/admin/super"  replace />;
+  if (profile?.role === 'tenant_admin') return <Navigate to="/admin/painel" replace />;
+  return <LandingPage />;
 }
 
 function AppRoutes() {
   return (
     <Routes>
       {/* ── Raiz ──────────────────────────────────── */}
-      <Route path="/" element={<HomeRedirect />} />
+      <Route path="/" element={<HomeRoute />} />
 
       {/* ── Auth ──────────────────────────────────── */}
-      <Route path="/login"    element={<LoginPage />} />
-      <Route path="/cadastro" element={<RegisterPage />} />
+      <Route path="/login"            element={<LoginPage />} />
+      <Route path="/cadastro"         element={<RegisterPage />} />
+      <Route path="/redefinir-senha"  element={<ResetPasswordPage />} />
 
       {/* ── Super Admin ───────────────────────────── */}
       <Route path="/admin/super" element={

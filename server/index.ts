@@ -13,8 +13,15 @@ import {
   createAsaasCustomer,
   createSubscription,
   cancelSubscription,
+  getPendingPaymentLink,
   type AsaasWebhookPayload,
 } from './asaas';
+import {
+  sendWelcomeEmail,
+  sendPaymentConfirmedEmail,
+  sendPaymentOverdueEmail,
+  sendBookingConfirmationEmail,
+} from './email';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT            = parseInt(process.env.PORT || process.env.SERVER_PORT || '4000');
@@ -74,12 +81,17 @@ app.post('/api/register', async (req, res) => {
     const { data: existing } = await supabase.from('tenants').select('id').eq('slug', slug).maybeSingle();
     if (existing) return res.status(409).json({ error: 'Este endereço já está em uso. Escolha outro.' });
 
-    // 2. Calcula datas do trial (10 dias)
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + 10);
-    const trialDate = trialEndsAt.toISOString().split('T')[0];
+    // 2. Verifica se o email já usou trial (anti-abuso)
+    const { data: usedTrial } = await supabasePublic.from('used_trials').select('email').eq('email', email).maybeSingle();
 
-    // 3. Cria o tenant no Supabase
+    // 3. Calcula datas do trial (10 dias apenas para novos; emails com trial anterior iniciam bloqueados)
+    const trialEndsAt = new Date();
+    if (!usedTrial) trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+    const trialDate = trialEndsAt.toISOString().split('T')[0];
+    const initialStatus = usedTrial ? 'blocked' : 'trial';
+    const initialPlan   = 'trial';
+
+    // 4. Cria o tenant no Supabase
     const { data: tenant, error: tenantErr } = await supabase
       .from('tenants')
       .insert({
@@ -87,8 +99,8 @@ app.post('/api/register', async (req, res) => {
         slug: slug.toLowerCase().trim(),
         phone: phone || '',
         address: '',
-        status:  'trial',
-        plan:    'trial',
+        status:  initialStatus,
+        plan:    initialPlan,
         trial_ends_at: trialDate,
         mrr: 0,
       })
@@ -154,8 +166,13 @@ app.post('/api/register', async (req, res) => {
       user_id:   authUser.user.id,
       user_name: name,
       action:    'Cadastro de nova barbearia',
-      details:   `Trial de 10 dias iniciado. Asaas subscription: ${asaasSubscriptionId ?? 'pendente'}`,
+      details:   `Trial de 7 dias iniciado. Asaas subscription: ${asaasSubscriptionId ?? 'pendente'}`,
     });
+
+    // 8. Email de boas-vindas (non-fatal)
+    sendWelcomeEmail(email, name, tenant.slug, trialDate).catch(err =>
+      console.error('[Register] Email error (non-fatal):', err.message),
+    );
 
     return res.status(201).json({
       ok:       true,
@@ -167,6 +184,279 @@ app.post('/api/register', async (req, res) => {
 
   } catch (err: any) {
     console.error('[Register] Error:', err);
+    return res.status(500).json({ error: 'Erro interno ao processar cadastro. Tente novamente.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/billing/payment-link
+// Retorna o link de pagamento Asaas para o tenant reativar a assinatura
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/billing/payment-link', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Token obrigatório.' });
+
+  const { data: { user }, error: userErr } = await supabasePublic.auth.getUser(token);
+  if (userErr || !user) return res.status(401).json({ error: 'Token inválido.' });
+
+  const tenantId = req.query.tenantId as string;
+  if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório.' });
+
+  try {
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('id, name, asaas_customer_id, asaas_subscription_id, status')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
+
+    const asaasBase = process.env.ASAAS_SANDBOX === 'true'
+      ? 'https://sandbox.asaas.com/api/v3'
+      : 'https://api.asaas.com/v3';
+    const asaasKey = process.env.ASAAS_API_KEY || '';
+
+    const getPixForPayment = async (paymentId: string) => {
+      try {
+        const r = await fetch(`${asaasBase}/payments/${paymentId}/pixQrCode`, {
+          headers: { 'access_token': asaasKey },
+        });
+        if (!r.ok) return {};
+        const d = await r.json();
+        return { pixImage: d.encodedImage as string | undefined, pixCode: d.payload as string | undefined };
+      } catch { return {}; }
+    };
+
+    const getPendingPaymentId = async (subscriptionId: string) => {
+      const r = await fetch(`${asaasBase}/payments?subscription=${subscriptionId}&limit=5`, {
+        headers: { 'access_token': asaasKey },
+      });
+      const d = await r.json();
+      const pending = (d.data ?? []).find((p: any) => ['PENDING', 'OVERDUE'].includes(p.status));
+      return (pending ?? d.data?.[0]) as { id: string; invoiceUrl?: string; bankSlipUrl?: string } | undefined;
+    };
+
+    const plan    = (req.query.plan    as string) || 'mensal';
+    const cpfCnpj = (req.query.cpfCnpj as string) || undefined;
+
+    // Se já tem assinatura UNDEFINED (multi-método), reutiliza
+    if (tenant.asaas_subscription_id) {
+      try {
+        const subRes = await fetch(`${asaasBase}/subscriptions/${tenant.asaas_subscription_id}`, {
+          headers: { 'access_token': asaasKey },
+        });
+        const sub = subRes.ok ? await subRes.json() : null;
+        if (sub && sub.billingType === 'UNDEFINED') {
+          const payment = await getPendingPaymentId(tenant.asaas_subscription_id);
+          if (payment) {
+            const pix = await getPixForPayment(payment.id);
+            return res.json({ url: payment.invoiceUrl || payment.bankSlipUrl, ...pix });
+          }
+        } else {
+          // Assinatura antiga com tipo errado — cancela para recriar
+          await fetch(`${asaasBase}/subscriptions/${tenant.asaas_subscription_id}`, {
+            method: 'DELETE', headers: { 'access_token': asaasKey },
+          }).catch(() => {});
+          await supabase.from('tenants').update({ asaas_subscription_id: null }).eq('id', tenantId);
+        }
+      } catch {}
+    }
+
+    // Cria cliente + assinatura
+    let customerId = tenant.asaas_customer_id;
+    if (!customerId) {
+      const customer = await createAsaasCustomer({ name: tenant.name, email: user.email!, cpfCnpj });
+      customerId = customer.id;
+    }
+
+    const subscription = await createSubscription(customerId, plan, 0);
+    await supabase.from('tenants').update({
+      asaas_customer_id:     customerId,
+      asaas_subscription_id: subscription.id,
+    }).eq('id', tenantId);
+
+    const payment = await getPendingPaymentId(subscription.id);
+    const pix = payment ? await getPixForPayment(payment.id) : {};
+    return res.json({ url: payment?.invoiceUrl || payment?.bankSlipUrl || `https://www.asaas.com/c/${customerId}`, ...pix });
+
+  } catch (err: any) {
+    console.error('[PaymentLink] Error:', err);
+    return res.status(500).json({ error: err.message ?? 'Erro ao gerar cobrança.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/account
+// Exclui a conta do tenant: cancela Asaas, remove dados e usuário
+// Requer: Authorization: Bearer <access_token>  +  ?tenantId=<uuid>
+// ─────────────────────────────────────────────────────────────────────────────
+app.delete('/api/account', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Token de autenticação obrigatório.' });
+
+  const { data: { user }, error: userErr } = await supabasePublic.auth.getUser(token);
+  if (userErr || !user) return res.status(401).json({ error: 'Token inválido ou expirado.' });
+
+  const tenantId = req.query.tenantId as string;
+  if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório.' });
+
+  try {
+    // Verifica que o usuário é dono deste tenant
+    const { data: tenant } = await supabase
+      .from('tenants').select('id, asaas_subscription_id').eq('id', tenantId).maybeSingle();
+    if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
+
+    const { data: profile } = await supabasePublic
+      .from('profiles').select('tenant_id').eq('id', user.id).maybeSingle();
+    if (profile?.tenant_id !== tenantId) {
+      return res.status(403).json({ error: 'Acesso negado.' });
+    }
+
+    // Registra email em used_trials ANTES de deletar (impede abuso de trial)
+    const email = user.email ?? '';
+    if (email) {
+      await supabasePublic.from('used_trials').upsert({ email, deleted_at: new Date().toISOString() });
+    }
+
+    // Cancela assinatura Asaas se existir
+    if (tenant.asaas_subscription_id) {
+      try { await cancelSubscription(tenant.asaas_subscription_id); } catch {}
+    }
+
+    // Deleta tenant — CASCADE remove appointments, professionals, services, etc.
+    await supabase.from('tenants').delete().eq('id', tenantId);
+
+    // Deleta profile público
+    await supabasePublic.from('profiles').delete().eq('id', user.id);
+
+    // Deleta usuário do auth (remove sessões e identidades OAuth)
+    await supabasePublic.auth.admin.deleteUser(user.id);
+
+    console.log(`[DeleteAccount] Conta excluída: tenant=${tenantId} user=${user.id} email=${email}`);
+    return res.status(200).json({ ok: true });
+
+  } catch (err: any) {
+    console.error('[DeleteAccount] Error:', err);
+    return res.status(500).json({ error: 'Erro interno ao excluir conta.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/register-google
+// Completa cadastro de usuário que autenticou via Google OAuth (sem senha)
+// Requer: Authorization: Bearer <access_token>
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/register-google', async (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Token de autenticação obrigatório.' });
+
+  // Verifica o JWT e obtém o usuário
+  const { data: { user }, error: userErr } = await supabasePublic.auth.getUser(token);
+  if (userErr || !user) return res.status(401).json({ error: 'Token inválido ou expirado.' });
+
+  const { name, slug, phone } = req.body;
+
+  if (!name || !slug) return res.status(400).json({ error: 'name e slug são obrigatórios.' });
+  if (!/^[a-z0-9-]+$/.test(slug)) return res.status(400).json({ error: 'Slug deve conter apenas letras minúsculas, números e hífens.' });
+
+  const email = user.email || '';
+
+  try {
+    // Verifica se o usuário já tem um tenant (cadastro duplicado)
+    const { data: existingProfile } = await supabasePublic
+      .from('profiles').select('tenant_id').eq('id', user.id).maybeSingle();
+    if (existingProfile?.tenant_id) {
+      return res.status(409).json({ error: 'Esta conta Google já está associada a uma barbearia.' });
+    }
+
+    // Verifica se slug já existe
+    const { data: existingSlug } = await supabase.from('tenants').select('id').eq('slug', slug).maybeSingle();
+    if (existingSlug) return res.status(409).json({ error: 'Este endereço já está em uso. Escolha outro.' });
+
+    // Verifica se o email já usou trial (anti-abuso)
+    const { data: usedTrial } = await supabasePublic.from('used_trials').select('email').eq('email', email).maybeSingle();
+
+    // Calcula datas do trial (10 dias apenas para novos; emails com trial anterior iniciam bloqueados)
+    const trialEndsAt = new Date();
+    if (!usedTrial) trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+    const trialDate    = trialEndsAt.toISOString().split('T')[0];
+    const initialStatus = usedTrial ? 'blocked' : 'trial';
+    const initialPlan   = 'trial';
+
+    // Cria o tenant
+    const { data: tenant, error: tenantErr } = await supabase
+      .from('tenants')
+      .insert({
+        name,
+        slug: slug.toLowerCase().trim(),
+        phone: phone || '',
+        address: '',
+        status:  initialStatus,
+        plan:    initialPlan,
+        trial_ends_at: trialDate,
+        mrr: 0,
+      })
+      .select()
+      .single();
+
+    if (tenantErr) throw tenantErr;
+
+    // Atualiza user_metadata com role e tenant_id
+    await supabasePublic.auth.admin.updateUserById(user.id, {
+      user_metadata: {
+        name:      name,
+        role:      'tenant_admin',
+        tenant_id: tenant.id,
+      },
+    });
+
+    // Upsert do profile
+    await supabasePublic.from('profiles').upsert({
+      id:        user.id,
+      name,
+      email,
+      role:      'tenant_admin',
+      tenant_id: tenant.id,
+    });
+
+    // Cria cliente e assinatura no Asaas (não bloqueia o cadastro se falhar)
+    let asaasSubscriptionId = null;
+    try {
+      const asaasCustomer   = await createAsaasCustomer({ name, email, phone });
+      const subscription    = await createSubscription(asaasCustomer.id, 10);
+      asaasSubscriptionId   = subscription.id;
+      await supabase.from('tenants').update({
+        asaas_customer_id:     asaasCustomer.id,
+        asaas_subscription_id: asaasSubscriptionId,
+      }).eq('id', tenant.id);
+    } catch (asaasErr) {
+      console.error('[RegisterGoogle] Asaas error (non-fatal):', asaasErr);
+    }
+
+    // Audit log
+    await supabase.from('audit_logs').insert({
+      tenant_id: tenant.id,
+      user_id:   user.id,
+      user_name: name,
+      action:    'Cadastro via Google OAuth',
+      details:   `Trial de 7 dias iniciado. Asaas subscription: ${asaasSubscriptionId ?? 'pendente'}`,
+    });
+
+    // Email de boas-vindas (non-fatal)
+    sendWelcomeEmail(email, name, tenant.slug, trialDate).catch(err =>
+      console.error('[RegisterGoogle] Email error (non-fatal):', err.message),
+    );
+
+    return res.status(201).json({
+      ok:       true,
+      tenantId: tenant.id,
+      slug:     tenant.slug,
+      trialEndsAt: trialDate,
+      message:  'Cadastro realizado! Acesse o painel para configurar sua barbearia.',
+    });
+
+  } catch (err: any) {
+    console.error('[RegisterGoogle] Error:', err);
     return res.status(500).json({ error: 'Erro interno ao processar cadastro. Tente novamente.' });
   }
 });
@@ -199,7 +489,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
     // Busca o tenant pelo asaas_subscription_id
     const { data: tenant } = await supabase
       .from('tenants')
-      .select('id, name, status')
+      .select('id, name, status, subscription_ends_at')
       .eq('asaas_subscription_id', subscriptionId)
       .maybeSingle();
 
@@ -215,8 +505,12 @@ app.post('/api/webhook/asaas', async (req, res) => {
     switch (event) {
       case 'PAYMENT_RECEIVED':
       case 'PAYMENT_CONFIRMED': {
-        // Próxima renovação = dueDate do pagamento + 30 dias (cobre antecipados e atrasados)
-        const base = payment?.dueDate ? new Date(payment.dueDate + 'T12:00:00Z') : new Date();
+        // Base = max(dias restantes do plano atual, dueDate do pagamento)
+        // Garante que dias restantes não são perdidos ao trocar/renovar plano
+        const today     = new Date();
+        const dueBase   = payment?.dueDate ? new Date(payment.dueDate + 'T12:00:00Z') : today;
+        const currentEnd = tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at + 'T12:00:00Z') : today;
+        const base = currentEnd > dueBase ? currentEnd : dueBase;
         base.setMonth(base.getMonth() + 1);
         const subscriptionEndsAt = base.toISOString().split('T')[0];
         await supabase.from('tenants').update({
@@ -228,6 +522,14 @@ app.post('/api/webhook/asaas', async (req, res) => {
         newStatus  = 'active';
         logAction  = 'Pagamento confirmado';
         logDetails = `Asaas payment ${payment?.id} — R$ ${payment?.value?.toFixed(2)}. Plano ativo até ${subscriptionEndsAt}.`;
+        // Email de confirmação (non-fatal)
+        supabasePublic.from('profiles').select('email').eq('tenant_id', tenant.id).maybeSingle()
+          .then(({ data }) => {
+            if (data?.email) {
+              sendPaymentConfirmedEmail(data.email, tenant.name, payment?.value ?? 89.90, subscriptionEndsAt)
+                .catch(err => console.error('[Webhook] Payment email error:', err.message));
+            }
+          });
         break;
       }
 
@@ -237,6 +539,14 @@ app.post('/api/webhook/asaas', async (req, res) => {
         newStatus  = 'blocked';
         logAction  = 'Pagamento vencido — acesso bloqueado';
         logDetails = `Asaas payment ${payment?.id} vencido em ${payment?.dueDate}. Tenant bloqueado.`;
+        // Email de aviso (non-fatal)
+        supabasePublic.from('profiles').select('email').eq('tenant_id', tenant.id).maybeSingle()
+          .then(({ data }) => {
+            if (data?.email) {
+              sendPaymentOverdueEmail(data.email, tenant.name, payment?.dueDate ?? '')
+                .catch(err => console.error('[Webhook] Overdue email error:', err.message));
+            }
+          });
         break;
       }
 
@@ -280,7 +590,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
 app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { data: tenant } = await supabase
-    .from('tenants').select('asaas_subscription_id, asaas_customer_id, status').eq('id', tenantId).maybeSingle();
+    .from('tenants').select('asaas_subscription_id, asaas_customer_id, status, subscription_ends_at').eq('id', tenantId).maybeSingle();
 
   if (!tenant?.asaas_customer_id && !tenant?.asaas_subscription_id) {
     return res.status(404).json({ error: 'Assinatura não encontrada.' });
@@ -310,9 +620,12 @@ app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
       return res.json({ activated: false, message: 'Nenhum pagamento confirmado encontrado.' });
     }
 
-    const base = confirmed.dueDate ? new Date(confirmed.dueDate + 'T12:00:00Z') : new Date();
-    base.setMonth(base.getMonth() + 1);
-    const subscriptionEndsAt = base.toISOString().split('T')[0];
+    const today2      = new Date();
+    const dueBase2    = confirmed.dueDate ? new Date(confirmed.dueDate + 'T12:00:00Z') : today2;
+    const currentEnd2 = tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at + 'T12:00:00Z') : today2;
+    const base2 = currentEnd2 > dueBase2 ? currentEnd2 : dueBase2;
+    base2.setMonth(base2.getMonth() + 1);
+    const subscriptionEndsAt = base2.toISOString().split('T')[0];
     await supabase.from('tenants').update({
       status: 'active', plan: 'mensal', mrr: 89.90,
       subscription_ends_at: subscriptionEndsAt,
@@ -530,7 +843,7 @@ app.post('/api/whatsapp/notify', async (req, res) => {
         .select('*, services(name), professionals(name)')
         .eq('id', appointmentId).eq('tenant_id', tenantId).maybeSingle(),
       supabase.from('tenants')
-        .select('name, slug, wpp_template_confirm, wpp_booking_url')
+        .select('name, slug, wpp_template_confirm, wpp_booking_url, contact_email')
         .eq('id', tenantId).maybeSingle(),
     ]);
 
@@ -539,8 +852,6 @@ app.post('/api/whatsapp/notify', async (req, res) => {
     if (!appt || !tenant) { res.status(404).json({ error: 'Dados não encontrados.' }); return; }
 
     const phone = appt.customer_phone?.replace(/\D/g, '');
-    if (!phone) { res.json({ ok: true, skipped: 'sem telefone' }); return; }
-
     const code  = bookingCode(appt.id);
     const link  = buildLink(tenant, appt.id);
     const vars  = {
@@ -555,16 +866,40 @@ app.post('/api/whatsapp/notify', async (req, res) => {
       link,
     };
 
-    const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
-    const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+    // WhatsApp (se tem telefone)
+    if (phone) {
+      const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
+      const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+      await evoInstance(instanceToken, '/send/text', {
+        method: 'POST',
+        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+      });
+      await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appointmentId);
+    }
 
-    await evoInstance(instanceToken, '/send/text', {
-      method: 'POST',
-      body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
-    });
+    // Email (se tem email e ainda não foi enviado)
+    if (appt.customer_email && !appt.email_confirm_sent) {
+      const replyTo = await getTenantReplyEmail(tenantId, tenant.contact_email);
+      sendBookingConfirmationEmail({
+        to:             appt.customer_email,
+        replyTo,
+        customerName:   appt.customer_name              ?? '',
+        salonName:      tenant.name                      ?? '',
+        service:        (appt.services as any)?.name     ?? '',
+        professional:   (appt.professionals as any)?.name ?? '',
+        date:           formatDatePT(appt.scheduled_date),
+        time:           appt.scheduled_time?.slice(0, 5) ?? '',
+        durationMinutes: appt.duration_minutes,
+        code,
+        cancelLink:     link,
+      })
+      .then(() => supabase.from('appointments').update({ email_confirm_sent: true }).eq('id', appointmentId))
+      .catch(err => console.error('[Notify] Email error:', err.message));
+    }
 
-    // Marca como enviado para o job não reenviar
-    await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appointmentId);
+    if (!phone && !appt.customer_email) {
+      res.json({ ok: true, skipped: 'sem telefone e sem email' }); return;
+    }
 
     res.json({ ok: true });
   } catch (err: any) {
@@ -574,9 +909,76 @@ app.post('/api/whatsapp/notify', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/whatsapp/remind  — envia lembrete manualmente para um agendamento
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/whatsapp/remind', async (req, res) => {
+  const { tenantId, appointmentId } = req.body as { tenantId?: string; appointmentId?: string };
+  if (!tenantId || !appointmentId) { res.status(400).json({ error: 'tenantId e appointmentId obrigatórios.' }); return; }
+
+  try {
+    const [apptRes, tenantRes] = await Promise.all([
+      supabase.from('appointments')
+        .select('*, services(name), professionals(name)')
+        .eq('id', appointmentId).eq('tenant_id', tenantId).maybeSingle(),
+      supabase.from('tenants')
+        .select('name, slug, wpp_template_remind, wpp_booking_url')
+        .eq('id', tenantId).maybeSingle(),
+    ]);
+
+    const appt   = apptRes.data;
+    const tenant = tenantRes.data;
+    if (!appt || !tenant) { res.status(404).json({ error: 'Dados não encontrados.' }); return; }
+
+    const phone = appt.customer_phone?.replace(/\D/g, '');
+    if (!phone) { res.json({ ok: true, skipped: 'sem telefone' }); return; }
+
+    const code  = bookingCode(appt.id);
+    const link  = buildLink(tenant, appt.id);
+    const vars  = {
+      nome:         appt.customer_name              ?? '',
+      salao:        tenant.name                     ?? '',
+      servico:      (appt.services as any)?.name    ?? '',
+      data:         formatDatePT(appt.scheduled_date),
+      hora:         appt.scheduled_time?.slice(0,5) ?? '',
+      duracao:      String(appt.duration_minutes),
+      profissional: (appt.professionals as any)?.name ?? '',
+      codigo:       code,
+      link,
+    };
+
+    const msg           = applyTemplate(tenant.wpp_template_remind ?? TPL_REMIND_DEFAULT, vars);
+    const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+
+    await evoInstance(instanceToken, '/send/text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+    });
+
+    await supabase.from('appointments').update({ wpp_reminder_sent: true }).eq('id', appointmentId);
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[Remind]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // WhatsApp / Evolution Go — helpers de servidor
 // O EVO_GLOBAL_KEY nunca é exposto ao frontend.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Retorna o email de resposta do tenant: contact_email configurado ou email do perfil admin */
+async function getTenantReplyEmail(tenantId: string, contactEmail?: string | null): Promise<string> {
+  if (contactEmail) return contactEmail;
+  const { data } = await supabasePublic
+    .from('profiles')
+    .select('email')
+    .eq('tenant_id', tenantId)
+    .eq('role', 'tenant_admin')
+    .maybeSingle();
+  return data?.email ?? 'noreply@workagenda.org';
+}
 
 /** Token determinístico por tenant: slug + primeiros 8 chars do id sem hífens */
 function evoInstanceToken(slug: string, tenantId: string): string {
@@ -845,7 +1247,7 @@ async function sendConfirmations(): Promise<void> {
   const since = new Date(Date.now() - 10 * 60_000).toISOString();
   const { data: appts } = await supabase
     .from('appointments')
-    .select('*, tenants(id, name, slug, wpp_template_confirm, wpp_booking_url), services(name), professionals(name)')
+    .select('*, tenants(id, name, slug, wpp_template_confirm, wpp_booking_url, contact_email), services(name), professionals(name)')
     .eq('wpp_confirm_sent', false)
     .neq('status', 'cancelled')
     .gte('created_at', since);
@@ -880,6 +1282,26 @@ async function sendConfirmations(): Promise<void> {
 
       await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appt.id);
       console.log(`[Confirm] Confirmação enviada: ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time?.slice(0,5)})`);
+
+      // Email de confirmação (se o cliente informou email e ainda não foi enviado)
+      if (appt.customer_email && !appt.email_confirm_sent) {
+        const replyTo = await getTenantReplyEmail(tenant.id, tenant.contact_email);
+        sendBookingConfirmationEmail({
+          to:             appt.customer_email,
+          replyTo,
+          customerName:   appt.customer_name          ?? '',
+          salonName:      tenant.name                  ?? '',
+          service:        (appt.services as any)?.name ?? '',
+          professional:   (appt.professionals as any)?.name ?? '',
+          date:           formatDatePT(appt.scheduled_date),
+          time:           appt.scheduled_time?.slice(0, 5) ?? '',
+          durationMinutes: appt.duration_minutes,
+          code:           bookingCode(appt.id),
+          cancelLink:     buildLink(tenant, appt.id),
+        })
+        .then(() => supabase.from('appointments').update({ email_confirm_sent: true }).eq('id', appt.id))
+        .catch(err => console.error(`[Confirm] Email error para ${appt.customer_name}:`, err.message));
+      }
     } catch (err: any) {
       console.error(`[Confirm] Erro ao enviar para ${appt.customer_name}:`, err.message);
     }
@@ -888,23 +1310,32 @@ async function sendConfirmations(): Promise<void> {
 
 // Job a cada 5 min: envia lembrete antes do atendimento (tempo configurável por tenant)
 // ─────────────────────────────────────────────────────────────────────────────
+// Brasília = UTC-3
+const BRASILIA_MS = -3 * 60 * 60 * 1000;
+function nowBrasilia(): Date { return new Date(Date.now() + BRASILIA_MS); }
+function toBrasiliaStr(d: Date) { return new Date(d.getTime() + BRASILIA_MS).toISOString(); }
+
 async function sendReminders(): Promise<void> {
   if (!EVO_URL || !EVO_GLOBAL_KEY) return;
 
-  // Busca todos os tenants com WhatsApp configurável para calcular janela por tenant
+  // Data de hoje em horário de Brasília
+  const todayBrasilia = toBrasiliaStr(new Date()).split('T')[0];
+
   const { data: appts } = await supabase
     .from('appointments')
     .select('*, tenants(id, name, slug, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes), services(name), professionals(name)')
     .eq('wpp_reminder_sent', false)
     .neq('status', 'cancelled')
-    .gte('scheduled_date', new Date().toISOString().split('T')[0]);
+    .gte('scheduled_date', todayBrasilia);
 
-  const now = new Date();
+  // "Agora" em horário de Brasília
+  const now = nowBrasilia();
 
   for (const appt of appts ?? []) {
     const tenant = appt.tenants as any;
     // Janela ±5 min em torno do tempo configurado pelo tenant (padrão 60 min)
     const reminderMin = Number(tenant?.wpp_reminder_minutes ?? 60);
+    // lo/hi já estão em Brasília (comparação direta com scheduled_time)
     const lo = new Date(now.getTime() + (reminderMin - 5) * 60_000);
     const hi = new Date(now.getTime() + (reminderMin + 5) * 60_000);
     const loDate = lo.toISOString().split('T')[0];
@@ -955,11 +1386,12 @@ async function sendReminders(): Promise<void> {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`[Server] BarberFlow API rodando na porta ${PORT}`);
+  console.log(`[Server] WorkAgenda API rodando na porta ${PORT}`);
   console.log(`[Server] Supabase: ${SUPABASE_URL ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Asaas: ${process.env.ASAAS_API_KEY ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Modo: ${process.env.ASAAS_SANDBOX === 'true' ? 'SANDBOX' : 'PRODUÇÃO'}`);
   console.log(`[Server] EvoGo: ${EVO_URL && EVO_GLOBAL_KEY ? '✓' : '✗ não configurado'}`);
+  console.log(`[Server] Resend: ${process.env.RESEND_API_KEY ? '✓' : '✗ não configurado'}`);
 
   // Cleanup de instâncias: 1 min após boot, depois a cada 24h
   setTimeout(() => {

@@ -5,24 +5,29 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Calendar, Users, MessageSquare, Settings, List,
+  Calendar, Users, MessageSquare, Settings, List, Store,
   Plus, Search, ExternalLink, ChevronLeft, ChevronRight,
   Check, X, RefreshCw, Scissors, CreditCard, Package,
-  Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck,
+  Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck, Pencil,
+  Palette, Phone, MapPin, Instagram, Eye, EyeOff,
+  Mail, Lock, Clock, Shield,
 } from 'lucide-react';
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
 import { useToast } from '../hooks/useToast';
-import { uploadTenantLogo } from '../lib/db';
+import { useAuth } from '../contexts/AuthContext';
+import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket } from '../lib/db';
+import { supabase } from '../lib/supabase';
 import LogoCropModal from './LogoCropModal';
+import TourOverlay, { TourStep } from './TourOverlay';
 import AgendaTab       from './tabs/AgendaTab';
 import AgendamentosTab from './tabs/AgendamentosTab';
 import FinanceiroTab   from './tabs/FinanceiroTab';
 import WhatsAppTab     from './tabs/WhatsAppTab';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Tab = 'agenda' | 'agendamentos' | 'clientes' | 'automacoes' | 'configuracoes';
-type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro' | 'assinatura' | 'conta';
+type Tab = 'agenda' | 'agendamentos' | 'clientes' | 'negocio' | 'automacoes' | 'configuracoes';
+type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'financeiro' | 'pagina-cliente' | 'assinatura' | 'conta';
 
 interface Props {
   activeTenant: Tenant;
@@ -36,15 +41,21 @@ interface Props {
   onUpdateService: (id: string, s: Partial<Omit<Service, 'id'>>) => void | Promise<void>;
   onDeleteService: (id: string) => void | Promise<void>;
   onAddProfessional: (p: Omit<Professional, 'id'>) => void;
+  onUpdateProfessional: (id: string, p: Partial<Omit<Professional, 'id' | 'tenantId'>>) => void;
   onAddProduct: (p: Omit<Product, 'id'>) => void;
   onUpdateProductStock: (id: string, stock: number) => void;
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
+  onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
   onAddPayment: (pay: Omit<Payment, 'id'>) => void;
-  onAddCustomer: (c: Omit<Customer, 'id'>) => void;
+  onAddCustomer: (c: Omit<Customer, 'id'>) => Promise<Customer>;
+  onUpdateCustomer: (id: string, updates: { name?: string; phone?: string; email?: string }) => Promise<void>;
+  onDeleteCustomer: (id: string) => Promise<void>;
   onUpdateTenantDetails: (tenantId: string, details: Partial<Tenant>) => void | Promise<void>;
   onSwitchToBookingFlow: (slug: string) => void;
   onDeleteAccount: () => Promise<void>;
+  openSubscriptionTab?: boolean;
+  onSubscriptionTabOpened?: () => void;
 }
 
 // ── Motion presets ─────────────────────────────────────────────────────────────
@@ -56,13 +67,14 @@ const NAV: { id: Tab; label: string; Icon: React.ElementType }[] = [
   { id: 'agenda',        label: 'Agenda',       Icon: Calendar      },
   { id: 'agendamentos',  label: 'Agendamentos', Icon: List          },
   { id: 'clientes',      label: 'Clientes',     Icon: Users         },
+  { id: 'negocio',       label: 'Meu Negócio',  Icon: Store         },
   { id: 'automacoes',    label: 'Automações',   Icon: MessageSquare },
   { id: 'configuracoes', label: 'Config.',      Icon: Settings      },
 ];
 
 const PAGE_TITLES: Record<Tab, string> = {
   agenda: 'Agenda', agendamentos: 'Agendamentos', clientes: 'Clientes',
-  automacoes: 'Automações', configuracoes: 'Configurações',
+  negocio: 'Meu Negócio', automacoes: 'Automações', configuracoes: 'Configurações',
 };
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
@@ -71,17 +83,35 @@ const STATUS_DOT: Record<string, string> = { confirmed: '#22c55e', pending: '#f5
 export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
-  onAddProfessional, onAddProduct, onUpdateProductStock,
-  onAddAppointment, onUpdateAppointmentStatus, onAddPayment, onAddCustomer,
+  onAddProfessional, onUpdateProfessional, onAddProduct, onUpdateProductStock,
+  onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
+  openSubscriptionTab, onSubscriptionTabOpened,
 }: Props) {
   const toast = useToast();
+  const { user } = useAuth();
+
+  // ── Conta / senha ─────────────────────────────────────────────────────────
+  const [senhaAtual,     setSenhaAtual]     = useState('');
+  const [novaSenha,      setNovaSenha]      = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
+  const [showSenhaAtual, setShowSenhaAtual] = useState(false);
+  const [showNovaSenha,  setShowNovaSenha]  = useState(false);
+  const [showConfSenha,  setShowConfSenha]  = useState(false);
+  const [salvandoSenha,  setSalvandoSenha]  = useState(false);
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const [activeTab,    setActiveTab]    = useState<Tab>('agenda');
   const [cfgTab,       setCfgTab]       = useState<CfgTab>('identidade');
+
+  useEffect(() => {
+    if (openSubscriptionTab) {
+      setActiveTab('configuracoes');
+      setCfgTab('assinatura');
+      onSubscriptionTabOpened?.();
+    }
+  }, [openSubscriptionTab]);
   const [collapsed,    setCollapsed]    = useState(false);
-  const [fabOpen,      setFabOpen]      = useState(false);
   const [cmdOpen,      setCmdOpen]      = useState(false);
   const [cmdQuery,     setCmdQuery]     = useState('');
   const cmdRef = useRef<HTMLInputElement>(null);
@@ -98,9 +128,57 @@ export default function ClientAdminPanel({
   const todayAppts = myAppointments.filter(a => a.date === today && a.status !== 'cancelled');
   const pendingCount = myAppointments.filter(a => a.status === 'pending').length;
 
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [deleteStep,  setDeleteStep]  = useState<'idle' | 'confirm' | 'deleting'>('idle');
-  const [deleteInput, setDeleteInput] = useState('');
+  const [linkCopied,      setLinkCopied]      = useState(false);
+  const [deleteCustomerPending, setDeleteCustomerPending] = useState<{ id: string; name: string } | null>(null);
+  const [deletingCustomer,      setDeletingCustomer]      = useState(false);
+  const [deleteStep,      setDeleteStep]      = useState<'idle' | 'confirm' | 'deleting'>('idle');
+  const [deleteInput,     setDeleteInput]     = useState('');
+  const [pixCopied,      setPixCopied]      = useState(false);
+  const [wppConnState,   setWppConnState]   = useState<string>('checking');
+  const [wppConnName,    setWppConnName]    = useState<string | null>(null);
+  const [privacyModal,   setPrivacyModal]   = useState(false);
+  const [supportModal,   setSupportModal]   = useState(false);
+  const [supportTitle,   setSupportTitle]   = useState('');
+  const [supportMsg,     setSupportMsg]     = useState('');
+  const [supportSending, setSupportSending] = useState(false);
+  const [supportSent,    setSupportSent]    = useState(false);
+
+  const TOUR_KEY = `workagenda_tour_done_${activeTenant.id}`;
+  const [tourOpen, setTourOpen] = useState(() => !localStorage.getItem(TOUR_KEY));
+  const finishTour = () => { localStorage.setItem(TOUR_KEY, '1'); setTourOpen(false); };
+
+  const TOUR_STEPS: TourStep[] = [
+    { navId: 'agenda',        emoji: '📅', title: 'Agenda',        description: 'Visualize todos os atendimentos do dia em um calendário visual. Clique em qualquer horário para criar um novo agendamento rapidamente.' },
+    { navId: 'agendamentos',  emoji: '📋', title: 'Agendamentos',  description: 'Acompanhe todos os pedidos de agendamento feitos pelos seus clientes. Confirme, cancele ou remarque com um único clique.' },
+    { navId: 'clientes',      emoji: '👥', title: 'Clientes',      description: 'Gerencie sua base de clientes, veja o histórico de atendimentos e o total gasto por cada um.' },
+    { navId: 'negocio',       emoji: '🏪', title: 'Meu Negócio',   description: 'Configure os serviços oferecidos, sua equipe de profissionais, produtos e os horários de funcionamento.' },
+    { navId: 'automacoes',    emoji: '💬', title: 'Automações',    description: 'Ative mensagens automáticas de confirmação e lembrete via WhatsApp para reduzir faltas e melhorar a comunicação.' },
+    { navId: 'configuracoes', emoji: '⚙️', title: 'Configurações', description: 'Gerencie sua assinatura, personalize a página de agendamento online e configure as preferências da sua conta.' },
+  ];
+  const [billingModal, setBillingModal] = useState<null | {
+    plan: 'mensal' | 'trimestral' | 'anual';
+    step: 'form' | 'loading' | 'payment' | 'success';
+    cpfCnpj: string;
+    pixImage?: string;
+    pixCode?: string;
+    payUrl?: string;
+    error?: string;
+  }>(null);
+
+  // Polling: detecta pagamento confirmado enquanto modal está aberto
+  useEffect(() => {
+    if (billingModal?.step !== 'payment') return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from('tenants').select('status').eq('id', activeTenant.id).maybeSingle();
+      if (data?.status === 'active') {
+        clearInterval(interval);
+        setBillingModal(prev => prev ? { ...prev, step: 'success' } : null);
+        setTimeout(() => window.location.reload(), 3500);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [billingModal?.step, activeTenant.id]);
   const handleCopyLink = () => {
     const url = `${window.location.origin}/${activeTenant.slug}/agendamento`;
     navigator.clipboard.writeText(url).then(() => {
@@ -117,12 +195,25 @@ export default function ClientAdminPanel({
   const [apptTime,   setApptTime]   = useState('09:00');
   const [apptNotes,  setApptNotes]  = useState('');
   const [showApptForm, setShowApptForm] = useState(false);
+  const [apptNewClient,      setApptNewClient]      = useState(false);
+  const [apptNewClientName,  setApptNewClientName]  = useState('');
+  const [apptNewClientPhone, setApptNewClientPhone] = useState('');
 
   // ── Clientes state ────────────────────────────────────────────────────────
-  const [custSearch,  setCustSearch]  = useState('');
-  const [custName,    setCustName]    = useState('');
-  const [custPhone,   setCustPhone]   = useState('');
-  const [custEmail,   setCustEmail]   = useState('');
+  const [custSearch,    setCustSearch]    = useState('');
+  const [custName,      setCustName]      = useState('');
+  const [custPhone,     setCustPhone]     = useState('');
+  const [custEmail,     setCustEmail]     = useState('');
+  const [editingCust,   setEditingCust]   = useState<Customer | null>(null);
+
+  const startEditCust = (c: Customer) => {
+    setEditingCust(c);
+    setCustName(c.name); setCustPhone(c.phone); setCustEmail(c.email || '');
+  };
+  const cancelEditCust = () => {
+    setEditingCust(null);
+    setCustName(''); setCustPhone(''); setCustEmail('');
+  };
 
   // ── Config state ──────────────────────────────────────────────────────────
   const [uploadingLogo,    setUploadingLogo]    = useState(false);
@@ -145,6 +236,12 @@ export default function ClientAdminPanel({
   const [newHourInput,     setNewHourInput]     = useState('');
   const [blockedDates,     setBlockedDates]     = useState<string[]>(activeTenant.blockedDates ?? []);
   const [vacStartDate,     setVacStartDate]     = useState('');
+
+  // ── Booking page config ────────────────────────────────────────────────────
+  const [bookingPrimaryColor,  setBookingPrimaryColor]  = useState(activeTenant.bookingPageConfig?.primaryColor  ?? '#2563EB');
+  const [bookingShowPhone,     setBookingShowPhone]     = useState(activeTenant.bookingPageConfig?.showPhone     ?? true);
+  const [bookingShowAddress,   setBookingShowAddress]   = useState(activeTenant.bookingPageConfig?.showAddress   ?? true);
+  const [bookingShowInstagram, setBookingShowInstagram] = useState(activeTenant.bookingPageConfig?.showInstagram ?? true);
   const [vacEndDate,       setVacEndDate]       = useState('');
   const PRESET_SERVICES: { name: string; durationMinutes: number; category: Service['category'] }[] = [
     { name: 'Barba',                        durationMinutes: 40, category: 'Barba'  },
@@ -167,6 +264,21 @@ export default function ClientAdminPanel({
   const [profCommission, setProfCommission] = useState(40);
   const [profAvatar,     setProfAvatar]     = useState('');
   const [profDays,       setProfDays]       = useState<string[]>(['seg','ter','qua','qui','sex','sab']);
+  const [editingProf,    setEditingProf]    = useState<Professional | null>(null);
+
+  const startEditProf = (p: Professional) => {
+    setEditingProf(p);
+    setProfName(p.name);
+    setProfRole(p.role);
+    setProfAvatar(p.avatar || '');
+    setProfCommission(p.commissionPercentage);
+    setProfDays(p.businessDays || ['seg','ter','qua','qui','sex','sab']);
+  };
+  const cancelEditProf = () => {
+    setEditingProf(null);
+    setProfName(''); setProfRole('Barbeiro'); setProfAvatar('');
+    setProfCommission(40); setProfDays(['seg','ter','qua','qui','sex','sab']);
+  };
 
   const logoInputRef   = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -184,19 +296,30 @@ export default function ClientAdminPanel({
         : Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d => [d, d === 'dom' ? [] : [...DEFAULT_HOURS]]))
     );
     setBlockedDates(activeTenant.blockedDates ?? []);
+    setBookingPrimaryColor(activeTenant.bookingPageConfig?.primaryColor  ?? '#2563EB');
+    setBookingShowPhone(activeTenant.bookingPageConfig?.showPhone     ?? true);
+    setBookingShowAddress(activeTenant.bookingPageConfig?.showAddress   ?? true);
+    setBookingShowInstagram(activeTenant.bookingPageConfig?.showInstagram ?? true);
   }, [activeTenant.id]);
 
   // ── ⌘K handler ───────────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setCmdOpen(o => !o); }
-      if (e.key === 'Escape') { setCmdOpen(false); setFabOpen(false); }
+      if (e.key === 'Escape') { setCmdOpen(false); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
   useEffect(() => { if (cmdOpen) setTimeout(() => cmdRef.current?.focus(), 50); }, [cmdOpen]);
+
+  const NEGOCIO_TABS: CfgTab[] = ['identidade', 'horarios', 'equipe', 'catalogo', 'financeiro'];
+  const CONFIG_TABS:  CfgTab[] = ['assinatura', 'conta'];
+  useEffect(() => {
+    if (activeTab === 'negocio'       && !NEGOCIO_TABS.includes(cfgTab)) setCfgTab('identidade');
+    if (activeTab === 'configuracoes' && !CONFIG_TABS.includes(cfgTab))  setCfgTab('assinatura');
+  }, [activeTab]);
 
   const cmdResults = useMemo(() => {
     if (!cmdQuery.trim()) return [];
@@ -215,25 +338,41 @@ export default function ClientAdminPanel({
     toast.success(`${appt.customerName} concluído — R$ ${appt.price.toFixed(2)} registrado.`);
   };
 
-  const handleManualAppointment = (e: React.FormEvent) => {
+  const handleManualAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!apptSrvId || !apptProfId || !apptCustId) { toast.error('Selecione serviço, profissional e cliente.'); return; }
-    const srv  = myServices.find(s => s.id === apptSrvId);
-    const cust = myCustomers.find(c => c.id === apptCustId);
-    if (!srv || !cust) return;
+    if (!apptSrvId || !apptProfId) { toast.error('Selecione serviço e profissional.'); return; }
+    if (!apptNewClient && !apptCustId) { toast.error('Selecione um cliente ou crie um novo.'); return; }
+    if (apptNewClient && !apptNewClientName.trim()) { toast.error('Informe o nome do cliente.'); return; }
+    const srv = myServices.find(s => s.id === apptSrvId);
+    if (!srv) return;
     const conflict = myAppointments.some(a => a.date === apptDate && a.time === apptTime && a.professionalId === apptProfId && a.status !== 'cancelled');
     if (conflict) { toast.error(`Conflito: profissional já ocupado em ${apptDate} às ${apptTime}.`); return; }
-    onAddAppointment({ tenantId: activeTenant.id, serviceId: apptSrvId, professionalId: apptProfId, customerId: apptCustId, customerName: cust.name, customerPhone: cust.phone, date: apptDate, time: apptTime, durationMinutes: srv.durationMinutes, price: srv.price, status: 'confirmed', notes: apptNotes });
-    setApptNotes(''); setShowApptForm(false);
+    let custId: string, custName: string, custPhone: string;
+    if (apptNewClient) {
+      const created = await onAddCustomer({ tenantId: activeTenant.id, name: apptNewClientName.trim(), phone: apptNewClientPhone.trim(), email: '' });
+      custId = created.id; custName = created.name; custPhone = created.phone;
+    } else {
+      const cust = myCustomers.find(c => c.id === apptCustId);
+      if (!cust) return;
+      custId = cust.id; custName = cust.name; custPhone = cust.phone;
+    }
+    onAddAppointment({ tenantId: activeTenant.id, serviceId: apptSrvId, professionalId: apptProfId, customerId: custId, customerName: custName, customerPhone: custPhone, date: apptDate, time: apptTime, durationMinutes: srv.durationMinutes, price: srv.price, status: 'confirmed', notes: apptNotes });
+    setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setShowApptForm(false);
     toast.success('Agendamento criado!');
   };
 
-  const handleAddCustomer = (e: React.FormEvent) => {
+  const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!custName.trim() || !custPhone.trim()) { toast.error('Nome e telefone obrigatórios.'); return; }
-    onAddCustomer({ tenantId: activeTenant.id, name: custName, email: custEmail || `${custName.replace(/\s/g, '')}@barber.com`, phone: custPhone });
-    setCustName(''); setCustPhone(''); setCustEmail('');
-    toast.success('Cliente cadastrado!');
+    if (editingCust) {
+      await onUpdateCustomer(editingCust.id, { name: custName, phone: custPhone, email: custEmail });
+      toast.success('Cliente atualizado!');
+      cancelEditCust();
+    } else {
+      await onAddCustomer({ tenantId: activeTenant.id, name: custName, email: custEmail || `${custName.replace(/\s/g, '')}@barber.com`, phone: custPhone });
+      setCustName(''); setCustPhone(''); setCustEmail('');
+      toast.success('Cliente cadastrado!');
+    }
   };
 
   const handleCropConfirm = async (blob: Blob) => {
@@ -252,7 +391,7 @@ export default function ClientAdminPanel({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ backgroundColor: '#031D3C', minHeight: '100vh', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ backgroundColor: '#031D3C', flex: 1, minHeight: 0, overflow: 'hidden', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Crop modal ── */}
       {cropSrc && <LogoCropModal imageSrc={cropSrc} onConfirm={handleCropConfirm} onCancel={() => setCropSrc(null)} />}
@@ -309,54 +448,26 @@ export default function ClientAdminPanel({
       </AnimatePresence>
 
       {/* ── Topbar ── */}
-      <header style={{ height: 48, background: '#021340', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12, position: 'sticky', top: 0, zIndex: 50, flexShrink: 0 }}>
-        {/* Collapse toggle */}
+      <header style={{ height: 40, background: '#021340', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 8, flexShrink: 0 }}>
         <button onClick={() => setCollapsed(c => !c)}
-          style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.45)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Menu size={14} />
+          style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Menu size={13} />
         </button>
-
-        {/* Breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, overflow: 'hidden' }}>
-          {(tenantLogo?.startsWith('http') || tenantLogo?.startsWith('data:'))
-            ? <div style={{ width: 22, height: 22, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}><img src={tenantLogo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></div>
-            : <Scissors size={14} style={{ color: 'rgba(255,255,255,0.35)', flexShrink: 0 }} />
-          }
-          <span style={{ fontWeight: 700, color: 'rgba(255,255,255,0.38)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '1.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTenant.name}</span>
-          <ChevronRight size={12} style={{ color: 'rgba(255,255,255,0.18)', flexShrink: 0 }} />
-          <span style={{ fontWeight: 700, color: 'rgba(255,255,255,0.75)' }}>{PAGE_TITLES[activeTab]}</span>
-        </div>
-
         <div style={{ flex: 1 }} />
-
-        {/* ⌘K search */}
-        <button onClick={() => setCmdOpen(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: 'rgba(255,255,255,0.38)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-          <Search size={12} />
-          <span style={{ display: 'none' }} className="sm-show">Buscar</span>
-          <kbd style={{ fontSize: 10, background: 'rgba(255,255,255,0.07)', borderRadius: 4, padding: '1px 5px', color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>⌘K</kbd>
-        </button>
-
-        {/* Pendentes badge */}
         {pendingCount > 0 && (
           <button onClick={() => setActiveTab('agendamentos')}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 20, color: '#fcd34d', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 20, color: '#fcd34d', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b' }} />
             {pendingCount} pendente{pendingCount > 1 ? 's' : ''}
           </button>
         )}
-
-        {/* Status + link público */}
-        <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', background: activeTenant.status === 'active' ? '#E6F4EC' : '#FEF9EC', color: activeTenant.status === 'active' ? '#0A4A2C' : '#7A4B0A' }}>
-          {activeTenant.status === 'active' ? 'Ativo' : 'Teste'}
-        </span>
         <button onClick={() => onSwitchToBookingFlow(activeTenant.slug)}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-          Link <ExternalLink size={11} />
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 7, color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+          Link público <ExternalLink size={10} />
         </button>
         <button onClick={handleCopyLink} title="Copiar link de agendamento"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: linkCopied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)', border: `1px solid ${linkCopied ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 8, color: linkCopied ? '#4ade80' : 'rgba(255,255,255,0.55)', cursor: 'pointer', transition: 'all 200ms' }}>
-          {linkCopied ? <CheckCheck size={13} /> : <Copy size={13} />}
+          style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: linkCopied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${linkCopied ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 7, color: linkCopied ? '#4ade80' : 'rgba(255,255,255,0.5)', cursor: 'pointer', transition: 'all 200ms' }}>
+          {linkCopied ? <CheckCheck size={12} /> : <Copy size={12} />}
         </button>
       </header>
 
@@ -367,14 +478,14 @@ export default function ClientAdminPanel({
         <motion.aside
           animate={{ width: collapsed ? SIDEBAR_W.closed : SIDEBAR_W.open }}
           transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-          style={{ background: '#021340', borderRight: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, position: 'sticky', top: 48, height: 'calc(100vh - 48px)' }}
+          style={{ background: '#021340', borderRight: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, alignSelf: 'stretch' }}
         >
           <nav style={{ flex: 1, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
             {NAV.map(({ id, label, Icon }) => {
               const active = activeTab === id;
               const badge = id === 'agendamentos' ? pendingCount : id === 'agenda' ? todayAppts.length : 0;
               return (
-                <motion.button key={id} onClick={() => setActiveTab(id)}
+                <motion.button key={id} id={`tour-nav-${id}`} onClick={() => setActiveTab(id)}
                   whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '10px 0' : '10px 12px', justifyContent: collapsed ? 'center' : 'flex-start', borderRadius: 10, cursor: 'pointer', border: active ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent', background: active ? 'rgba(255,255,255,0.08)' : 'transparent', color: active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.42)', fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: active ? 700 : 500, width: '100%', position: 'relative', transition: 'background 150ms, color 150ms' }}>
                   <Icon size={16} strokeWidth={active ? 2.5 : 2} style={{ flexShrink: 0 }} />
@@ -396,51 +507,100 @@ export default function ClientAdminPanel({
             })}
           </nav>
 
-          {/* CTA novo agendamento */}
-          <div style={{ padding: '12px 8px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-              onClick={() => { setActiveTab('agenda'); setShowApptForm(true); }}
-              style={{ width: '100%', padding: collapsed ? '10px 0' : '10px 14px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
-              <Plus size={14} />
-              {!collapsed && 'Novo Agendamento'}
-            </motion.button>
-          </div>
+          {/* Sidebar footer */}
+          {!collapsed && (
+            <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
+              <button onClick={() => { setSupportSent(false); setSupportTitle(''); setSupportMsg(''); setSupportModal(true); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'Outfit, sans-serif', padding: '2px 0', transition: 'color 150ms' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}>
+                Suporte
+              </button>
+              <button onClick={() => setPrivacyModal(true)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'Outfit, sans-serif', padding: '2px 0', transition: 'color 150ms' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}>
+                Política de Privacidade
+              </button>
+              <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.18)', fontFamily: 'Outfit, sans-serif', letterSpacing: '0.5px' }}>
+                © WorkAgenda {new Date().getFullYear()}
+              </p>
+            </div>
+          )}
         </motion.aside>
 
         {/* ── Main content ── */}
-        <main style={{ flex: 1, padding: '24px', overflowX: 'hidden', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <main style={{ flex: 1, padding: activeTab === 'agenda' ? '0' : '24px', overflow: 'hidden', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
           <AnimatePresence mode="wait">
-            <motion.div key={activeTab} {...PAGE_TRANSITION} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <motion.div key={activeTab} {...PAGE_TRANSITION} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: activeTab === 'agenda' ? 'hidden' : 'auto', overscrollBehavior: 'contain' }}>
 
               {/* Page header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0 }}>
+              {activeTab !== 'agenda' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0 }}>
                 <div>
                   <h2 style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0, letterSpacing: '-0.3px' }}>{PAGE_TITLES[activeTab]}</h2>
                   {activeTab === 'agenda' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{todayAppts.length} atendimentos hoje</p>}
                   {activeTab === 'agendamentos' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{myAppointments.filter(a => a.status !== 'cancelled').length} no total · {pendingCount} pendentes</p>}
                   {activeTab === 'clientes' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{myCustomers.length} clientes cadastrados</p>}
+                  {activeTab === 'automacoes' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: wppConnState === 'open' ? '#4ade80' : wppConnState === 'connecting' ? '#fbbf24' : '#ef4444', flexShrink: 0, ...(wppConnState === 'open' ? { animation: 'pulse 2s infinite' } : {}) }} />
+                      <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>
+                        {wppConnState === 'open'
+                          ? <>WhatsApp conectado{wppConnName ? <> · <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>{wppConnName}</span></> : null}</>
+                          : wppConnState === 'connecting' ? 'Aguardando conexão…'
+                          : wppConnState === 'checking'   ? 'Verificando…'
+                          : 'WhatsApp desconectado'}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                {activeTab === 'agenda' && (
-                  <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                    onClick={() => setShowApptForm(o => !o)}
-                    style={{ padding: '9px 18px', background: showApptForm ? '#ffffff' : 'rgba(255,255,255,0.07)', color: showApptForm ? '#031D3C' : 'rgba(255,255,255,0.75)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
-                    <Plus size={13} /> {showApptForm ? 'Fechar' : 'Agendar'}
-                  </motion.button>
-                )}
-              </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={() => setCmdOpen(true)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9, color: 'rgba(255,255,255,0.38)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                    <Search size={13} />
+                    <span>Buscar</span>
+                    <kbd style={{ fontSize: 10, background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '1px 5px', color: 'rgba(255,255,255,0.22)', fontFamily: 'monospace' }}>⌘K</kbd>
+                  </button>
+                  {activeTab === 'agenda' && (
+                    <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                      onClick={() => setShowApptForm(o => !o)}
+                      style={{ padding: '9px 18px', background: showApptForm ? '#ffffff' : 'rgba(255,255,255,0.07)', color: showApptForm ? '#031D3C' : 'rgba(255,255,255,0.75)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
+                      <Plus size={13} /> {showApptForm ? 'Fechar' : 'Agendar'}
+                    </motion.button>
+                  )}
+                </div>
+              </div>}
 
               {/* ─────────── AGENDA ─────────── */}
               {activeTab === 'agenda' && (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0 }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: showApptForm ? 16 : 0, minHeight: 0 }}>
                   {/* Quick add form */}
                   <AnimatePresence>
                     {showApptForm && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22 }}
-                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 14, padding: 20, overflow: 'hidden', flexShrink: 0 }}>
+                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 0, padding: '16px 20px', overflow: 'hidden', flexShrink: 0 }}>
                         <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 14px' }}>Novo Agendamento</p>
                         <form onSubmit={handleManualAppointment}>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
-                            <select value={apptCustId} onChange={e => setApptCustId(e.target.value)} required className="navy-select"><option value="">Cliente</option>{myCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '1.5px' }}>Cliente</span>
+                                <button type="button" onClick={() => { setApptNewClient(v => !v); setApptCustId(''); setApptNewClientName(''); setApptNewClientPhone(''); }}
+                                  style={{ fontSize: 10, fontWeight: 700, color: apptNewClient ? '#fcd34d' : 'rgba(255,255,255,0.45)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                                  {apptNewClient ? '← Existente' : '+ Novo'}
+                                </button>
+                              </div>
+                              {!apptNewClient
+                                ? <select value={apptCustId} onChange={e => setApptCustId(e.target.value)} className="navy-select"><option value="">Selecionar…</option>{myCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                                : <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                    <input placeholder="Nome *" value={apptNewClientName} onChange={e => setApptNewClientName(e.target.value)} className="navy-input" style={{ fontSize: 12 }} />
+                                    <div style={{ position: 'relative' }}>
+                                      <input placeholder="Telefone (opcional)" value={apptNewClientPhone} onChange={e => setApptNewClientPhone(e.target.value)} className="navy-input" style={{ fontSize: 12, width: '100%', boxSizing: 'border-box' as const }} />
+                                      {!apptNewClientPhone && <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: 'rgba(255,255,255,0.3)', pointerEvents: 'none' as const, whiteSpace: 'nowrap' }}>sem tel = sem msg</span>}
+                                    </div>
+                                  </div>
+                              }
+                            </div>
                             <select value={apptSrvId} onChange={e => setApptSrvId(e.target.value)} required className="navy-select"><option value="">Serviço</option>{myServices.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
                             <select value={apptProfId} onChange={e => setApptProfId(e.target.value)} required className="navy-select"><option value="">Profissional</option>{myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
                             <input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)} className="navy-input" />
@@ -464,7 +624,10 @@ export default function ClientAdminPanel({
                       myCustomers={myCustomers}
                       onUpdateAppointmentStatus={onUpdateAppointmentStatus}
                       onAddAppointment={onAddAppointment}
+                      onAddCustomer={onAddCustomer}
                       onCompleteAppointment={handleCompleteAppointment}
+                      onResendReminder={apptId => remindAppointmentWhatsApp(activeTenant.id, apptId)}
+                      onRescheduleAppointment={onRescheduleAppointment}
                       tenantId={activeTenant.id}
                     />
                   </div>
@@ -485,15 +648,30 @@ export default function ClientAdminPanel({
               {/* ─────────── CLIENTES ─────────── */}
               {activeTab === 'clientes' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 20 }}>
-                  <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 14px' }}>Novo Cliente</p>
+
+                  {/* Formulário: adicionar ou editar */}
+                  <div style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${editingCust ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 16, padding: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: editingCust ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                        {editingCust ? `Editando: ${editingCust.name.split(' ')[0]}` : 'Novo Cliente'}
+                      </p>
+                      {editingCust && (
+                        <button onClick={cancelEditCust} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
                     <form onSubmit={handleAddCustomer} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       <input placeholder="Nome completo" value={custName} onChange={e => setCustName(e.target.value)} required className="navy-input" />
                       <input placeholder="(DDD) Telefone" value={custPhone} onChange={e => setCustPhone(e.target.value)} required className="navy-input" />
                       <input placeholder="Email (opcional)" value={custEmail} onChange={e => setCustEmail(e.target.value)} className="navy-input" />
-                      <button type="submit" style={{ padding: 12, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Adicionar</button>
+                      <button type="submit" style={{ padding: 12, background: editingCust ? '#3b82f6' : '#ffffff', color: editingCust ? '#fff' : '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                        {editingCust ? 'Salvar alterações' : 'Adicionar'}
+                      </button>
                     </form>
                   </div>
+
+                  {/* Lista de clientes */}
                   <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20 }}>
                     <div style={{ position: 'relative', marginBottom: 14 }}>
                       <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
@@ -503,17 +681,30 @@ export default function ClientAdminPanel({
                       {myCustomers.filter(c => !custSearch || c.name.toLowerCase().includes(custSearch.toLowerCase()) || c.phone.includes(custSearch)).map(c => {
                         const totalSpent = myPayments.filter(p => myAppointments.find(a => a.id === p.appointmentId && a.customerId === c.id)).reduce((s, p) => s + p.amount, 0);
                         const visits = myAppointments.filter(a => a.customerId === c.id && a.status === 'attended').length;
+                        const isEditing = editingCust?.id === c.id;
                         return (
                           <motion.div key={c.id} whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
-                            style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'rgba(255,255,255,0.65)', fontSize: 14, flexShrink: 0 }}>{c.name[0]}</div>
-                              <div>
-                                <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13 }}>{c.name}</div>
-                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{c.phone} · {visits} visita{visits !== 1 ? 's' : ''}</div>
-                              </div>
+                            style={{ padding: '12px 14px', background: isEditing ? 'rgba(59,130,246,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.35)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, transition: 'all 150ms' }}>
+                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: isEditing ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: isEditing ? '#60a5fa' : 'rgba(255,255,255,0.65)', fontSize: 14, flexShrink: 0 }}>
+                              {c.name[0]}
                             </div>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#4ade80', fontSize: 13 }}>R$ {totalSpent.toFixed(2)}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{c.phone} · {visits} visita{visits !== 1 ? 's' : ''}</div>
+                            </div>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#4ade80', fontSize: 13, flexShrink: 0 }}>R$ {totalSpent.toFixed(2)}</span>
+                            <button
+                              onClick={() => isEditing ? cancelEditCust() : startEditCust(c)}
+                              title={isEditing ? 'Cancelar edição' : 'Editar cliente'}
+                              style={{ width: 28, height: 28, borderRadius: 7, background: isEditing ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.05)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: isEditing ? '#60a5fa' : 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              {isEditing ? <X size={12} /> : <Pencil size={12} />}
+                            </button>
+                            <button
+                              onClick={() => { if (isEditing) cancelEditCust(); setDeleteCustomerPending({ id: c.id, name: c.name }); }}
+                              title="Apagar cliente"
+                              style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <X size={12} />
+                            </button>
                           </motion.div>
                         );
                       })}
@@ -524,15 +715,19 @@ export default function ClientAdminPanel({
 
               {/* ─────────── AUTOMAÇÕES ─────────── */}
               {activeTab === 'automacoes' && (
-                <WhatsAppTab activeTenant={activeTenant} myAppointments={myAppointments} myServices={myServices} myProfessionals={myProfessionals} />
+                <WhatsAppTab activeTenant={activeTenant} myAppointments={myAppointments} myServices={myServices} myProfessionals={myProfessionals}
+                  onStatusChange={(state, name) => { setWppConnState(state); setWppConnName(name); }} />
               )}
 
-              {/* ─────────── CONFIGURAÇÕES ─────────── */}
-              {activeTab === 'configuracoes' && (
+              {/* ─────────── MEU NEGÓCIO + CONFIGURAÇÕES (sub-nav compartilhado) ─────────── */}
+              {(activeTab === 'negocio' || activeTab === 'configuracoes') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  {/* Sub-nav */}
+                  {/* Sub-nav — tabs dinâmicos conforme o menu ativo */}
                   <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0, overflowX: 'auto' }} className="no-scrollbar">
-                    {([['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro'], ['assinatura','Assinatura'], ['conta','Conta']] as [CfgTab, string][]).map(([id, label]) => (
+                    {(activeTab === 'negocio'
+                      ? [['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['financeiro','Financeiro'], ['pagina-cliente','Página do Cliente']] as [CfgTab, string][]
+                      : [['assinatura','Assinatura'], ['conta','Conta']] as [CfgTab, string][]
+                    ).map(([id, label]) => (
                       <button key={id} onClick={() => setCfgTab(id)}
                         style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: cfgTab === id ? '2px solid #ffffff' : '2px solid transparent', color: cfgTab === id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', marginBottom: -1, whiteSpace: 'nowrap', transition: 'color 150ms' }}>
                         {label}
@@ -762,32 +957,95 @@ export default function ClientAdminPanel({
                       {/* Equipe */}
                       {cfgTab === 'equipe' && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                          <form onSubmit={e => { e.preventDefault(); if (!profName.trim()) return; onAddProfessional({ tenantId: activeTenant.id, name: profName, role: profRole, avatar: profAvatar || 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80', rating: 5, services: myServices.map(s => s.id), commissionPercentage: profCommission, businessDays: profDays, businessHoursByDay: {} }); toast.success(`${profName} adicionado!`); setProfName(''); }}
-                            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Novo Colaborador</p>
+
+                          {/* Formulário: adicionar ou editar */}
+                          <form
+                            onSubmit={async e => {
+                              e.preventDefault();
+                              if (!profName.trim()) return;
+                              if (editingProf) {
+                                await onUpdateProfessional(editingProf.id, {
+                                  name: profName, role: profRole,
+                                  avatar: profAvatar || editingProf.avatar,
+                                  commissionPercentage: profCommission,
+                                  businessDays: profDays,
+                                });
+                                toast.success(`${profName} atualizado!`);
+                                cancelEditProf();
+                              } else {
+                                onAddProfessional({ tenantId: activeTenant.id, name: profName, role: profRole, avatar: profAvatar || 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80', rating: 5, services: myServices.map(s => s.id), commissionPercentage: profCommission, businessDays: profDays, businessHoursByDay: {} });
+                                toast.success(`${profName} adicionado!`);
+                                setProfName(''); setProfAvatar('');
+                              }
+                            }}
+                            style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${editingProf ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: editingProf ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                                {editingProf ? `Editando: ${editingProf.name}` : 'Novo Colaborador'}
+                              </p>
+                              {editingProf && (
+                                <button type="button" onClick={cancelEditProf}
+                                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                                  Cancelar
+                                </button>
+                              )}
+                            </div>
+
                             <input ref={avatarInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e => { if (e.target.files?.[0]) setProfAvatar(await fileToDataURL(e.target.files[0])); }} />
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 48, height: 48, borderRadius: 12, border: '1px solid rgba(255,255,255,0.09)', overflow: 'hidden', background: 'rgba(255,255,255,0.07)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => avatarInputRef.current?.click()}>
-                                {profAvatar ? <img src={profAvatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <User size={18} style={{ color: 'rgba(255,255,255,0.3)' }} />}
+                                {(profAvatar || editingProf?.avatar)
+                                  ? <img src={profAvatar || editingProf?.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  : <User size={18} style={{ color: 'rgba(255,255,255,0.3)' }} />}
                               </div>
-                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', cursor: 'pointer' }} onClick={() => avatarInputRef.current?.click()}>Foto do profissional</span>
+                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', cursor: 'pointer' }} onClick={() => avatarInputRef.current?.click()}>
+                                {profAvatar ? 'Trocar foto' : 'Foto do profissional'}
+                              </span>
                             </div>
+
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                               <input placeholder="Nome" value={profName} onChange={e => setProfName(e.target.value)} required className="navy-input" />
                               <input placeholder="Cargo" value={profRole} onChange={e => setProfRole(e.target.value)} className="navy-input" />
                             </div>
-                            <div><label className="navy-label">Comissão %</label><input type="number" min={0} max={100} value={profCommission} onChange={e => setProfCommission(Number(e.target.value))} className="navy-input" /></div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                              {['seg','ter','qua','qui','sex','sab','dom'].map(d => <button key={d} type="button" onClick={() => setProfDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])} style={{ padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', background: profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.07)', color: profDays.includes(d) ? '#031D3C' : 'rgba(255,255,255,0.38)', border: `1px solid ${profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>{d}</button>)}
+                            <div>
+                              <label className="navy-label">Comissão %</label>
+                              <input type="number" min={0} max={100} value={profCommission} onChange={e => setProfCommission(Number(e.target.value))} className="navy-input" />
                             </div>
-                            <button type="submit" style={{ padding: 12, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Adicionar</button>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              {['seg','ter','qua','qui','sex','sab','dom'].map(d => (
+                                <button key={d} type="button" onClick={() => setProfDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])}
+                                  style={{ padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', background: profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.07)', color: profDays.includes(d) ? '#031D3C' : 'rgba(255,255,255,0.38)', border: `1px solid ${profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>
+                                  {d}
+                                </button>
+                              ))}
+                            </div>
+                            <button type="submit"
+                              style={{ padding: 12, background: editingProf ? '#3b82f6' : '#ffffff', color: editingProf ? '#fff' : '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                              {editingProf ? 'Salvar alterações' : 'Adicionar'}
+                            </button>
                           </form>
-                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto' }} className="no-scrollbar">
-                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Equipe</p>
+
+                          {/* Lista da equipe */}
+                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 460, overflowY: 'auto' }} className="no-scrollbar">
+                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Equipe ({myProfessionals.length})</p>
+                            {myProfessionals.length === 0 && (
+                              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', textAlign: 'center', marginTop: 20 }}>Nenhum colaborador ainda.</p>
+                            )}
                             {myProfessionals.map(p => (
-                              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10 }}>
+                              <div key={p.id}
+                                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: editingProf?.id === p.id ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10, transition: 'all 150ms' }}>
                                 <img src={p.avatar} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                                <div><div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13 }}>{p.name}</div><div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{p.role} · {p.commissionPercentage}%</div></div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{p.role} · {p.commissionPercentage}%</div>
+                                </div>
+                                <button
+                                  onClick={() => editingProf?.id === p.id ? cancelEditProf() : startEditProf(p)}
+                                  title={editingProf?.id === p.id ? 'Cancelar edição' : 'Editar'}
+                                  style={{ width: 30, height: 30, borderRadius: 8, background: editingProf?.id === p.id ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: editingProf?.id === p.id ? '#60a5fa' : 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                  {editingProf?.id === p.id ? <X size={13} /> : <Pencil size={13} />}
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -998,70 +1256,434 @@ export default function ClientAdminPanel({
                         <FinanceiroTab activeTenant={activeTenant} myPayments={myPayments} myProfessionals={myProfessionals} myAppointments={myAppointments} myServices={myServices} onAddPayment={onAddPayment} />
                       )}
 
+                      {/* ── Página do Cliente ── */}
+                      {cfgTab === 'pagina-cliente' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
+                          {/* Form */}
+                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+                            {/* Cor principal */}
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Palette size={13} /> Cor Principal
+                              </p>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                                {[
+                                  { color: '#2563EB', label: 'Azul' },
+                                  { color: '#9333EA', label: 'Roxo' },
+                                  { color: '#DC2626', label: 'Vermelho' },
+                                  { color: '#0F766E', label: 'Verde' },
+                                  { color: '#D97706', label: 'Âmbar' },
+                                  { color: '#DB2777', label: 'Rosa' },
+                                  { color: '#0891B2', label: 'Ciano' },
+                                  { color: '#1D2D44', label: 'Marinho' },
+                                ].map(({ color, label }) => (
+                                  <button key={color} type="button" title={label} onClick={() => setBookingPrimaryColor(color)}
+                                    style={{ width: 36, height: 36, borderRadius: 10, background: color, cursor: 'pointer', border: bookingPrimaryColor === color ? '3px solid #ffffff' : '3px solid transparent', outline: bookingPrimaryColor === color ? `2px solid ${color}` : 'none', transition: 'all 0.15s' }} />
+                                ))}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Outfit, sans-serif' }}>Personalizada:</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '6px 12px' }}>
+                                  <input type="color" value={bookingPrimaryColor} onChange={e => setBookingPrimaryColor(e.target.value)}
+                                    style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
+                                  <span style={{ fontSize: 13, fontFamily: 'monospace', color: 'rgba(255,255,255,0.7)', letterSpacing: '0.05em' }}>{bookingPrimaryColor.toUpperCase()}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Informações visíveis */}
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Eye size={13} /> Informações Visíveis
+                              </p>
+                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 12, fontFamily: 'Outfit, sans-serif' }}>
+                                Escolha quais dados aparecem para o cliente na página de agendamento.
+                              </p>
+                              {([
+                                { key: 'phone',     label: 'Telefone',  icon: <Phone size={14} />,     value: bookingShowPhone,     setter: setBookingShowPhone },
+                                { key: 'address',   label: 'Endereço',  icon: <MapPin size={14} />,    value: bookingShowAddress,   setter: setBookingShowAddress },
+                                { key: 'instagram', label: 'Instagram', icon: <Instagram size={14} />, value: bookingShowInstagram, setter: setBookingShowInstagram },
+                              ] as { key: string; label: string; icon: React.ReactNode; value: boolean; setter: (v: boolean) => void }[]).map(row => (
+                                <div key={row.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '11px 14px', marginBottom: 8 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                                    {row.icon} {row.label}
+                                  </div>
+                                  <button type="button" onClick={() => row.setter(!row.value)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 13px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s',
+                                      background: row.value ? '#E6F4EC' : 'rgba(255,255,255,0.07)',
+                                      color:      row.value ? '#0A4A2C'  : 'rgba(255,255,255,0.4)',
+                                      border:     `1px solid ${row.value ? '#A7D7BC' : 'rgba(255,255,255,0.12)'}` }}>
+                                    {row.value ? <Eye size={11} /> : <EyeOff size={11} />}
+                                    {row.value ? 'Visível' : 'Oculto'}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            <button type="button"
+                              onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { bookingPageConfig: { primaryColor: bookingPrimaryColor, showPhone: bookingShowPhone, showAddress: bookingShowAddress, showInstagram: bookingShowInstagram } }); toast.success('Página do cliente atualizada!'); } catch { toast.error('Erro ao salvar.'); } }}
+                              style={{ padding: 13, background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                              Salvar Configurações
+                            </button>
+                          </div>
+
+                          {/* Pré-visualização */}
+                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }}>
+                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 20 }}>Pré-visualização</p>
+                            <div style={{ background: '#ffffff', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, boxShadow: '0 4px 24px rgba(0,0,0,0.18)' }}>
+                              <div style={{ width: 80, height: 80, borderRadius: '50%', border: `2px solid ${bookingPrimaryColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ fontSize: 22, fontWeight: 300, color: bookingPrimaryColor }}>
+                                  {activeTenant.name.replace(/barbearia|salao|studio|estetica/gi, '').trim().substring(0, 2).toUpperCase()}
+                                </span>
+                                <span style={{ fontSize: 6, fontWeight: 700, color: bookingPrimaryColor, letterSpacing: '0.15em', textTransform: 'uppercase', marginTop: 2 }}>BARBEARIA</span>
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{activeTenant.name}</span>
+                              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {bookingShowPhone && activeTenant.phone && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '6px 10px' }}>
+                                    <Phone size={11} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
+                                    <span>{activeTenant.phone}</span>
+                                  </div>
+                                )}
+                                {bookingShowAddress && activeTenant.address && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '6px 10px' }}>
+                                    <MapPin size={11} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTenant.address}</span>
+                                  </div>
+                                )}
+                                {bookingShowInstagram && activeTenant.instagram && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '6px 10px' }}>
+                                    <Instagram size={11} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
+                                    <span>{activeTenant.instagram}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ width: '100%', background: bookingPrimaryColor, borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>Corte + Barba</span>
+                                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)' }}>45 min ▶</span>
+                              </div>
+                              <div style={{ width: '100%', background: bookingPrimaryColor, borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.7 }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>Barba</span>
+                                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)' }}>30 min ▶</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {cfgTab === 'assinatura' && (() => {
-                        const isTrial = activeTenant.plan === 'trial';
-                        const isActive = activeTenant.status === 'active';
-                        const endDate = isTrial ? activeTenant.trialEndsAt : activeTenant.subscriptionEndsAt;
-                        const daysLeft = endDate ? Math.ceil((new Date(endDate).getTime() - new Date().setHours(0,0,0,0)) / 86400000) : null;
-                        const fmtDate = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
-                        const planLabel: Record<string, string> = { trial: 'Período de Teste', mensal: 'Mensal', semestral: 'Semestral', anual: 'Anual' };
-                        const statusColor = activeTenant.status === 'active' ? '#22c55e' : activeTenant.status === 'trial' ? '#f59e0b' : '#ef4444';
-                        const statusLabel = activeTenant.status === 'active' ? 'Ativo' : activeTenant.status === 'trial' ? 'Período de Teste' : 'Suspenso';
+                        const BASE = 89.90;
+                        type PlanKey = 'mensal' | 'trimestral' | 'anual';
+                        const PLANS: Array<{ key: PlanKey; label: string; months: number; discountPct: number; color: string; badge: string | null }> = [
+                          { key: 'mensal',     label: '1 Mês',   months: 1,  discountPct: 0,  color: '#3b82f6', badge: null        },
+                          { key: 'trimestral', label: '3 Meses', months: 3,  discountPct: 15, color: '#8b5cf6', badge: '15% OFF'   },
+                          { key: 'anual',      label: '1 Ano',   months: 12, discountPct: 25, color: '#10b981', badge: '25% OFF'   },
+                        ];
+
+                        const isTrial      = activeTenant.plan === 'trial';
+                        const isActive     = activeTenant.status === 'active';
+                        const endDate      = isTrial ? activeTenant.trialEndsAt : activeTenant.subscriptionEndsAt;
+                        const daysLeft     = endDate ? Math.ceil((new Date(endDate).getTime() - Date.now()) / 86400000) : null;
+                        const fmtDate      = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+                        const statusColor  = isActive ? '#22c55e' : isTrial ? '#f59e0b' : '#ef4444';
+                        const statusLabel  = isActive ? 'Ativo' : isTrial ? 'Em Teste' : 'Suspenso';
+                        const showAlert    = daysLeft !== null && daysLeft <= 10;
+                        const planLabels: Record<string, string> = { trial: 'Período de Teste', mensal: '1 Mês', trimestral: '3 Meses', anual: '1 Ano' };
+
+                        const handleSubscribe = (planKey: 'mensal' | 'trimestral' | 'anual') => {
+                          setBillingModal({ plan: planKey, step: 'form', cpfCnpj: '' });
+                        };
 
                         return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
                             {/* Status card */}
-                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                                 <div>
-                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 6px' }}>Plano atual</p>
-                                  <p style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{planLabel[activeTenant.plan] ?? activeTenant.plan}</p>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 6px' }}>Plano atual</p>
+                                  <p style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{planLabels[activeTenant.plan] ?? activeTenant.plan}</p>
                                 </div>
-                                <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44` }}>
+                                <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44`, whiteSpace: 'nowrap' as const }}>
                                   {statusLabel}
                                 </span>
                               </div>
 
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '14px 16px' }}>
-                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>{isTrial ? 'Trial encerra em' : 'Próxima renovação'}</p>
-                                  <p style={{ fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{fmtDate(endDate)}</p>
+                              <div style={{ display: 'grid', gridTemplateColumns: isActive && !isTrial ? '1fr 1fr' : '1fr', gap: 10 }}>
+                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 14px' }}>
+                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>
+                                    {isTrial ? 'Trial encerra em' : 'Próxima renovação'}
+                                  </p>
+                                  <p style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{fmtDate(endDate)}</p>
                                   {daysLeft !== null && (
-                                    <p style={{ fontSize: 11, color: daysLeft <= 5 ? '#f59e0b' : 'rgba(255,255,255,0.35)', margin: '4px 0 0', fontWeight: 600 }}>
-                                      {daysLeft > 0 ? `${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}` : 'Vence hoje'}
+                                    <p style={{ fontSize: 11, color: daysLeft <= 10 ? '#f59e0b' : 'rgba(255,255,255,0.35)', margin: '3px 0 0', fontWeight: 600 }}>
+                                      {daysLeft > 0
+                                        ? `${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}`
+                                        : 'Vence hoje'}
                                     </p>
                                   )}
                                 </div>
-                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '14px 16px' }}>
-                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>Valor mensal</p>
-                                  <p style={{ fontSize: 16, fontWeight: 700, color: '#4ade80', margin: 0 }}>
-                                    {activeTenant.mrr > 0 ? `R$ ${Number(activeTenant.mrr).toFixed(2).replace('.', ',')}` : isTrial ? 'Grátis' : '—'}
-                                  </p>
-                                </div>
+                                {isActive && !isTrial && (
+                                  <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 14px' }}>
+                                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>Valor do plano</p>
+                                    <p style={{ fontSize: 15, fontWeight: 700, color: '#4ade80', margin: 0 }}>
+                                      {activeTenant.mrr > 0 ? `R$ ${Number(activeTenant.mrr).toFixed(2).replace('.', ',')}` : '—'}
+                                    </p>
+                                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', margin: '3px 0 0' }}>renovação automática</p>
+                                  </div>
+                                )}
                               </div>
 
-                              {isTrial && (
-                                <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '14px 16px' }}>
-                                  <p style={{ fontSize: 13, color: '#fcd34d', margin: 0, lineHeight: 1.6 }}>
-                                    Você está no período de teste gratuito. Após o término, será necessário assinar um plano para continuar usando o BarberFlow.
+                              {/* Alerta de vencimento próximo */}
+                              {showAlert && (
+                                <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '12px 14px' }}>
+                                  <p style={{ fontSize: 13, color: '#fcd34d', margin: 0, lineHeight: 1.5 }}>
+                                    {isTrial
+                                      ? `Seu trial encerra em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Escolha um plano abaixo para continuar sem interrupção.`
+                                      : `Sua assinatura vence em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Renove agora para não perder o acesso.`}
                                   </p>
                                 </div>
                               )}
 
-                              {isActive && !isTrial && (
-                                <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.18)', borderRadius: 12, padding: '14px 16px' }}>
-                                  <p style={{ fontSize: 13, color: '#86efac', margin: 0, lineHeight: 1.6 }}>
-                                    Sua assinatura está ativa. O pagamento é processado automaticamente via Asaas.
+                              {/* Info trial sem urgência */}
+                              {isTrial && !showAlert && (
+                                <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, padding: '12px 14px' }}>
+                                  <p style={{ fontSize: 13, color: 'rgba(253,211,77,0.8)', margin: 0, lineHeight: 1.5 }}>
+                                    Você está no período de teste gratuito de 7 dias. Explore todos os recursos e escolha seu plano abaixo.
                                   </p>
                                 </div>
                               )}
+
+                              {/* Info assinatura saudável */}
+                              {isActive && !isTrial && !showAlert && (
+                                <div style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.15)', borderRadius: 10, padding: '12px 14px' }}>
+                                  <p style={{ fontSize: 13, color: '#86efac', margin: 0, lineHeight: 1.5 }}>
+                                    Assinatura ativa. O pagamento é renovado automaticamente via Asaas (boleto, Pix ou cartão).
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Planos */}
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 14px' }}>
+                                {isActive && !isTrial && !showAlert ? 'Alterar plano' : 'Escolha seu plano'}
+                              </p>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                                {PLANS.map(p => {
+                                  const monthly   = parseFloat((BASE * (1 - p.discountPct / 100)).toFixed(2));
+                                  const total     = parseFloat((monthly * p.months).toFixed(2));
+                                  const saving    = parseFloat(((BASE - monthly) * p.months).toFixed(2));
+                                  const isCurrent = activeTenant.plan === p.key;
+                                  const isRenew   = isCurrent && showAlert;
+
+                                  return (
+                                    <div key={p.key} style={{
+                                      position: 'relative' as const,
+                                      background: isCurrent ? `${p.color}18` : 'rgba(255,255,255,0.03)',
+                                      border: `1.5px solid ${isCurrent ? p.color + '66' : p.key === 'trimestral' ? p.color + '33' : 'rgba(255,255,255,0.09)'}`,
+                                      borderRadius: 8,
+                                      padding: '24px 16px 16px',
+                                      display: 'flex',
+                                      flexDirection: 'column' as const,
+                                      gap: 10,
+                                    }}>
+                                      {/* Badge topo */}
+                                      {(p.badge || isCurrent) && (
+                                        <div style={{ position: 'absolute' as const, top: -11, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
+                                          <span style={{ background: isCurrent ? '#22c55e' : p.color, color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 4, letterSpacing: '0.5px', whiteSpace: 'nowrap' as const }}>
+                                            {isCurrent ? '✓ PLANO ATUAL' : p.badge}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      <p style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' as const, letterSpacing: '1px', margin: 0 }}>{p.label}</p>
+
+                                      {/* Preço */}
+                                      <div>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+                                          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.45)' }}>R$</span>
+                                          <span style={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1 }}>
+                                            {monthly.toFixed(2).replace('.', ',')}
+                                          </span>
+                                        </div>
+                                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>/mês</span>
+                                      </div>
+
+                                      {/* Total e economia */}
+                                      {p.months > 1 ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                                          <p style={{ fontSize: 14, fontWeight: 800, color: '#fff', margin: 0 }}>
+                                            R$ {total.toFixed(2).replace('.', ',')}
+                                          </p>
+                                          <p style={{ fontSize: 10, color: '#4ade80', fontWeight: 700, margin: 0 }}>
+                                            Economia de R$ {saving.toFixed(2).replace('.', ',')}
+                                          </p>
+                                        </div>
+                                      ) : (
+                                        <div style={{ height: 34 }} />
+                                      )}
+
+                                      <button
+                                        disabled={isCurrent && !isTrial && !isRenew}
+                                        onClick={() => { if (!isCurrent || isRenew || isTrial) handleSubscribe(p.key as 'mensal' | 'trimestral' | 'anual'); }}
+                                        style={{
+                                          marginTop: 4,
+                                          padding: '10px 0',
+                                          background: isRenew ? p.color : isCurrent && !isTrial ? 'rgba(255,255,255,0.07)' : p.color,
+                                          color: '#fff',
+                                          border: isCurrent && !isTrial && !isRenew ? '1px solid rgba(255,255,255,0.15)' : 'none',
+                                          borderRadius: 6,
+                                          fontSize: 12,
+                                          fontWeight: 700,
+                                          cursor: isCurrent && !isTrial && !isRenew ? 'default' : 'pointer',
+                                          fontFamily: 'Outfit, sans-serif',
+                                        }}
+                                      >
+                                        {isRenew ? 'Renovar agora' : isCurrent && !isTrial ? 'Plano atual' : isTrial ? 'Assinar' : 'Mudar plano'}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', textAlign: 'center' as const, margin: '14px 0 0', lineHeight: 1.5 }}>
+                                Pagamentos processados via Asaas · Boleto, Pix ou Cartão de Crédito
+                              </p>
                             </div>
                           </div>
                         );
                       })()}
 
-                      {cfgTab === 'conta' && (
+                      {cfgTab === 'conta' && (() => {
+                        const createdAt  = user?.created_at ? new Date(user.created_at) : null;
+                        const ageDays    = createdAt ? Math.floor((Date.now() - createdAt.getTime()) / 86_400_000) : null;
+                        const ageText    = ageDays === null ? '—'
+                          : ageDays === 0 ? 'Hoje'
+                          : ageDays < 30  ? `${ageDays} dia${ageDays > 1 ? 's' : ''}`
+                          : ageDays < 365 ? `${Math.floor(ageDays / 30)} mês${Math.floor(ageDays / 30) > 1 ? 'es' : ''}`
+                          : `${Math.floor(ageDays / 365)} ano${Math.floor(ageDays / 365) > 1 ? 's' : ''}`;
+                        const dataCadastro = createdAt
+                          ? createdAt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+                          : '—';
+
+                        const isGoogleUser = user?.app_metadata?.provider === 'google'
+                          || (user?.identities ?? []).some((id: { provider: string }) => id.provider === 'google');
+
+                        const handleTrocarSenha = async (e: React.FormEvent) => {
+                          e.preventDefault();
+                          if (novaSenha.length < 6) { toast.error('A nova senha deve ter ao menos 6 caracteres.'); return; }
+                          if (novaSenha !== confirmarSenha) { toast.error('As senhas não coincidem.'); return; }
+                          setSalvandoSenha(true);
+                          if (!isGoogleUser) {
+                            if (!senhaAtual) { setSalvandoSenha(false); toast.error('Informe sua senha atual.'); return; }
+                            const { error: authError } = await supabase.auth.signInWithPassword({ email: user?.email ?? '', password: senhaAtual });
+                            if (authError) { setSalvandoSenha(false); toast.error('Senha atual incorreta.'); return; }
+                          }
+                          const { error } = await supabase.auth.updateUser({ password: novaSenha });
+                          setSalvandoSenha(false);
+                          if (error) { toast.error('Erro ao trocar senha: ' + error.message); return; }
+                          toast.success('Senha definida com sucesso!');
+                          setSenhaAtual(''); setNovaSenha(''); setConfirmarSenha('');
+                        };
+
+                        const infoRow: React.CSSProperties = {
+                          display: 'flex', alignItems: 'center', gap: 14,
+                          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                          borderRadius: 12, padding: '14px 18px',
+                        };
+                        const iconWrap: React.CSSProperties = {
+                          width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)',
+                        };
+
+                        return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                          {/* Informações da conta */}
+                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: '0 0 6px' }}>
+                              Informações da Conta
+                            </h4>
+                            <div style={infoRow}>
+                              <div style={iconWrap}><Mail style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} /></div>
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 2 }}>E-mail</div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)', fontFamily: 'monospace' }}>{user?.email ?? '—'}</div>
+                              </div>
+                            </div>
+                            <div style={infoRow}>
+                              <div style={iconWrap}><Clock style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} /></div>
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 2 }}>Membro há</div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{ageText}</div>
+                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.32)', marginTop: 2 }}>Desde {dataCadastro}</div>
+                              </div>
+                            </div>
+                            <div style={infoRow}>
+                              <div style={iconWrap}><Shield style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} /></div>
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 4 }}>Status</div>
+                                <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700,
+                                  background: activeTenant.status === 'active' ? '#E6F4EC' : activeTenant.status === 'trial' ? '#FEF9EC' : '#FEECEC',
+                                  color: activeTenant.status === 'active' ? '#0A4A2C' : activeTenant.status === 'trial' ? '#7A4B0A' : '#7A0A0A' }}>
+                                  {activeTenant.status === 'active' ? 'Plano Ativo' : activeTenant.status === 'trial' ? 'Em Teste' : 'Inadimplente'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Trocar / Definir senha */}
+                          <form onSubmit={handleTrocarSenha} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <Lock style={{ width: 12, height: 12 }} /> {isGoogleUser ? 'Definir Senha' : 'Trocar Senha'}
+                            </h4>
+                            {isGoogleUser && (
+                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: 0, lineHeight: 1.6 }}>
+                                Sua conta usa login pelo Google. Você pode definir uma senha para também acessar por e-mail e senha.
+                              </p>
+                            )}
+                            {!isGoogleUser && (
+                              <div style={{ position: 'relative' as const }}>
+                                <input type={showSenhaAtual ? 'text' : 'password'} placeholder="Senha atual"
+                                  value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} required
+                                  className="navy-input" style={{ paddingRight: 44 }} />
+                                <button type="button" onClick={() => setShowSenhaAtual(v => !v)}
+                                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }}>
+                                  {showSenhaAtual ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
+                                </button>
+                              </div>
+                            )}
+                            <div style={{ position: 'relative' as const }}>
+                              <input type={showNovaSenha ? 'text' : 'password'} placeholder="Nova senha (mín. 6 caracteres)"
+                                value={novaSenha} onChange={e => setNovaSenha(e.target.value)} required
+                                className="navy-input" style={{ paddingRight: 44 }} />
+                              <button type="button" onClick={() => setShowNovaSenha(v => !v)}
+                                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }}>
+                                {showNovaSenha ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
+                              </button>
+                            </div>
+                            <div style={{ position: 'relative' as const }}>
+                              <input type={showConfSenha ? 'text' : 'password'} placeholder="Confirmar nova senha"
+                                value={confirmarSenha} onChange={e => setConfirmarSenha(e.target.value)} required
+                                className="navy-input" style={{ paddingRight: 44 }} />
+                              <button type="button" onClick={() => setShowConfSenha(v => !v)}
+                                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }}>
+                                {showConfSenha ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
+                              </button>
+                            </div>
+                            {novaSenha && confirmarSenha && novaSenha !== confirmarSenha && (
+                              <p style={{ fontSize: 12, color: '#fca5a5', margin: 0 }}>As senhas não coincidem.</p>
+                            )}
+                            <button type="submit" disabled={salvandoSenha}
+                              style={{ padding: '12px', background: salvandoSenha ? 'rgba(255,255,255,0.3)' : '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: salvandoSenha ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}>
+                              {salvandoSenha ? 'Salvando…' : isGoogleUser ? 'Definir Senha' : 'Alterar Senha'}
+                            </button>
+                          </form>
+
                           <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 16, padding: 24 }}>
                             <h4 style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(239,68,68,0.15)', paddingBottom: 12, margin: '0 0 16px' }}>Excluir Conta</h4>
 
@@ -1117,7 +1739,8 @@ export default function ClientAdminPanel({
                             )}
                           </div>
                         </div>
-                      )}
+                        );
+                      })()}
                     </motion.div>
                   </AnimatePresence>
                 </div>
@@ -1128,35 +1751,394 @@ export default function ClientAdminPanel({
         </main>
       </div>
 
-      {/* ── FAB ── */}
-      <div style={{ position: 'fixed', bottom: 28, right: 28, zIndex: 100 }}>
-        <AnimatePresence>
-          {fabOpen && (
-            <motion.div initial={{ opacity: 0, y: 12, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.95 }} transition={{ duration: 0.18 }}
-              style={{ position: 'absolute', bottom: 62, right: 0, background: '#021340', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, overflow: 'hidden', minWidth: 200, boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}>
-              {[
-                { icon: <Calendar size={14} />, label: 'Novo Agendamento', action: () => { setActiveTab('agenda'); setShowApptForm(true); setFabOpen(false); } },
-                { icon: <Users size={14} />,    label: 'Novo Cliente',      action: () => { setActiveTab('clientes'); setFabOpen(false); } },
-                { icon: <MessageSquare size={14} />, label: 'Enviar Aviso', action: () => { setActiveTab('automacoes'); setFabOpen(false); } },
-              ].map((item, i) => (
-                <motion.button key={i} onClick={item.action}
-                  initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.06)' : 'none', color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', textAlign: 'left', transition: 'background 120ms' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  {item.icon} {item.label}
-                </motion.button>
+      {/* ── Modal: confirmar exclusão de cliente ──────────────────────────────── */}
+      {deleteCustomerPending && (
+        <div
+          onClick={() => { if (!deletingCustomer) setDeleteCustomerPending(null); }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#0d2240', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+          >
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+              <X size={20} color="#f87171" />
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: 'rgba(255,255,255,0.9)', margin: '0 0 8px', fontFamily: 'Outfit, sans-serif' }}>
+              Apagar cliente?
+            </h3>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', margin: '0 0 6px', lineHeight: 1.6, fontFamily: 'Outfit, sans-serif' }}>
+              <strong style={{ color: 'rgba(255,255,255,0.85)' }}>{deleteCustomerPending.name}</strong> será removido permanentemente.
+            </p>
+            <p style={{ fontSize: 12, color: '#fca5a5', margin: '0 0 24px', lineHeight: 1.6, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 8, padding: '8px 12px', fontFamily: 'Outfit, sans-serif' }}>
+              ⚠️ Todos os agendamentos deste cliente também serão apagados.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteCustomerPending(null)}
+                disabled={deletingCustomer}
+                style={{ flex: 1, padding: '11px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: 'rgba(255,255,255,0.65)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setDeletingCustomer(true);
+                  await onDeleteCustomer(deleteCustomerPending.id);
+                  setDeletingCustomer(false);
+                  setDeleteCustomerPending(null);
+                  toast.success('Cliente apagado.');
+                }}
+                disabled={deletingCustomer}
+                style={{ flex: 1, padding: '11px', background: deletingCustomer ? 'rgba(239,68,68,0.4)' : '#ef4444', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: deletingCustomer ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}
+              >
+                {deletingCustomer ? 'Apagando…' : 'Sim, apagar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tour ──────────────────────────────────────────────────────────────── */}
+      {tourOpen && <TourOverlay steps={TOUR_STEPS} onFinish={finishTour} />}
+
+      {/* ── Modal: Política de Privacidade ────────────────────────────────────── */}
+      {privacyModal && (
+        <div onClick={() => setPrivacyModal(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.82)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#0d2240', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff', fontFamily: 'Outfit, sans-serif' }}>Política de Privacidade</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'Outfit, sans-serif' }}>WorkAgenda · Atualizada em junho de 2025</p>
+              </div>
+              <button onClick={() => setPrivacyModal(false)}
+                style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{ overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: 'Outfit, sans-serif' }} className="no-scrollbar">
+              {([
+                {
+                  title: '1. Quem somos',
+                  text: 'A WorkAgenda é uma plataforma SaaS de gestão para barbearias e salões de beleza. Operamos como controladora dos dados pessoais coletados nesta plataforma, em conformidade com a Lei Geral de Proteção de Dados (LGPD — Lei nº 13.709/2018).',
+                },
+                {
+                  title: '2. Dados que coletamos',
+                  text: 'Coletamos dados fornecidos diretamente por você (nome, e-mail, telefone, dados de estabelecimento) e dados gerados pelo uso da plataforma (agendamentos, histórico de atendimentos, movimentações financeiras). Não coletamos dados de pagamento sensíveis — as transações são processadas por parceiros certificados.',
+                },
+                {
+                  title: '3. Como usamos seus dados',
+                  text: 'Seus dados são usados exclusivamente para: (a) fornecer e melhorar os serviços da plataforma; (b) enviar notificações operacionais via WhatsApp, como confirmações e lembretes de agendamento; (c) gerar relatórios financeiros e de desempenho para o seu negócio; (d) cumprir obrigações legais.',
+                },
+                {
+                  title: '4. Compartilhamento',
+                  text: 'Não vendemos nem alugamos seus dados. Compartilhamos apenas com prestadores de serviço essenciais à operação da plataforma (infraestrutura de nuvem, gateway de WhatsApp), sempre sob acordos de confidencialidade e com as mesmas obrigações desta política.',
+                },
+                {
+                  title: '5. Retenção de dados',
+                  text: 'Mantemos seus dados enquanto sua conta estiver ativa. Após solicitação de exclusão, os dados são removidos em até 30 dias, exceto os que precisamos reter por obrigação legal (ex.: registros fiscais, conforme legislação vigente).',
+                },
+                {
+                  title: '6. Seus direitos (LGPD)',
+                  text: 'Você tem o direito de: acessar seus dados, corrigir informações incorretas, solicitar a exclusão (através da opção "Excluir Conta" em Configurações → Conta), revogar consentimento e obter informações sobre o tratamento realizado. Para exercer esses direitos, entre em contato pelo Suporte.',
+                },
+                {
+                  title: '7. Segurança',
+                  text: 'Adotamos medidas técnicas e organizacionais para proteger seus dados contra acesso não autorizado, incluindo criptografia em trânsito (TLS), autenticação segura e controles de acesso por função. Ainda assim, nenhum sistema é 100% inviolável — notificaremos você em caso de incidente que afete seus dados.',
+                },
+                {
+                  title: '8. Cookies e rastreamento',
+                  text: 'Utilizamos apenas cookies estritamente necessários à sessão de autenticação. Não utilizamos cookies de rastreamento ou publicidade de terceiros.',
+                },
+                {
+                  title: '9. Alterações nesta política',
+                  text: 'Podemos atualizar esta política periodicamente. Alterações relevantes serão comunicadas por e-mail ou por aviso dentro da plataforma com antecedência mínima de 15 dias.',
+                },
+                {
+                  title: '10. Contato',
+                  text: 'Dúvidas ou solicitações relacionadas à privacidade podem ser enviadas pelo canal de Suporte da plataforma. Responderemos em até 5 dias úteis.',
+                },
+              ] as { title: string; text: string }[]).map(({ title, text }) => (
+                <div key={title}>
+                  <h4 style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h4>
+                  <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7 }}>{text}</p>
+                </div>
               ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.93 }} onClick={() => setFabOpen(o => !o)}
-          style={{ width: 52, height: 52, borderRadius: '50%', background: fabOpen ? '#ffffff' : '#ffffff', color: '#031D3C', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', transition: 'transform 0.15s' }}>
-          <motion.div animate={{ rotate: fabOpen ? 45 : 0 }} transition={{ duration: 0.18 }}>
-            <Plus size={22} strokeWidth={2.5} />
-          </motion.div>
-        </motion.button>
-      </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+              <button onClick={() => setPrivacyModal(false)}
+                style={{ width: '100%', padding: '11px', background: '#ffffff', color: '#031D3C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Suporte ──────────────────────────────────────────────────── */}
+      {supportModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.82)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => setSupportModal(false)}>
+          <div style={{ background: '#fff', borderRadius: 20, width: 440, maxWidth: '100%', boxShadow: '0 30px 80px rgba(0,0,0,0.5)', overflow: 'hidden' }}
+            onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ background: '#031D3C', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff', fontFamily: 'Outfit, sans-serif' }}>Central de Suporte</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Outfit, sans-serif' }}>Envie uma mensagem para nossa equipe</p>
+              </div>
+              <button onClick={() => setSupportModal(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: 4 }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {supportSent ? (
+              <div style={{ padding: '40px 24px', textAlign: 'center' }}>
+                <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                  <Check size={24} style={{ color: '#16a34a' }} />
+                </div>
+                <h4 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#0f172a', fontFamily: 'Outfit, sans-serif' }}>Mensagem enviada!</h4>
+                <p style={{ margin: 0, fontSize: 13, color: '#64748b', fontFamily: 'Outfit, sans-serif' }}>Nossa equipe responderá em breve. Acompanhe pela aba Suporte.</p>
+                <button onClick={() => setSupportModal(false)} style={{ marginTop: 24, padding: '10px 28px', background: '#031D3C', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                  Fechar
+                </button>
+              </div>
+            ) : (
+              <div style={{ padding: '24px' }}>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 6, fontFamily: 'Outfit, sans-serif' }}>
+                    Assunto
+                  </label>
+                  <input value={supportTitle} onChange={e => setSupportTitle(e.target.value)}
+                    placeholder="Ex: Problema com agendamentos…"
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontFamily: 'Outfit, sans-serif', outline: 'none', color: '#0f172a', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ marginBottom: 18 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 6, fontFamily: 'Outfit, sans-serif' }}>
+                    Mensagem
+                  </label>
+                  <textarea value={supportMsg} onChange={e => setSupportMsg(e.target.value)}
+                    placeholder="Descreva o problema ou dúvida com o máximo de detalhes…"
+                    rows={5}
+                    style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontFamily: 'Outfit, sans-serif', outline: 'none', color: '#0f172a', resize: 'vertical', boxSizing: 'border-box' }} />
+                </div>
+                <button
+                  disabled={!supportTitle.trim() || !supportMsg.trim() || supportSending}
+                  onClick={async () => {
+                    if (!supportTitle.trim() || !supportMsg.trim()) return;
+                    setSupportSending(true);
+                    try {
+                      await createSupportTicket(activeTenant.id, activeTenant.name, supportTitle.trim(), supportMsg.trim());
+                      setSupportSent(true);
+                    } catch (e) {
+                      console.error('[Support] error:', e);
+                    } finally {
+                      setSupportSending(false);
+                    }
+                  }}
+                  style={{ width: '100%', padding: '12px', background: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? '#94a3b8' : '#031D3C', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'background 150ms' }}>
+                  {supportSending ? 'Enviando…' : 'Enviar mensagem'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Assinatura ─────────────────────────────────────────────── */}
+      {billingModal && (() => {
+        const BASE = 89.90;
+        const PLAN_META = {
+          mensal:     { label: '1 Mês',   months: 1,  discountPct: 0,  color: '#3b82f6' },
+          trimestral: { label: '3 Meses', months: 3,  discountPct: 15, color: '#8b5cf6' },
+          anual:      { label: '1 Ano',   months: 12, discountPct: 25, color: '#10b981' },
+        } as const;
+        const pm      = PLAN_META[billingModal.plan];
+        const monthly = parseFloat((BASE * (1 - pm.discountPct / 100)).toFixed(2));
+        const total   = parseFloat((monthly * pm.months).toFixed(2));
+        const cpfClean = billingModal.cpfCnpj.replace(/\D/g, '');
+        const cpfValid = cpfClean.length === 11 || cpfClean.length === 14;
+        const handleSubmit = async () => {
+          if (!cpfValid) {
+            setBillingModal(prev => prev ? { ...prev, error: 'Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido.' } : null);
+            return;
+          }
+          setBillingModal(prev => prev ? { ...prev, step: 'loading', error: undefined } : null);
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const apiUrl = ((window as any).__BARBER_CONFIG__?.API_URL || '').replace(/\/$/, '');
+            const r = await fetch(
+              `${apiUrl}/api/billing/payment-link?tenantId=${activeTenant.id}&plan=${billingModal.plan}&cpfCnpj=${cpfClean}`,
+              { headers: { Authorization: `Bearer ${session?.access_token}` } }
+            );
+            const json = await r.json();
+            if (!r.ok) {
+              setBillingModal(prev => prev ? { ...prev, step: 'form', error: json.error ?? 'Erro ao gerar cobrança.' } : null);
+              return;
+            }
+            setBillingModal(prev => prev ? {
+              ...prev,
+              step: 'payment',
+              pixImage: json.pixImage,
+              pixCode:  json.pixCode,
+              payUrl:   json.url,
+            } : null);
+          } catch {
+            setBillingModal(prev => prev ? { ...prev, step: 'form', error: 'Erro de conexão. Tente novamente.' } : null);
+          }
+        };
+
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.82)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+            onClick={e => { if (e.target === e.currentTarget) setBillingModal(null); }}
+          >
+            <div style={{ background: '#fff', borderRadius: 20, width: 460, maxWidth: '100%', overflow: 'hidden', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
+
+              {/* Cabeçalho */}
+              <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: '1.5px', margin: '0 0 2px' }}>WorkAgenda · Assinatura</p>
+                  <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                    {billingModal.step === 'payment' ? 'Concluir pagamento' : 'Assinar plano'}
+                  </h3>
+                </div>
+                <button onClick={() => setBillingModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 4, display: 'flex', alignItems: 'center' }}>
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Resumo do plano */}
+              <div style={{ padding: '14px 24px', background: pm.color + '12', borderBottom: '1px solid ' + pm.color + '28', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: pm.color, textTransform: 'uppercase' as const, letterSpacing: '1px' }}>Plano {pm.label}</span>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: '#475569', margin: '2px 0 0' }}>R$ {monthly.toFixed(2).replace('.', ',')} /mês</p>
+                </div>
+                <div style={{ textAlign: 'right' as const }}>
+                  <p style={{ fontSize: 10, color: '#94a3b8', margin: 0 }}>Total {pm.months > 1 ? `(${pm.months} meses)` : ''}</p>
+                  <p style={{ fontSize: 22, fontWeight: 900, color: '#0f172a', margin: 0 }}>R$ {total.toFixed(2).replace('.', ',')}</p>
+                </div>
+              </div>
+
+              {/* Corpo */}
+              <div style={{ padding: 24 }}>
+
+                {/* Passo 1: formulário */}
+                {billingModal.step === 'form' && (
+                  <>
+                    <div style={{ marginBottom: 18 }}>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>CPF ou CNPJ *</label>
+                      <input
+                        autoFocus
+                        type="text"
+                        placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                        value={billingModal.cpfCnpj}
+                        onChange={e => setBillingModal(prev => prev ? { ...prev, cpfCnpj: e.target.value, error: undefined } : null)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+                        style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${billingModal.error ? '#fca5a5' : '#e2e8f0'}`, borderRadius: 10, fontSize: 14, color: '#0f172a', outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'Outfit, sans-serif', transition: 'border-color 0.15s' }}
+                      />
+                      <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0' }}>Necessário para emissão da cobrança via Asaas.</p>
+                    </div>
+                    {billingModal.error && (
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
+                        <p style={{ fontSize: 13, color: '#dc2626', margin: 0 }}>{billingModal.error}</p>
+                      </div>
+                    )}
+                    <button onClick={handleSubmit}
+                      style={{ width: '100%', padding: '13px 0', background: pm.color, color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                      Gerar cobrança →
+                    </button>
+                  </>
+                )}
+
+                {/* Passo loading */}
+                {billingModal.step === 'loading' && (
+                  <div style={{ textAlign: 'center' as const, padding: '32px 0' }}>
+                    <div style={{ width: 40, height: 40, border: `3px solid ${pm.color}33`, borderTopColor: pm.color, borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+                    <p style={{ color: '#64748b', fontSize: 14, margin: 0 }}>Gerando cobrança…</p>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                  </div>
+                )}
+
+                {/* Passo 2: pagamento */}
+                {billingModal.step === 'payment' && (
+                  <>
+                    {billingModal.pixImage && (
+                      <div style={{ textAlign: 'center' as const, marginBottom: 20 }}>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase' as const, letterSpacing: '1px', marginBottom: 12 }}>Pagar via PIX</p>
+                        <div style={{ display: 'inline-block', padding: 12, border: '1.5px solid #e2e8f0', borderRadius: 14, marginBottom: 14 }}>
+                          <img src={`data:image/png;base64,${billingModal.pixImage}`} alt="QR Code PIX" style={{ width: 200, height: 200, display: 'block' }} />
+                        </div>
+                        {billingModal.pixCode && (
+                          <div>
+                            <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 6px' }}>Copia e cola:</p>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <input readOnly value={billingModal.pixCode}
+                                style={{ flex: 1, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 10, color: '#475569', fontFamily: 'monospace', background: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} />
+                              <button onClick={() => { navigator.clipboard.writeText(billingModal.pixCode!); setPixCopied(true); setTimeout(() => setPixCopied(false), 2000); }}
+                                style={{ padding: '8px 14px', background: pixCopied ? '#10b981' : '#0f172a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' as const, flexShrink: 0 }}>
+                                {pixCopied ? '✓ Copiado' : 'Copiar'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {billingModal.payUrl && (
+                      <>
+                        {billingModal.pixImage && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0' }}>
+                            <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+                            <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>ou</span>
+                            <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+                          </div>
+                        )}
+                        <a href={billingModal.payUrl} target="_blank" rel="noopener noreferrer"
+                          style={{ display: 'block', textAlign: 'center' as const, padding: '13px 0', background: billingModal.pixImage ? '#f1f5f9' : pm.color, color: billingModal.pixImage ? '#374151' : '#fff', borderRadius: 10, fontSize: 14, fontWeight: 700, textDecoration: 'none', border: billingModal.pixImage ? '1.5px solid #e2e8f0' : 'none' }}>
+                          {billingModal.pixImage ? 'Pagar via Boleto ou Cartão →' : 'Acessar link de pagamento →'}
+                        </a>
+                      </>
+                    )}
+
+                    <p style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center' as const, margin: '16px 0 0', lineHeight: 1.5 }}>
+                      Após confirmação do pagamento, o acesso é liberado automaticamente.
+                    </p>
+                  </>
+                )}
+
+                {/* Passo success */}
+                {billingModal.step === 'success' && (
+                  <div style={{ textAlign: 'center' as const, padding: '24px 0' }}>
+                    <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#f0fdf4', border: '2px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+                      <span style={{ fontSize: 32 }}>✅</span>
+                    </div>
+                    <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: '0 0 10px' }}>Pagamento confirmado!</h3>
+                    <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6, margin: '0 0 6px' }}>
+                      Obrigado por assinar o WorkAgenda! 🎉
+                    </p>
+                    <p style={{ fontSize: 13, color: '#94a3b8', margin: '0 0 24px' }}>
+                      Sua conta foi ativada. Recarregando em instantes…
+                    </p>
+                    <div style={{ height: 4, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', background: '#22c55e', borderRadius: 4, animation: 'grow 3.5s linear forwards' }} />
+                    </div>
+                    <style>{`@keyframes grow { from { width: 0% } to { width: 100% } }`}</style>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

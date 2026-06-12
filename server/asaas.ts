@@ -8,7 +8,23 @@ const ASAAS_URL = process.env.ASAAS_SANDBOX === 'true'
   ? 'https://sandbox.asaas.com/api/v3'
   : 'https://api.asaas.com/v3';
 
-const PLAN_PRICE = 89.90; // R$ por mês
+const BASE_PRICE = 89.90; // R$ por mês (preço base)
+
+export const PLAN_PRICES: Record<string, { label: string; months: number; discountPct: number; cycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY' }> = {
+  mensal:     { label: 'Plano Mensal',     months: 1,  discountPct: 0,  cycle: 'MONTHLY'   },
+  trimestral: { label: 'Plano Trimestral', months: 3,  discountPct: 15, cycle: 'QUARTERLY'  },
+  anual:      { label: 'Plano Anual',      months: 12, discountPct: 25, cycle: 'YEARLY'     },
+};
+
+export function getPlanMonthlyPrice(plan: string): number {
+  const p = PLAN_PRICES[plan];
+  return p ? parseFloat((BASE_PRICE * (1 - p.discountPct / 100)).toFixed(2)) : BASE_PRICE;
+}
+
+export function getPlanTotal(plan: string): number {
+  const p = PLAN_PRICES[plan];
+  return p ? parseFloat((getPlanMonthlyPrice(plan) * p.months).toFixed(2)) : BASE_PRICE;
+}
 
 interface AsaasCustomer {
   id:    string;
@@ -65,27 +81,41 @@ export async function createAsaasCustomer(data: {
 
 // ── Assinaturas mensais ────────────────────────────────────────────────────────
 
-export async function createSubscription(customerId: string, trialDays = 10): Promise<AsaasSubscription> {
+export async function createSubscription(customerId: string, plan = 'mensal', trialDays = 7): Promise<AsaasSubscription> {
   const trialEnd = new Date();
   trialEnd.setDate(trialEnd.getDate() + trialDays);
-  const nextDueDate = trialEnd.toISOString().split('T')[0]; // primeira cobrança após o trial
+  const nextDueDate = trialEnd.toISOString().split('T')[0];
+
+  const planInfo = PLAN_PRICES[plan] ?? PLAN_PRICES.mensal;
+  const value    = getPlanTotal(plan);
 
   return asaasFetch('/subscriptions', {
     method: 'POST',
     body: JSON.stringify({
       customer:     customerId,
-      billingType:  'BOLETO',       // ou 'CREDIT_CARD' / 'PIX'
-      value:        PLAN_PRICE,
-      cycle:        'MONTHLY',
+      billingType:  'UNDEFINED',
+      value,
+      cycle:        planInfo.cycle,
       nextDueDate,
-      description:  'BarberFlow — Plano Mensal',
-      // Asaas envia o link de pagamento por email automaticamente
+      description:  `WorkAgenda — ${planInfo.label}`,
     }),
   });
 }
 
 export async function cancelSubscription(subscriptionId: string): Promise<void> {
   await asaasFetch(`/subscriptions/${subscriptionId}`, { method: 'DELETE' });
+}
+
+export async function getPendingPaymentLink(subscriptionId: string): Promise<string | null> {
+  const data = await asaasFetch<{ data: Array<{ status: string; invoiceUrl?: string; bankSlipUrl?: string }> }>(
+    `/payments?subscription=${subscriptionId}&limit=5`
+  );
+  // Prioriza o boleto/cobrança mais recente que ainda não foi pago
+  const pending = data.data?.find(p => ['PENDING', 'OVERDUE'].includes(p.status));
+  if (pending) return pending.invoiceUrl || pending.bankSlipUrl || null;
+  // Se não há cobrança pendente, retorna a da assinatura mais recente
+  const latest = data.data?.[0];
+  return latest?.invoiceUrl || latest?.bankSlipUrl || null;
 }
 
 export async function getSubscription(subscriptionId: string): Promise<AsaasSubscription> {

@@ -394,7 +394,7 @@ CREATE TABLE audit_logs (
                 </div>
                 <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-widest font-bold">Gateway de Pagamentos Integrado</h3>
                 <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                  Controle de assinaturas do SaaS integrado via Gateway <strong>Asaas API</strong>. A criação da conta do Tenant Admin ativa o período de teste de 10 dias de forma imediata. Ao expirar ou inadimplir, o sistema utiliza o webhook do financeiro para bloquear dinamicamente o acesso do painel do salão.
+                  Controle de assinaturas do SaaS integrado via Gateway <strong>Asaas API</strong>. A criação da conta do Tenant Admin ativa o período de teste de 7 dias de forma imediata. Ao expirar ou inadimplir, o sistema utiliza o webhook do financeiro para bloquear dinamicamente o acesso do painel do salão.
                 </p>
                 <div className="mt-4 flex flex-col gap-1.5 text-[10px] font-mono text-slate-500">
                   <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div> Cobrança Recorrente (Cartão/Pix)</div>

@@ -19,6 +19,7 @@ interface Props {
   myAppointments: Appointment[];
   myServices: Service[];
   myProfessionals: Professional[];
+  onStatusChange?: (state: ConnectionState, name: string | null) => void;
 }
 
 type SendState = 'idle' | 'sending' | 'done' | 'error';
@@ -29,7 +30,7 @@ function getApiUrl() {
   return (w.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
 }
 
-export default function WhatsAppTab({ activeTenant, myAppointments, myServices, myProfessionals }: Props) {
+export default function WhatsAppTab({ activeTenant, myAppointments, myServices, myProfessionals, onStatusChange }: Props) {
   const toast = useToast();
 
   // ── Auth token (para chamadas ao servidor) ─────────────────
@@ -118,18 +119,22 @@ export default function WhatsAppTab({ activeTenant, myAppointments, myServices, 
     date:  appt.date, time: appt.time,
     tenantName:  activeTenant.name,
     tenantPhone: activeTenant.phone,
+    id:          appt.id,
+    tenantSlug:  activeTenant.slug,
   });
 
   // ── Verificação de status ─────────────────────────────────
   const refreshStatus = useCallback(async () => {
     if (!authToken) return;
-    const state = await checkStatusServer(activeTenant.id, authToken);
+    const { state, name } = await checkStatusServer(activeTenant.id, authToken);
     setConnState(state);
+    setConnName(name);
+    onStatusChange?.(state, name);
     if (state === 'open') {
       setQrData(null);
       stopQrPolling();
     }
-  }, [authToken, activeTenant.id]);
+  }, [authToken, activeTenant.id, onStatusChange]);
 
   // ── QR Code polling ────────────────────────────────────────
   const stopQrPolling = () => {

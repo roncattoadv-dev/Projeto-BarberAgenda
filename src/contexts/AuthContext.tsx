@@ -15,15 +15,19 @@ export interface Profile {
 }
 
 interface AuthCtx {
-  session:   Session | null;
-  user:      User    | null;
-  profile:   Profile | null;
-  loading:   boolean;
-  signIn:    (email: string, password: string) => Promise<{ error: string | null }>;
-  signOut:   () => Promise<void>;
-  isSuper:   boolean;
-  isAdmin:   boolean;
-  tenantId:  string | null;
+  session:         Session | null;
+  user:            User    | null;
+  profile:         Profile | null;
+  loading:         boolean;
+  needsOnboarding: boolean;
+  signIn:          (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: (redirectTo?: string) => Promise<void>;
+  signOut:         () => Promise<void>;
+  resetPassword:   (email: string) => Promise<{ error: string | null }>;
+  updatePassword:  (password: string) => Promise<{ error: string | null }>;
+  isSuper:         boolean;
+  isAdmin:         boolean;
+  tenantId:        string | null;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -59,16 +63,6 @@ function writeCache(p: Profile | null) {
   } catch {}
 }
 
-// ── Busca profile do banco em background (para campos extras se necessário) ────
-async function fetchProfileBg(userId: string): Promise<Profile | null> {
-  try {
-    const { data, error } = await supabase
-      .from('profiles').select('*').eq('id', userId).single();
-    if (error) return null;
-    return data as Profile;
-  } catch { return null; }
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Inicia com cache — evita spinner em reloads
   const [session, setSession] = useState<Session | null>(null);
@@ -89,14 +83,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(sess);
 
       if (sess?.user) {
-        // 1. Resolve instantaneamente pelo JWT
-        const quick = profileFromUser(sess.user);
-        if (quick) {
-          applyProfile(quick);
-          finish();
-        }
-        // 2. Atualiza em background pelo banco (sem bloquear a UI)
-        fetchProfileBg(sess.user.id).then(p => { if (p) applyProfile(p); });
+        const p = profileFromUser(sess.user);
+        applyProfile(p);
+        finish();
+
+        // Verifica se o usuário ainda existe no servidor (detecta sessões de contas deletadas)
+        supabase.auth.getUser().then(({ error }) => {
+          if (error?.status === 403 || error?.message?.includes('does not exist')) {
+            supabase.auth.signOut();
+            applyProfile(null);
+          }
+        });
       } else {
         applyProfile(null);
         finish();
@@ -117,14 +114,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error?.message ?? null };
   };
 
+  const signInWithGoogle = async (redirectTo?: string) => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: redirectTo ?? window.location.origin },
+    });
+  };
+
   const signOut = async () => {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    // Se o servidor rejeitar (ex: usuário já deletado), limpa apenas a sessão local
+    if (error) await supabase.auth.signOut({ scope: 'local' });
     applyProfile(null);
   };
 
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/redefinir-senha`,
+    });
+    return { error: error?.message ?? null };
+  };
+
+  const updatePassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    return { error: error?.message ?? null };
+  };
+
+  // Usuário autenticado mas sem barbearia associada (inclui role='customer' criado pelo trigger)
+  const needsOnboarding = !loading && session !== null
+    && !profile?.tenant_id
+    && profile?.role !== 'super_admin';
+
   const value: AuthCtx = {
     session, user: session?.user ?? null, profile, loading,
-    signIn, signOut,
+    needsOnboarding,
+    signIn, signInWithGoogle, signOut, resetPassword, updatePassword,
     isSuper:  profile?.role === 'super_admin',
     isAdmin:  profile?.role === 'tenant_admin',
     tenantId: profile?.tenant_id ?? null,

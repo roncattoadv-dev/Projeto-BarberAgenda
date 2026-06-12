@@ -210,16 +210,15 @@ async function serverFetch<T>(path: string, token: string, options: RequestInit 
 }
 
 /** Verifica status da instância via servidor */
-export async function checkStatusServer(tenantId: string, token: string): Promise<ConnectionState> {
+export async function checkStatusServer(tenantId: string, token: string): Promise<{ state: ConnectionState; name: string | null }> {
   try {
-    const data = await serverFetch<{ ok: boolean; connected: boolean; loggedIn: boolean }>(
+    const data = await serverFetch<{ ok: boolean; connected: boolean; loggedIn: boolean; name?: string | null }>(
       `/api/whatsapp/status?tenantId=${tenantId}`, token
     );
-    if (data.loggedIn)  return 'open';
-    if (data.connected) return 'connecting';
-    return 'close';
+    const state: ConnectionState = data.loggedIn ? 'open' : data.connected ? 'connecting' : 'close';
+    return { state, name: data.name ?? null };
   } catch {
-    return 'error';
+    return { state: 'error', name: null };
   }
 }
 
@@ -270,6 +269,8 @@ export interface ApptData {
   time:             string;
   tenantName:       string;
   tenantPhone?:     string;
+  id?:              string;
+  tenantSlug?:      string;
 }
 
 export function formatDatePT(dateStr: string): string {
@@ -280,7 +281,15 @@ export function formatDatePT(dateStr: string): string {
   } catch { return dateStr; }
 }
 
+function buildApptLink(appt: ApptData): string {
+  if (appt.id && appt.tenantSlug) {
+    return `https://workagenda.org/${appt.tenantSlug}/cancelar/${appt.id}`;
+  }
+  return '';
+}
+
 export function buildConfirmationMsg(appt: ApptData): string {
+  const link = buildApptLink(appt);
   return [
     `Olá ${appt.customerName}! 😊`,
     '',
@@ -294,12 +303,13 @@ export function buildConfirmationMsg(appt: ApptData): string {
     `📍 ${appt.tenantName}`,
     appt.tenantPhone ? `📞 ${appt.tenantPhone}` : '',
     '',
-    'Para cancelar ou remarcar, responda esta mensagem.',
-    '_Powered by BarberFlow_ 💈',
-  ].filter(l => l !== null).join('\n');
+    link ? `Ver ou cancelar agendamento:\n${link}` : 'Para cancelar ou remarcar, responda esta mensagem.',
+    '_Powered by WorkAgenda_ 💈',
+  ].filter(Boolean).join('\n');
 }
 
 export function buildReminderMsg(appt: ApptData): string {
+  const link = buildApptLink(appt);
   return [
     `Olá ${appt.customerName}! 👋`,
     '',
@@ -310,22 +320,23 @@ export function buildReminderMsg(appt: ApptData): string {
     '',
     `📍 ${appt.tenantName}`,
     '',
-    'Te esperamos! Se precisar cancelar, responda esta mensagem.',
-    '_BarberFlow_ 💈',
-  ].join('\n');
+    link ? `Ver ou cancelar agendamento:\n${link}` : 'Se precisar cancelar, responda esta mensagem.',
+    '_WorkAgenda_ 💈',
+  ].filter(Boolean).join('\n');
 }
 
 export function buildCancellationMsg(appt: ApptData): string {
+  const link = appt.tenantSlug ? `https://workagenda.org/${appt.tenantSlug}/agendamento` : '';
   return [
     `Olá ${appt.customerName},`,
     '',
     `❌ Seu agendamento de *${appt.serviceName}* em ${formatDatePT(appt.date)} às ${appt.time} foi *cancelado*.`,
     '',
-    'Para reagendar, acesse nosso link ou responda esta mensagem.',
+    link ? `Para reagendar acesse:\n${link}` : 'Para reagendar, responda esta mensagem.',
     '',
     `📍 ${appt.tenantName}`,
-    '_BarberFlow_ 💈',
-  ].join('\n');
+    '_WorkAgenda_ 💈',
+  ].filter(Boolean).join('\n');
 }
 
 export function buildCustomMsg(template: string, appt: ApptData): string {
