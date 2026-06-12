@@ -21,7 +21,36 @@ interface Props {
 }
 
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const MONTHS_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const PIE_COLORS = ['#38BDF8', '#818CF8', '#34D399', '#FB923C', '#A78BFA', '#F472B6'];
+
+function fmtDate(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+function isoWeekStr(d: Date): string {
+  const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  const wk = Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${tmp.getUTCFullYear()}-W${String(wk).padStart(2, '0')}`;
+}
+
+function weekToRange(weekStr: string): { start: string; end: string } {
+  const [y, w] = weekStr.split('-W').map(Number);
+  const jan4 = new Date(y, 0, 4);
+  const dow = jan4.getDay() || 7;
+  const mon = new Date(jan4);
+  mon.setDate(jan4.getDate() - dow + 1 + (w - 1) * 7);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return { start: fmtDate(mon), end: fmtDate(sun) };
+}
+
+function inRange(dateStr: string, start: string, end: string): boolean {
+  const d = dateStr.substring(0, 10);
+  return d >= start && d <= end;
+}
 const fmtCurrency = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -92,8 +121,11 @@ export default function FinanceiroTab({
   const nowStr = now.toISOString().replace('T', ' ').substring(0, 19);
 
   const [view, setView] = useState<'dashboard' | 'relatorio'>('dashboard');
+  const [periodType, setPeriodType] = useState<'semana' | 'mes' | 'trimestre'>('mes');
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [selectedWeek, setSelectedWeek] = useState(() => isoWeekStr(now));
+  const [selectedQuarter, setSelectedQuarter] = useState(() => Math.floor(now.getMonth() / 3) + 1);
   const [filterProfId, setFilterProfId] = useState('');
 
   const [directSaleDesc, setDirectSaleDesc] = useState('');
@@ -102,34 +134,74 @@ export default function FinanceiroTab({
   const [expenseAmount, setExpenseAmount] = useState(0);
   const [expenseDesc, setExpenseDesc] = useState('');
 
-  const periodStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
-  const prevDate = new Date(selectedYear, selectedMonth - 1, 1);
-  const prevPeriodStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+  // ── Date ranges from period type ───────────────────────────────────────────
+  const dateRange = useMemo((): { start: string; end: string } => {
+    if (periodType === 'semana') return weekToRange(selectedWeek);
+    if (periodType === 'trimestre') {
+      const mStart = (selectedQuarter - 1) * 3;
+      const start = `${selectedYear}-${String(mStart + 1).padStart(2, '0')}-01`;
+      const end = fmtDate(new Date(selectedYear, mStart + 3, 0));
+      return { start, end };
+    }
+    // mes
+    const start = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
+    const end = fmtDate(new Date(selectedYear, selectedMonth + 1, 0));
+    return { start, end };
+  }, [periodType, selectedMonth, selectedYear, selectedWeek, selectedQuarter]);
 
-  // Appointment IDs belonging to the filtered professional (for payment lookup)
+  const prevDateRange = useMemo((): { start: string; end: string } => {
+    if (periodType === 'semana') {
+      const cur = weekToRange(selectedWeek);
+      const prevMon = new Date(cur.start);
+      prevMon.setDate(prevMon.getDate() - 7);
+      const prevSun = new Date(prevMon);
+      prevSun.setDate(prevMon.getDate() + 6);
+      return { start: fmtDate(prevMon), end: fmtDate(prevSun) };
+    }
+    if (periodType === 'trimestre') {
+      const prevQ = selectedQuarter === 1 ? 4 : selectedQuarter - 1;
+      const prevY = selectedQuarter === 1 ? selectedYear - 1 : selectedYear;
+      const mStart = (prevQ - 1) * 3;
+      return { start: `${prevY}-${String(mStart + 1).padStart(2, '0')}-01`, end: fmtDate(new Date(prevY, mStart + 3, 0)) };
+    }
+    const d = new Date(selectedYear, selectedMonth - 1, 1);
+    return { start: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`, end: fmtDate(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
+  }, [periodType, selectedMonth, selectedYear, selectedWeek, selectedQuarter]);
+
+  // Human-readable period label
+  const periodLabel = useMemo(() => {
+    if (periodType === 'semana') {
+      const { start, end } = weekToRange(selectedWeek);
+      return `${start.substring(8, 10)}/${start.substring(5, 7)} – ${end.substring(8, 10)}/${end.substring(5, 7)}/${end.substring(0, 4)}`;
+    }
+    if (periodType === 'trimestre') return `T${selectedQuarter} ${selectedYear}`;
+    return `${MONTHS_FULL[selectedMonth]} ${selectedYear}`;
+  }, [periodType, selectedMonth, selectedYear, selectedWeek, selectedQuarter]);
+
+  // ── Appointment IDs for prof filter ───────────────────────────────────────
   const profApptIds = useMemo(() => {
     if (!filterProfId) return null;
     return new Set(myAppointments.filter(a => a.professionalId === filterProfId).map(a => a.id));
   }, [myAppointments, filterProfId]);
 
   const apptFilter = (a: { date: string; status: string; professionalId: string }) =>
-    a.date.startsWith(periodStr) && a.status === 'attended' && (!filterProfId || a.professionalId === filterProfId);
+    inRange(a.date, dateRange.start, dateRange.end) && a.status === 'attended' && (!filterProfId || a.professionalId === filterProfId);
 
   const prevApptFilter = (a: { date: string; status: string; professionalId: string }) =>
-    a.date.startsWith(prevPeriodStr) && a.status === 'attended' && (!filterProfId || a.professionalId === filterProfId);
+    inRange(a.date, prevDateRange.start, prevDateRange.end) && a.status === 'attended' && (!filterProfId || a.professionalId === filterProfId);
 
-  // Payments: when filtered by prof, only include appointment-linked payments for that prof
+  // ── Filtered payments ──────────────────────────────────────────────────────
   const periodPayments = useMemo(() => myPayments.filter(p => {
-    if (!p.date.startsWith(periodStr)) return false;
+    if (!inRange(p.date, dateRange.start, dateRange.end)) return false;
     if (filterProfId) return !!p.appointmentId && !!profApptIds?.has(p.appointmentId);
     return true;
-  }), [myPayments, periodStr, filterProfId, profApptIds]);
+  }), [myPayments, dateRange, filterProfId, profApptIds]);
 
   const prevPayments = useMemo(() => myPayments.filter(p => {
-    if (!p.date.startsWith(prevPeriodStr)) return false;
+    if (!inRange(p.date, prevDateRange.start, prevDateRange.end)) return false;
     if (filterProfId) return !!p.appointmentId && !!profApptIds?.has(p.appointmentId);
     return true;
-  }), [myPayments, prevPeriodStr, filterProfId, profApptIds]);
+  }), [myPayments, prevDateRange, filterProfId, profApptIds]);
 
   const totalRevenue = periodPayments.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
   const totalExpenses = periodPayments.filter(p => p.status === 'refunded').reduce((s, p) => s + p.amount, 0);
@@ -140,19 +212,18 @@ export default function FinanceiroTab({
   const prevExpenses = prevPayments.filter(p => p.status === 'refunded').reduce((s, p) => s + p.amount, 0);
   const prevAtendimentos = myAppointments.filter(prevApptFilter).length;
 
+  // ── Trend chart (always last 6 months anchored on today) ──────────────────
   const chartData = useMemo(() => {
     return Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(selectedYear, selectedMonth - 5 + i, 1);
+      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const apptIdsInMonth = filterProfId
         ? new Set(myAppointments.filter(a => a.professionalId === filterProfId).map(a => a.id))
         : null;
       const pay = myPayments.filter(p => p.date.startsWith(key) && (!filterProfId || (!!p.appointmentId && !!apptIdsInMonth?.has(p.appointmentId))));
-      const rev = pay.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
-      const exp = pay.filter(p => p.status === 'refunded').reduce((s, p) => s + p.amount, 0);
-      return { month: MONTHS[d.getMonth()], Receitas: rev, Despesas: exp };
+      return { month: MONTHS[d.getMonth()], Receitas: pay.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0), Despesas: pay.filter(p => p.status === 'refunded').reduce((s, p) => s + p.amount, 0) };
     });
-  }, [myPayments, myAppointments, selectedMonth, selectedYear, filterProfId]);
+  }, [myPayments, myAppointments, filterProfId]);
 
   const [pieMode, setPieMode] = useState<'servico' | 'profissional'>('servico');
 
@@ -160,33 +231,29 @@ export default function FinanceiroTab({
     const map: Record<string, number> = {};
     myAppointments.filter(apptFilter).forEach(a => {
       const svc = myServices.find(s => s.id === a.serviceId);
-      const cat = svc?.category ?? 'Outros';
-      map[cat] = (map[cat] || 0) + a.price;
+      map[svc?.category ?? 'Outros'] = (map[svc?.category ?? 'Outros'] || 0) + a.price;
     });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [myAppointments, myServices, periodStr, filterProfId]);
+  }, [myAppointments, myServices, dateRange, filterProfId]);
 
   const pieDataByProf = useMemo(() => {
     const map: Record<string, number> = {};
     myAppointments.filter(apptFilter).forEach(a => {
-      const prof = myProfessionals.find(p => p.id === a.professionalId);
-      const name = prof?.name ?? 'Sem profissional';
+      const name = myProfessionals.find(p => p.id === a.professionalId)?.name ?? 'Sem profissional';
       map[name] = (map[name] || 0) + a.price;
     });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [myAppointments, myProfessionals, periodStr, filterProfId]);
+  }, [myAppointments, myProfessionals, dateRange, filterProfId]);
 
   const commissions = useMemo(() => {
-    const profsToShow = filterProfId
-      ? myProfessionals.filter(p => p.id === filterProfId)
-      : myProfessionals;
+    const profsToShow = filterProfId ? myProfessionals.filter(p => p.id === filterProfId) : myProfessionals;
     return profsToShow.map(prof => {
-      const closed = myAppointments.filter(a => a.professionalId === prof.id && a.status === 'attended' && a.date.startsWith(periodStr));
+      const closed = myAppointments.filter(a => a.professionalId === prof.id && a.status === 'attended' && inRange(a.date, dateRange.start, dateRange.end));
       const total = closed.reduce((s, a) => s + a.price, 0);
       const comm = total * (prof.commissionPercentage / 100);
       return { id: prof.id, name: prof.name, closedCount: closed.length, commissionPct: prof.commissionPercentage, totalEarned: total, dueCommission: comm };
     });
-  }, [myProfessionals, myAppointments, periodStr, filterProfId]);
+  }, [myProfessionals, myAppointments, dateRange, filterProfId]);
 
   const handleDirectSale = (e: React.FormEvent) => {
     e.preventDefault();
@@ -208,7 +275,6 @@ export default function FinanceiroTab({
 
   // ── Print: open new window with clean HTML document ───────────────────────
   const handlePrint = () => {
-    const periodLabel = `${MONTHS[selectedMonth]} ${selectedYear}`;
     const profName = filterProfId ? myProfessionals.find(p => p.id === filterProfId)?.name : '';
     const genDate = now.toLocaleDateString('pt-BR');
     const genTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -362,35 +428,52 @@ export default function FinanceiroTab({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fade-in">
 
-      {/* Top bar: period + view toggle */}
+      {/* Top bar: period type + period selector + prof filter + view toggle */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Calendar size={15} style={{ color: 'rgba(255,255,255,0.35)' }} />
-          <select
-            value={selectedMonth}
-            onChange={e => setSelectedMonth(Number(e.target.value))}
-            className="navy-select"
-            style={{ maxWidth: 130 }}
-          >
-            {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
-          </select>
-          <select
-            value={selectedYear}
-            onChange={e => setSelectedYear(Number(e.target.value))}
-            className="navy-select"
-            style={{ maxWidth: 100 }}
-          >
-            {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map(y => (
-              <option key={y} value={y}>{y}</option>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* Period type toggle */}
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 3, gap: 2 }}>
+            {(['semana', 'mes', 'trimestre'] as const).map(t => (
+              <button key={t} onClick={() => setPeriodType(t)} style={{ padding: '5px 11px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: periodType === t ? 'rgba(255,255,255,0.14)' : 'transparent', color: periodType === t ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', transition: 'all 150ms', textTransform: 'capitalize' }}>
+                {t === 'mes' ? 'Mês' : t === 'semana' ? 'Semana' : 'Trimestre'}
+              </button>
             ))}
-          </select>
+          </div>
+
+          {/* Week picker */}
+          {periodType === 'semana' && (
+            <input
+              type="week"
+              value={selectedWeek}
+              onChange={e => e.target.value && setSelectedWeek(e.target.value)}
+              className="navy-input"
+              style={{ maxWidth: 170, padding: '8px 12px', fontSize: 13 }}
+            />
+          )}
+
+          {/* Month + year selects */}
+          {periodType === 'mes' && (<>
+            <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="navy-select" style={{ maxWidth: 130 }}>
+              {MONTHS_FULL.map((m, i) => <option key={i} value={i}>{m}</option>)}
+            </select>
+            <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="navy-select" style={{ maxWidth: 100 }}>
+              {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </>)}
+
+          {/* Quarter + year selects */}
+          {periodType === 'trimestre' && (<>
+            <select value={selectedQuarter} onChange={e => setSelectedQuarter(Number(e.target.value))} className="navy-select" style={{ maxWidth: 100 }}>
+              {[1, 2, 3, 4].map(q => <option key={q} value={q}>T{q}</option>)}
+            </select>
+            <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="navy-select" style={{ maxWidth: 100 }}>
+              {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </>)}
+
+          {/* Professional filter */}
           {myProfessionals.length > 0 && (
-            <select
-              value={filterProfId}
-              onChange={e => setFilterProfId(e.target.value)}
-              className="navy-select"
-              style={{ maxWidth: 180 }}
-            >
+            <select value={filterProfId} onChange={e => setFilterProfId(e.target.value)} className="navy-select" style={{ maxWidth: 190 }}>
               <option value="">Todos os profissionais</option>
               {myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
@@ -430,8 +513,8 @@ export default function FinanceiroTab({
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <p style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: 0 }}>Relatório Mensal</p>
-                <p style={{ fontSize: 13, color: '#64748B', margin: '2px 0 0' }}>{MONTHS[selectedMonth]} {selectedYear}</p>
+                <p style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: 0 }}>Relatório Financeiro</p>
+                <p style={{ fontSize: 13, color: '#64748B', margin: '2px 0 0' }}>{periodLabel}</p>
                 {filterProfId && <p style={{ fontSize: 12, color: '#0EA5E9', fontWeight: 600, margin: '2px 0 0' }}>{myProfessionals.find(p => p.id === filterProfId)?.name}</p>}
                 <p style={{ fontSize: 11, color: '#94A3B8', margin: '2px 0 0' }}>Gerado em {now.toLocaleDateString('pt-BR')}</p>
               </div>
@@ -552,7 +635,7 @@ export default function FinanceiroTab({
                   </tfoot>
                 </table>
               ) : (
-                <p style={{ color: '#94A3B8', fontSize: 13 }}>Nenhuma transação em {MONTHS[selectedMonth]} {selectedYear}.</p>
+                <p style={{ color: '#94A3B8', fontSize: 13 }}>Nenhuma transação em {periodLabel}.</p>
               )}
             </div>
 
@@ -631,7 +714,7 @@ export default function FinanceiroTab({
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
         {/* Line chart */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Desempenho Semestral</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Tendência — últimos 6 meses</span>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.06)" />
@@ -827,7 +910,7 @@ export default function FinanceiroTab({
                 );
               }) : (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>Nenhuma transação em {MONTHS[selectedMonth]} {selectedYear}.</td>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>Nenhuma transação em {periodLabel}.</td>
                 </tr>
               )}
             </tbody>
