@@ -263,7 +263,10 @@ export default function ClientAdminPanel({
   const [srvProfIds,     setSrvProfIds]     = useState<string[]>([]);
   const [editingSrv,     setEditingSrv]     = useState<Service | null>(null);
   const [srvProfPanel,   setSrvProfPanel]   = useState<Service | null>(null);
-  const [hiddenPresets,  setHiddenPresets]  = useState<string[]>([]);
+  const hiddenPresetsKey = `wa_hidden_presets_${activeTenant.id}`;
+  const [hiddenPresets, setHiddenPresets] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(hiddenPresetsKey) || '[]'); } catch { return []; }
+  });
   const [profName,       setProfName]       = useState('');
   const [profRole,       setProfRole]       = useState('Barbeiro');
   const [profCommission, setProfCommission] = useState(40);
@@ -1092,6 +1095,13 @@ export default function ClientAdminPanel({
                                   <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Serviços Padrão</p>
                                   <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: '3px 0 0' }}>Defina o preço e clique para adicionar</p>
                                 </div>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                {hiddenPresets.length > 0 && (
+                                  <button type="button" onClick={() => { setHiddenPresets([]); localStorage.removeItem(hiddenPresetsKey); }}
+                                    style={{ padding: '7px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
+                                    Restaurar ocultos ({hiddenPresets.length})
+                                  </button>
+                                )}
                                 {!allPresetsAdded && (
                                   <button
                                     type="button"
@@ -1105,6 +1115,7 @@ export default function ClientAdminPanel({
                                     + Adicionar todos
                                   </button>
                                 )}
+                                </div>
                               </div>
 
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
@@ -1158,7 +1169,7 @@ export default function ClientAdminPanel({
                                             + Add
                                           </motion.button>
                                           <button type="button"
-                                            onClick={() => setHiddenPresets(h => [...h, preset.name])}
+                                            onClick={() => setHiddenPresets(h => { const next = [...h, preset.name]; localStorage.setItem(hiddenPresetsKey, JSON.stringify(next)); return next; })}
                                             title="Remover da lista"
                                             style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                             <X size={12} />
