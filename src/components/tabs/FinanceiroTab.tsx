@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Payment, Professional, Appointment, Service, Tenant } from '../../types';
 import {
   TrendingUp, TrendingDown, DollarSign, Users,
@@ -95,14 +95,6 @@ export default function FinanceiroTab({
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
-  useEffect(() => {
-    if (view === 'relatorio') {
-      document.body.classList.add('print-report-active');
-    } else {
-      document.body.classList.remove('print-report-active');
-    }
-    return () => document.body.classList.remove('print-report-active');
-  }, [view]);
 
   const [directSaleDesc, setDirectSaleDesc] = useState('');
   const [directSaleAmount, setDirectSaleAmount] = useState(0);
@@ -187,6 +179,140 @@ export default function FinanceiroTab({
 
   const methodLabel: Record<string, string> = { pix: 'PIX', cash: 'Dinheiro', credit_card: 'Cartão' };
 
+  // ── Print: open new window with clean HTML document ───────────────────────
+  const handlePrint = () => {
+    const periodLabel = `${MONTHS[selectedMonth]} ${selectedYear}`;
+    const genDate = now.toLocaleDateString('pt-BR');
+    const genTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    const th = (label: string, align = 'left') =>
+      `<th style="padding:8px 12px;text-align:${align};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94A3B8;border-bottom:2px solid #E2E8F0;background:#F8FAFC;">${label}</th>`;
+    const td = (val: string, align = 'left', extra = '') =>
+      `<td style="padding:9px 12px;text-align:${align};border-bottom:1px solid #E2E8F0;${extra}">${val}</td>`;
+
+    const kpiCards = [
+      { label: 'Faturamento Bruto', val: fmtCurrency(totalRevenue),       color: '#10B981', bg: '#ECFDF5' },
+      { label: 'Despesas Totais',   val: fmtCurrency(totalExpenses),       color: '#EF4444', bg: '#FEF2F2' },
+      { label: 'Lucro Líquido',     val: fmtCurrency(netProfit),           color: netProfit >= 0 ? '#10B981' : '#EF4444', bg: netProfit >= 0 ? '#ECFDF5' : '#FEF2F2' },
+      { label: 'Atendimentos',      val: String(periodAtendimentos),       color: '#0EA5E9', bg: '#F0F9FF' },
+    ].map(k => `
+      <div style="background:${k.bg};border-radius:10px;padding:16px 18px;flex:1;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#64748B;margin-bottom:6px;">${k.label}</div>
+        <div style="font-size:22px;font-weight:800;color:${k.color};font-family:monospace;">${k.val}</div>
+      </div>`).join('');
+
+    const serviceRows = byService.map((s, i) => `<tr style="background:${i%2===0?'#fff':'#F8FAFC'};">
+      ${td(`<strong>${s.name}</strong>`)}${td(String(s.count),'right')}${td(fmtCurrency(s.revenue),'right','color:#10B981;font-weight:700;font-family:monospace;')}${td(totalRevenue>0?((s.revenue/totalRevenue)*100).toFixed(1)+'%':'—','right','color:#64748B;')}
+    </tr>`).join('');
+
+    const profRows = commissions.filter(c => c.closedCount > 0).map((c, i) => `<tr style="background:${i%2===0?'#fff':'#F8FAFC'};">
+      ${td(`<strong>${c.name}</strong>`)}${td(String(c.closedCount),'right')}${td(fmtCurrency(c.totalEarned),'right','color:#10B981;font-weight:700;font-family:monospace;')}${td(c.commissionPct+'%','right','color:#64748B;')}${td(fmtCurrency(c.dueCommission),'right','color:#EF4444;font-weight:700;font-family:monospace;')}${td(fmtCurrency(c.totalEarned-c.dueCommission),'right','font-weight:700;font-family:monospace;')}
+    </tr>`).join('');
+
+    const txRows = [...periodPayments].reverse().map((p, i) => {
+      const appt = p.appointmentId ? myAppointments.find(a => a.id === p.appointmentId) : undefined;
+      const prof = appt ? myProfessionals.find(pr => pr.id === appt.professionalId) : undefined;
+      const isOut = p.status === 'refunded';
+      return `<tr style="background:${i%2===0?'#fff':'#F8FAFC'};">
+        ${td(`<span style="font-family:monospace;font-size:11px;color:#64748B;">${p.date.substring(0,10)}</span>`)}
+        ${td(p.description,'left','font-weight:600;')}
+        ${td(prof?.name ?? '<span style="color:#CBD5E1;">—</span>')}
+        ${td(`<span style="background:#F1F5F9;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;font-family:monospace;">${methodLabel[p.method]??p.method}</span>`)}
+        ${td(`<span style="color:${isOut?'#EF4444':'#10B981'};font-weight:800;font-family:monospace;">${isOut?'−':'+'} ${fmtCurrency(p.amount)}</span>`,'right')}
+        ${td(`<span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:${isOut?'#FEF2F2':'#ECFDF5'};color:${isOut?'#EF4444':'#10B981'};">${isOut?'Saída':'Pago'}</span>`,'right')}
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Relatório ${periodLabel} — ${activeTenant.name}</title>
+  <style>
+    @page { size: A4; margin: 14mm 16mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #0F172A; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    h2 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #94A3B8; margin-bottom: 10px; margin-top: 28px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .kpi-row { display: flex; gap: 12px; margin-bottom: 4px; }
+    .section-break { page-break-inside: avoid; }
+    tr { page-break-inside: avoid; }
+    tfoot td { background: #F1F5F9; font-weight: 700; padding: 10px 12px; border-top: 2px solid #E2E8F0; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:2px solid #E2E8F0;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;gap:14px;">
+      ${activeTenant.logo ? `<img src="${activeTenant.logo}" style="width:52px;height:52px;border-radius:10px;object-fit:cover;" />` : ''}
+      <div>
+        <div style="font-size:20px;font-weight:800;letter-spacing:-0.4px;">${activeTenant.name}</div>
+        ${activeTenant.address ? `<div style="font-size:11px;color:#64748B;margin-top:2px;">${activeTenant.address}</div>` : ''}
+        ${activeTenant.phone ? `<div style="font-size:11px;color:#94A3B8;">${activeTenant.phone}</div>` : ''}
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:16px;font-weight:700;">Relatório Mensal</div>
+      <div style="font-size:13px;color:#475569;margin-top:2px;">${periodLabel}</div>
+      <div style="font-size:11px;color:#94A3B8;margin-top:2px;">Gerado em ${genDate} às ${genTime}</div>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <h2>Resumo do Período</h2>
+  <div class="kpi-row">${kpiCards}</div>
+
+  <!-- By service -->
+  ${byService.length > 0 ? `
+  <div class="section-break">
+    <h2>Desempenho por Serviço</h2>
+    <table>
+      <thead><tr>${th('Serviço')}${th('Atendimentos','right')}${th('Faturamento','right')}${th('% do Total','right')}</tr></thead>
+      <tbody>${serviceRows}</tbody>
+    </table>
+  </div>` : ''}
+
+  <!-- By professional -->
+  ${commissions.filter(c=>c.closedCount>0).length > 0 ? `
+  <div class="section-break">
+    <h2>Desempenho por Profissional</h2>
+    <table>
+      <thead><tr>${th('Profissional')}${th('Atendimentos','right')}${th('Faturamento','right')}${th('Comissão (%)','right')}${th('Valor Comissão','right')}${th('Repasse Salão','right')}</tr></thead>
+      <tbody>${profRows}</tbody>
+    </table>
+  </div>` : ''}
+
+  <!-- Transactions -->
+  <div class="section-break">
+    <h2>Lançamentos do Período</h2>
+    ${periodPayments.length > 0 ? `
+    <table>
+      <thead><tr>${th('Data')}${th('Descrição')}${th('Profissional')}${th('Método')}${th('Valor','right')}${th('Status','right')}</tr></thead>
+      <tbody>${txRows}</tbody>
+      <tfoot><tr>
+        <td colspan="4">Total do Período</td>
+        <td style="text-align:right;color:${netProfit>=0?'#10B981':'#EF4444'};font-family:monospace;">${netProfit>=0?'+':''} ${fmtCurrency(netProfit)}</td>
+        <td></td>
+      </tr></tfoot>
+    </table>` : `<p style="color:#94A3B8;">Nenhuma transação em ${periodLabel}.</p>`}
+  </div>
+
+  <!-- Footer -->
+  <div style="margin-top:32px;padding-top:12px;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;font-size:10px;color:#CBD5E1;">
+    <span>Gerado pelo WorkAgenda · workagenda.org</span>
+    <span>${genDate} às ${genTime}</span>
+  </div>
+
+  <script>window.onload=function(){window.print();}<\/script>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    if (!win) { toast.error('Permita pop-ups para exportar o relatório.'); return; }
+    win.document.write(html);
+    win.document.close();
+  };
+
   // ── By service (for report) ──────────────────────────────────────────────
   const byService = useMemo(() => {
     const map: Record<string, { count: number; revenue: number }> = {};
@@ -242,10 +368,9 @@ export default function FinanceiroTab({
       {/* ── REPORT VIEW ── */}
       {view === 'relatorio' && (
         <>
-          {/* Print button (hidden when printing) */}
+          {/* Print button */}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: '#38BDF8', color: '#0C1A26', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
-              className="no-print">
+            <button onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: '#38BDF8', color: '#0C1A26', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
               <Printer size={15} /> Imprimir / Exportar PDF
             </button>
           </div>
