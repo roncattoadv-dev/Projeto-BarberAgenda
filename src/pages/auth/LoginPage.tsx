@@ -152,7 +152,7 @@ export default function LoginPage() {
                   <input
                     type="email" required autoFocus
                     value={email} onChange={e => setEmail(e.target.value)}
-                    placeholder="voce@barberflow.com.br"
+                    placeholder="voce@workagenda.org"
                     className="navy-input"
                   />
                 </div>
@@ -231,7 +231,7 @@ export default function LoginPage() {
                   <input
                     type="email" required autoFocus
                     value={resetEmail} onChange={e => setResetEmail(e.target.value)}
-                    placeholder="voce@barberflow.com.br"
+                    placeholder="voce@workagenda.org"
                     className="navy-input"
                   />
                 </div>
