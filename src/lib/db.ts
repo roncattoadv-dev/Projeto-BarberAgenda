@@ -82,6 +82,16 @@ export async function createProfessional(p: Omit<Professional, 'id'>, serviceIds
   return { ...mapProfessional(data), services: serviceIds };
 }
 
+export async function setServiceProfessionals(serviceId: string, professionalIds: string[]): Promise<void> {
+  await supabase.from('professional_services').delete().eq('service_id', serviceId);
+  if (professionalIds.length) {
+    const { error } = await supabase.from('professional_services').insert(
+      professionalIds.map(pid => ({ professional_id: pid, service_id: serviceId }))
+    );
+    if (error) throw error;
+  }
+}
+
 export async function deleteProfessional(id: string): Promise<void> {
   const { error } = await supabase.from('professionals').update({ is_active: false }).eq('id', id);
   if (error) throw error;
