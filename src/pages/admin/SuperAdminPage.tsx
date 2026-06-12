@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import SuperAdminPanel from '../../components/SuperAdminPanel';
-import { getTenants, getCoupons, getAuditLogs, updateTenant, createCoupon, logAudit } from '../../lib/db';
+import { getTenants, getCoupons, getAuditLogs, updateTenant, createCoupon, logAudit, getSupportTickets, resolveTicket } from '../../lib/db';
 import type { Tenant, Coupon, AuditLog, SupportTicket } from '../../types';
 import { ShieldCheck } from 'lucide-react';
 
@@ -11,16 +11,17 @@ export default function SuperAdminPage() {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
 
-  const [tenants,    setTenants]    = useState<Tenant[]>([]);
-  const [coupons,    setCoupons]    = useState<Coupon[]>([]);
-  const [auditLogs,  setAuditLogs]  = useState<AuditLog[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const [tenants,        setTenants]        = useState<Tenant[]>([]);
+  const [coupons,        setCoupons]        = useState<Coupon[]>([]);
+  const [auditLogs,      setAuditLogs]      = useState<AuditLog[]>([]);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [loading,        setLoading]        = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [t, c, a] = await Promise.all([getTenants(), getCoupons(), getAuditLogs(null)]);
-      setTenants(t); setCoupons(c); setAuditLogs(a);
+      const [t, c, a, s] = await Promise.all([getTenants(), getCoupons(), getAuditLogs(null), getSupportTickets()]);
+      setTenants(t); setCoupons(c); setAuditLogs(a); setSupportTickets(s);
     } catch (err) {
       console.error('[SuperAdmin] load error:', err);
     } finally {
@@ -66,8 +67,8 @@ export default function SuperAdminPage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <img
-            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%201%20de%20jun.%20de%202026,%2011_34_59%20(1).png"
-            alt="BarberFlow"
+            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"
+            alt="WorkAgenda"
             style={{ height: 40, objectFit: 'contain' }}
           />
           <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.18)' }} />
@@ -117,8 +118,15 @@ export default function SuperAdminPage() {
             onExtendTrial={handleExtendTrial}
             coupons={coupons}
             onAddCoupon={handleAddCoupon}
-            supportTickets={[] as SupportTicket[]}
-            onResolveTicket={async () => {}}
+            supportTickets={supportTickets}
+            onResolveTicket={async (ticketId, reply) => {
+              if (!reply) return;
+              await resolveTicket(ticketId, reply);
+              setSupportTickets(prev => prev.map(t => t.id === ticketId
+                ? { ...t, status: 'resolved', messages: [...t.messages, { sender: 'superadmin', content: reply, timestamp: new Date().toISOString() }] }
+                : t
+              ));
+            }}
             auditLogs={auditLogs}
           />
         )}

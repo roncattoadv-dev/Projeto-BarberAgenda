@@ -12,8 +12,9 @@ export interface Tenant {
   phone: string;
   address: string;
   instagram: string;
+  contactEmail?: string;
   status: 'active' | 'blocked' | 'trial';
-  plan: 'mensal' | 'semestral' | 'anual' | 'trial';
+  plan: 'mensal' | 'trimestral' | 'anual' | 'trial';
   trialEndsAt: string;
   subscriptionEndsAt: string;
   mrr: number;
@@ -21,6 +22,12 @@ export interface Tenant {
   businessDays?: string[];
   businessHoursByDay?: Record<string, string[]>;
   blockedDates?: string[]; // YYYY-MM-DD — férias, feriados, folgas
+  bookingPageConfig?: {
+    primaryColor: string;
+    showPhone: boolean;
+    showAddress: boolean;
+    showInstagram: boolean;
+  };
 }
 
 export interface User {
@@ -84,6 +91,7 @@ export interface Appointment {
   customerId: string;
   customerName: string;
   customerPhone: string;
+  customerEmail?: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
   durationMinutes: number;
@@ -92,6 +100,7 @@ export interface Appointment {
   notes?: string;
   wppConfirmSent?: boolean;
   wppReminderSent?: boolean;
+  emailConfirmSent?: boolean;
 }
 
 export interface Payment {
@@ -108,7 +117,7 @@ export interface Payment {
 export interface Subscription {
   id: string;
   tenantId: string;
-  plan: 'mensal' | 'semestral' | 'anual';
+  plan: 'mensal' | 'trimestral' | 'anual';
   amount: number;
   status: 'active' | 'past_due' | 'unpaid' | 'cancelled';
   gatewayId: string;

@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CustomerBookingFlow from '../../components/CustomerBookingFlow';
 import { supabase } from '../../lib/supabase';
-import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, updateAppointmentStatus, upsertCustomerByPhone, notifyAppointmentWhatsApp } from '../../lib/db';
+import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, updateAppointmentStatus, upsertCustomerByPhone, notifyAppointmentWhatsApp, getOccupiedSlots } from '../../lib/db';
 import type { Tenant, Service, Professional, Appointment, Customer } from '../../types';
 
 export default function BookingPage() {
@@ -55,9 +55,13 @@ export default function BookingPage() {
       className="min-h-screen flex items-center justify-center"
       style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}
     >
-      <div className="text-center space-y-4">
-        <div style={{ fontSize: 40 }} className="animate-pulse">💈</div>
-        <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13, fontWeight: 500 }}>Carregando agendamento…</p>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+        <div style={{ position: 'relative', width: 48, height: 48 }}>
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.08)' }} />
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid transparent', borderTopColor: 'rgba(255,255,255,0.7)', animation: 'spin 0.85s linear infinite' }} />
+        </div>
+        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, fontWeight: 500, letterSpacing: '0.5px' }}>Carregando agendamento…</p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </div>
   );
@@ -77,12 +81,26 @@ export default function BookingPage() {
     </div>
   );
 
+  const pc = tenant.bookingPageConfig?.primaryColor ?? '#2563EB';
+  const tintBg = (() => {
+    const r = parseInt(pc.slice(1, 3), 16);
+    const g = parseInt(pc.slice(3, 5), 16);
+    const b = parseInt(pc.slice(5, 7), 16);
+    return `rgb(${Math.round(4 + r * 0.13)},${Math.round(4 + g * 0.13)},${Math.round(4 + b * 0.13)})`;
+  })();
+  const tintHeader = (() => {
+    const r = parseInt(pc.slice(1, 3), 16);
+    const g = parseInt(pc.slice(3, 5), 16);
+    const b = parseInt(pc.slice(5, 7), 16);
+    return `rgb(${Math.round(2 + r * 0.08)},${Math.round(2 + g * 0.08)},${Math.round(2 + b * 0.08)})`;
+  })();
+
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
+    <div className="min-h-screen" style={{ backgroundColor: tintBg, fontFamily: 'Outfit, sans-serif' }}>
       {/* Minimal public header */}
       <div
         style={{
-          backgroundColor: '#021340',
+          backgroundColor: tintHeader,
           borderBottom: '1px solid rgba(255,255,255,0.09)',
           padding: '10px 20px',
           display: 'flex',
@@ -133,6 +151,7 @@ export default function BookingPage() {
             if (!appt) return;
             await supabase.from('reviews').insert({ tenant_id: appt.tenantId, appointment_id: apptId, stars, comment });
           }}
+          onGetOccupiedSlots={(profId, date) => getOccupiedSlots(profId, date)}
         />
       </div>
 

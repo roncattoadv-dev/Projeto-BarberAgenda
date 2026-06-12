@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Clock, Search, MessageCircle, Bell } from 'lucide-react';
+import { Check, X, Clock, Search, MessageSquare } from 'lucide-react';
 import { Appointment, Service, Professional } from '../../types';
 
 interface Props {
@@ -95,18 +95,23 @@ export default function AgendamentosTab({ myAppointments, myServices, myProfessi
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', marginTop: 2 }}>
                       {appt.date} · {appt.time} · {srv?.name} · <span style={{ color: 'rgba(255,255,255,0.55)' }}>{prof?.name}</span>
                     </div>
+                    {(appt.wppConfirmSent || appt.wppReminderSent) && (
+                      <div style={{ display: 'flex', gap: 4, marginTop: 5 }}>
+                        {appt.wppConfirmSent && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', color: '#86efac', fontSize: 9, fontWeight: 700 }}>
+                            <MessageSquare size={8} /> Confirmação
+                          </span>
+                        )}
+                        {appt.wppReminderSent && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', color: '#fcd34d', fontSize: 9, fontWeight: 700 }}>
+                            <Clock size={8} /> Lembrete
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                  {/* Ícones de mensagens automáticas WhatsApp */}
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <span title={appt.wppConfirmSent ? 'Confirmação enviada' : 'Confirmação não enviada'}>
-                      <MessageCircle size={14} style={{ color: appt.wppConfirmSent ? '#4ade80' : 'rgba(255,255,255,0.18)' }} />
-                    </span>
-                    <span title={appt.wppReminderSent ? 'Lembrete enviado' : 'Lembrete não enviado'}>
-                      <Bell size={14} style={{ color: appt.wppReminderSent ? '#4ade80' : 'rgba(255,255,255,0.18)' }} />
-                    </span>
-                  </div>
                   <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#4ade80' }}>R$ {appt.price.toFixed(2)}</span>
                   <span style={{ padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sm.bg, color: sm.text, border: `1px solid ${sm.border}` }}>{sm.label}</span>
                   {appt.status !== 'attended' && appt.status !== 'cancelled' && (

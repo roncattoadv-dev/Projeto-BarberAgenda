@@ -2,8 +2,8 @@
 # BarberFlow SaaS — docker-compose.easypanel.yml
 #
 # Domínios (via Traefik/EasyPanel):
-#   Frontend : barberflow-barberflow.i9inu5.easypanel.host  → app:80
-#   API      : barberflow-api.i9inu5.easypanel.host         → api:4000
+#   Frontend : workagenda.org / www.workagenda.org  → app:80
+#   API      : api.workagenda.org                   → api:4000
 #   Supabase : barberflow-supabase.i9inu5.easypanel.host    → kong:8000 (projeto separado)
 ###############################################################################
 
@@ -41,8 +41,8 @@ services:
       # Chave anon do Supabase instalado (demo key — trocar ao atualizar o Supabase)
       SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE
       # URL pública da API Express
-      API_URL: https://barberflow-api.i9inu5.easypanel.host
-      SITE_URL: https://barberflow-barberflow.i9inu5.easypanel.host
+      API_URL: https://api.workagenda.org
+      SITE_URL: https://workagenda.org
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
       interval: 30s
@@ -53,8 +53,11 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - barberflow
-      - supabase_net
+      barberflow:
+      supabase_net:
+      easypanel:
+        aliases:
+          - barberflow_barberflow_app
 
   ##############################################################################
   # API — Backend Express (registro + webhook Asaas)
@@ -73,7 +76,8 @@ services:
       ASAAS_API_KEY: ${ASAAS_API_KEY}
       ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_TOKEN}
       ASAAS_SANDBOX: ${ASAAS_SANDBOX:-false}
-      CORS_ORIGIN: https://barberflow-barberflow.i9inu5.easypanel.host
+      CORS_ORIGIN: https://workagenda.org
+      RESEND_API_KEY: re_2BLvozWY_LdyvwfYJyQaWyLTZVbRiHp4B
       # Evolution Go — URL interna do EasyPanel (nunca exposta ao browser)
       EVO_URL: http://evolutionapi_evogo:8080
       EVO_GLOBAL_KEY: 8f91c3d5-e2a7-4b60-9d88-1c4e7f0b5a22

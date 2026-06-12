@@ -82,6 +82,20 @@ export async function createProfessional(p: Omit<Professional, 'id'>, serviceIds
   return { ...mapProfessional(data), services: serviceIds };
 }
 
+export async function updateProfessional(id: string, p: Partial<Omit<Professional, 'id' | 'tenantId'>>): Promise<void> {
+  const updates: any = {};
+  if (p.name               !== undefined) updates.name                = p.name;
+  if (p.role               !== undefined) updates.role                = p.role;
+  if (p.avatar             !== undefined) updates.avatar              = p.avatar;
+  if (p.commissionPercentage !== undefined) updates.commission_percentage = p.commissionPercentage;
+  if (p.businessDays       !== undefined) updates.business_days       = p.businessDays;
+  if (p.businessHoursByDay !== undefined) updates.business_hours_by_day = p.businessHoursByDay;
+  if (Object.keys(updates).length) {
+    const { error } = await supabase.from('professionals').update(updates).eq('id', id);
+    if (error) throw error;
+  }
+}
+
 export async function syncProfessionalsHours(tenantId: string, businessDays: string[], businessHoursByDay: Record<string, string[]>): Promise<void> {
   await supabase.from('professionals')
     .update({ business_days: businessDays, business_hours_by_day: businessHoursByDay })
@@ -94,6 +108,18 @@ export async function getCustomers(tenantId: string): Promise<Customer[]> {
     .select('*').eq('tenant_id', tenantId).order('name');
   if (error) throw error;
   return (data ?? []).map(mapCustomer);
+}
+
+export async function updateCustomer(id: string, updates: { name?: string; phone?: string; email?: string; notes?: string }): Promise<void> {
+  const { error } = await supabase.from('customers').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteCustomer(id: string): Promise<void> {
+  const { error: apptError } = await supabase.from('appointments').delete().eq('customer_id', id);
+  if (apptError) throw apptError;
+  const { error } = await supabase.from('customers').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export async function upsertCustomerByPhone(tenantId: string, phone: string, name: string, email?: string): Promise<Customer> {
@@ -109,6 +135,16 @@ export async function upsertCustomerByPhone(tenantId: string, phone: string, nam
   return mapCustomer(row);
 }
 
+export async function createCustomerDirect(tenantId: string, name: string, phone?: string, email?: string): Promise<Customer> {
+  const { data, error } = await supabase
+    .from('customers')
+    .insert({ tenant_id: tenantId, name, phone: phone || '', email: email || '' })
+    .select()
+    .single();
+  if (error) throw error;
+  return mapCustomer(data);
+}
+
 // ── APPOINTMENTS ───────────────────────────────────────────────────────────────
 export async function getAppointments(tenantId: string, limit = 200): Promise<Appointment[]> {
   const { data, error } = await supabase.from('appointments')
@@ -120,11 +156,11 @@ export async function getAppointments(tenantId: string, limit = 200): Promise<Ap
   return (data ?? []).map(mapAppointment);
 }
 
-export async function getOccupiedSlots(professionalId: string, date: string): Promise<string[]> {
+export async function getOccupiedSlots(professionalId: string, date: string): Promise<{time: string; duration: number}[]> {
   const { data } = await supabase.from('appointments')
-    .select('scheduled_time').eq('professional_id', professionalId)
+    .select('scheduled_time, duration_minutes').eq('professional_id', professionalId)
     .eq('scheduled_date', date).neq('status', 'cancelled');
-  return (data ?? []).map(a => a.scheduled_time.substring(0, 5));
+  return (data ?? []).map(a => ({ time: a.scheduled_time.substring(0, 5), duration: a.duration_minutes ?? 60 }));
 }
 
 export async function createAppointment(a: Omit<Appointment, 'id'>): Promise<Appointment> {
@@ -142,8 +178,24 @@ export async function notifyAppointmentWhatsApp(tenantId: string, appointmentId:
   });
 }
 
+export async function remindAppointmentWhatsApp(tenantId: string, appointmentId: string): Promise<void> {
+  const apiUrl = ((window as any).__BARBER_CONFIG__?.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+  const res = await fetch(`${apiUrl}/api/whatsapp/remind`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tenantId, appointmentId }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 export async function updateAppointmentStatus(id: string, status: Appointment['status']) {
   const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function rescheduleAppointment(id: string, date: string, time: string): Promise<void> {
+  const { error } = await supabase.from('appointments')
+    .update({ scheduled_date: date, scheduled_time: time }).eq('id', id);
   if (error) throw error;
 }
 
@@ -232,6 +284,8 @@ function mapTenant(r: any): Tenant {
     businessDays: r.business_days ?? [],
     businessHoursByDay: r.business_hours_by_day ?? {},
     blockedDates: r.blocked_dates ?? [],
+    bookingPageConfig: r.booking_page_config ?? undefined,
+    contactEmail: r.contact_email ?? undefined,
   };
 }
 function mapService(r: any): Service {
@@ -244,7 +298,7 @@ function mapCustomer(r: any): Customer {
   return { id: r.id, tenantId: r.tenant_id, name: r.name, email: r.email ?? '', phone: r.phone, notes: r.notes, createdAt: r.created_at };
 }
 function mapAppointment(r: any): Appointment {
-  return { id: r.id, tenantId: r.tenant_id, serviceId: r.service_id, professionalId: r.professional_id, customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone, date: r.scheduled_date, time: r.scheduled_time?.substring(0,5) ?? '', durationMinutes: r.duration_minutes, price: Number(r.price), status: r.status, notes: r.notes, wppConfirmSent: r.wpp_confirm_sent ?? false, wppReminderSent: r.wpp_reminder_sent ?? false };
+  return { id: r.id, tenantId: r.tenant_id, serviceId: r.service_id, professionalId: r.professional_id, customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone, customerEmail: r.customer_email ?? '', date: r.scheduled_date, time: r.scheduled_time?.substring(0,5) ?? '', durationMinutes: r.duration_minutes, price: Number(r.price), status: r.status, notes: r.notes, wppConfirmSent: r.wpp_confirm_sent ?? false, wppReminderSent: r.wpp_reminder_sent ?? false, emailConfirmSent: r.email_confirm_sent ?? false };
 }
 function mapPayment(r: any): Payment {
   return { id: r.id, tenantId: r.tenant_id, appointmentId: r.appointment_id, amount: Number(r.amount), method: r.method, status: r.status, date: r.paid_at, description: r.description ?? '' };
@@ -257,6 +311,9 @@ function mapAuditLog(r: any): AuditLog {
 }
 function mapCoupon(r: any): Coupon {
   return { id: r.id, code: r.code, discountPercentage: r.discount_percentage, status: r.status, usageCount: r.usage_count, expiresAt: r.expires_at };
+}
+function mapSupportTicket(r: any): SupportTicket {
+  return { id: r.id, tenantId: r.tenant_id, tenantName: r.tenant_name, title: r.title, status: r.status, createdAt: r.created_at, messages: r.messages ?? [] };
 }
 
 // ── REVERSE MAPPERS (camelCase → snake_case for INSERT) ────────────────────────
@@ -273,7 +330,9 @@ function dbTenant(t: Partial<Tenant>): any {
     ...(t.businessDays      !== undefined && { business_days: t.businessDays }),
     ...(t.businessHours     !== undefined && { business_hours: t.businessHours }),
     ...(t.businessHoursByDay !== undefined && { business_hours_by_day: t.businessHoursByDay }),
-    ...(t.blockedDates      !== undefined && { blocked_dates: t.blockedDates }),
+    ...(t.blockedDates        !== undefined && { blocked_dates: t.blockedDates }),
+    ...(t.bookingPageConfig   !== undefined && { booking_page_config: t.bookingPageConfig }),
+    ...(t.contactEmail        !== undefined && { contact_email: t.contactEmail }),
   };
 }
 function dbService(s: Omit<Service, 'id'>): any {
@@ -283,11 +342,40 @@ function dbProfessional(p: Omit<Professional, 'id'>): any {
   return { tenant_id: p.tenantId, name: p.name, role: p.role, avatar: p.avatar ?? null, rating: p.rating, commission_percentage: p.commissionPercentage, business_days: p.businessDays ?? [], business_hours_by_day: p.businessHoursByDay ?? {}, is_active: true };
 }
 function dbAppointment(a: Omit<Appointment, 'id'>): any {
-  return { tenant_id: a.tenantId, service_id: a.serviceId, professional_id: a.professionalId, customer_id: a.customerId, customer_name: a.customerName, customer_phone: a.customerPhone, scheduled_date: a.date, scheduled_time: a.time, duration_minutes: a.durationMinutes, price: a.price, status: a.status, notes: a.notes ?? null };
+  return { tenant_id: a.tenantId, service_id: a.serviceId, professional_id: a.professionalId, customer_id: a.customerId, customer_name: a.customerName, customer_phone: a.customerPhone, customer_email: a.customerEmail ?? null, scheduled_date: a.date, scheduled_time: a.time, duration_minutes: a.durationMinutes, price: a.price, status: a.status, notes: a.notes ?? null };
 }
 function dbPayment(p: Omit<Payment, 'id'>): any {
   return { tenant_id: p.tenantId, appointment_id: p.appointmentId ?? null, amount: p.amount, method: p.method, status: p.status, description: p.description };
 }
 function dbProduct(p: Omit<Product, 'id'>): any {
   return { tenant_id: p.tenantId, name: p.name, price: p.price, cost_price: p.costPrice, stock: p.stock, min_stock: p.minStock, category: p.category, is_active: true };
+}
+
+// ── SUPPORT TICKETS ────────────────────────────────────────────────────────────
+
+export async function getSupportTickets(): Promise<SupportTicket[]> {
+  const { data, error } = await supabase
+    .from('support_tickets').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapSupportTicket);
+}
+
+export async function createSupportTicket(tenantId: string, tenantName: string, title: string, message: string): Promise<SupportTicket> {
+  const firstMsg = { sender: 'tenant', content: message, timestamp: new Date().toISOString() };
+  const { data, error } = await supabase.from('support_tickets')
+    .insert({ tenant_id: tenantId, tenant_name: tenantName, title, messages: [firstMsg] })
+    .select().single();
+  if (error) throw error;
+  return mapSupportTicket(data);
+}
+
+export async function resolveTicket(ticketId: string, replyMessage: string): Promise<void> {
+  const { data: ticket, error: fetchErr } = await supabase
+    .from('support_tickets').select('messages').eq('id', ticketId).single();
+  if (fetchErr) throw fetchErr;
+  const replyMsg = { sender: 'superadmin', content: replyMessage, timestamp: new Date().toISOString() };
+  const { error } = await supabase.from('support_tickets')
+    .update({ status: 'resolved', messages: [...(ticket.messages ?? []), replyMsg] })
+    .eq('id', ticketId);
+  if (error) throw error;
 }

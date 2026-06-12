@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Phone,
   Instagram,
+  MapPin,
   History,
   Star,
   ChevronLeft,
@@ -33,6 +34,7 @@ interface CustomerBookingFlowProps {
   onUpdateAppointmentStatus: (apptId: string, status: Appointment['status']) => void;
   onAddCustomer: (customer: Omit<Customer, 'id'>) => void;
   onRegisterReview: (stars: number, comment: string, apptId: string) => void;
+  onGetOccupiedSlots?: (professionalId: string, date: string) => Promise<{time: string; duration: number}[]>;
 }
 
 export default function CustomerBookingFlow({
@@ -44,7 +46,8 @@ export default function CustomerBookingFlow({
   onAddAppointment,
   onUpdateAppointmentStatus,
   onAddCustomer,
-  onRegisterReview
+  onRegisterReview,
+  onGetOccupiedSlots,
 }: CustomerBookingFlowProps) {
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [activeTab, setActiveTab] = useState<'booking' | 'history'>('booking');
@@ -76,6 +79,16 @@ export default function CustomerBookingFlow({
   const [reviewStars, setReviewStars] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewingApptId, setReviewingApptId] = useState<string | null>(null);
+
+  // Occupied slots fetched from DB (authoritative source)
+  const [occupiedSlots, setOccupiedSlots] = useState<{time: string; duration: number}[]>([]);
+  useEffect(() => {
+    if (!selectedProfId || !selectedDate || !onGetOccupiedSlots) {
+      setOccupiedSlots([]);
+      return;
+    }
+    onGetOccupiedSlots(selectedProfId, selectedDate).then(setOccupiedSlots).catch(() => setOccupiedSlots([]));
+  }, [selectedProfId, selectedDate]);
 
   // Filters
   const myServices = services.filter(s => s.tenantId === activeTenant.id);
@@ -122,13 +135,25 @@ export default function CustomerBookingFlow({
       '18:10'
     ];
 
+  const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0); };
+  const newDur = selectedService?.durationMinutes ?? 60;
+
   const checkSlotOccupied = (timeSlot: string) => {
-    return myAppointments.some(appt =>
-      appt.date === selectedDate &&
-      appt.time === timeSlot &&
-      appt.professionalId === selectedProfId &&
-      appt.status !== 'cancelled'
-    );
+    const slotStart = toMin(timeSlot);
+    const slotEnd   = slotStart + newDur;
+    if (onGetOccupiedSlots) {
+      return occupiedSlots.some(a => {
+        const aStart = toMin(a.time);
+        const aEnd   = aStart + (a.duration ?? 60);
+        return slotStart < aEnd && slotEnd > aStart;
+      });
+    }
+    return myAppointments.some(appt => {
+      if (appt.date !== selectedDate || appt.professionalId !== selectedProfId || appt.status === 'cancelled') return false;
+      const aStart = toMin(appt.time);
+      const aEnd   = aStart + (appt.durationMinutes ?? 60);
+      return slotStart < aEnd && slotEnd > aStart;
+    });
   };
 
   const getInitials = (name: string) => {
@@ -248,6 +273,7 @@ export default function CustomerBookingFlow({
       customerId: matchedCustomer.id,
       customerName: matchedCustomer.name,
       customerPhone: matchedCustomer.phone,
+      customerEmail: clientEmail.trim() || undefined,
       date: selectedDate,
       time: selectedTime,
       durationMinutes: selectedService.durationMinutes,
@@ -255,6 +281,7 @@ export default function CustomerBookingFlow({
       status: 'confirmed'
     });
 
+    setOccupiedSlots(prev => [...prev, selectedTime]);
     setRecentBookedId(generatedApptId);
     setStep(5);
   };
@@ -298,6 +325,19 @@ export default function CustomerBookingFlow({
   }
 
 
+  /* ── dynamic theme from bookingPageConfig ── */
+  const pc = activeTenant.bookingPageConfig?.primaryColor ?? '#2563eb';
+  const cfg = activeTenant.bookingPageConfig;
+  const hexRgba = (hex: string, a: number) => {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${a})`;
+  };
+  const pcLight  = hexRgba(pc, 0.08);
+  const pcBorder = hexRgba(pc, 0.28);
+
   /* ── hook: detecta tela ≥768px ── */
   const [isDesktop, setIsDesktop] = React.useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
   React.useEffect(() => {
@@ -307,7 +347,8 @@ export default function CustomerBookingFlow({
   }, []);
 
   /* ── helpers ── */
-  const av = (n: string) => `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=3b82f6&color=fff&size=128`;
+  const avBg = pc.replace('#', '');
+  const av = (n: string) => `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=${avBg}&color=fff&size=128`;
 
   const WEEKDAYS_MAP = ['dom','seg','ter','qua','qui','sex','sab'];
 
@@ -315,7 +356,7 @@ export default function CustomerBookingFlow({
   const SidebarInfo = () => (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <button onClick={() => setStep(s => (s - 1) as any)}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#2563eb', fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 8 }}>
+        style={{ display: 'flex', alignItems: 'center', gap: 8, color: pc, fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 8 }}>
         <ArrowLeft size={16} /> Voltar
       </button>
       <div>
@@ -349,7 +390,7 @@ export default function CustomerBookingFlow({
   const TopBar = () => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
       <button onClick={() => setStep(s => (s - 1) as any)}
-        style={{ width: 32, height: 32, borderRadius: '50%', background: '#fff', border: '1px solid #e2e8f0', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+        style={{ width: 32, height: 32, borderRadius: '50%', background: '#fff', border: '1px solid #e2e8f0', color: pc, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
         <ArrowLeft size={16} />
       </button>
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -366,7 +407,7 @@ export default function CustomerBookingFlow({
           </div>
         )}
         {selectedService && selectedService.price > 0 && (
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: pc, background: pcLight, border: `1px solid ${pcBorder}`, padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
             R$ {selectedService.price.toFixed(2)}
           </span>
         )}
@@ -405,7 +446,7 @@ export default function CustomerBookingFlow({
                       <button key={prof.id}
                         onClick={() => { setSelectedProfId(prof.id); setStep(3); }}
                         style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', cursor: 'pointer', transition: 'all 120ms', gap: 8 }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#2563eb'; (e.currentTarget as HTMLElement).style.borderColor = '#2563eb'; }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = pc; (e.currentTarget as HTMLElement).style.borderColor = pc; }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff'; (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0'; }}>
                         <div style={{ width: 64, height: 64, borderRadius: '50%', overflow: 'hidden', border: '2px solid #f1f5f9', flexShrink: 0 }}>
                           <img src={prof.avatar} alt={prof.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -436,7 +477,7 @@ export default function CustomerBookingFlow({
                         {MONTH_NAMES_PT[viewMonth].toLowerCase()} {viewYear}
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <button onClick={handleGoToToday} style={{ color: '#2563eb', fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
+                        <button onClick={handleGoToToday} style={{ color: pc, fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={handlePrevMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <ChevronLeft size={14} />
@@ -512,7 +553,7 @@ export default function CustomerBookingFlow({
                         );
                         return (
                           <button key={time} onClick={() => setSelectedTime(time)}
-                            style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 10, border: sel ? 'none' : '1px solid #bfdbfe', background: sel ? '#2563eb' : '#fff', color: sel ? '#fff' : '#2563eb', cursor: 'pointer', transition: 'all 120ms' }}>
+                            style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 10, border: sel ? 'none' : `1px solid ${pcBorder}`, background: sel ? '#2563eb' : '#fff', color: sel ? '#fff' : '#2563eb', cursor: 'pointer', transition: 'all 120ms' }}>
                             {time}
                           </button>
                         );
@@ -520,7 +561,7 @@ export default function CustomerBookingFlow({
                     </div>
 
                     <button onClick={() => setStep(4)} disabled={!selectedTime}
-                      style={{ width: '100%', padding: '12px 0', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      style={{ width: '100%', padding: '12px 0', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                       Continuar <ArrowRight size={16} />
                     </button>
                   </div>
@@ -558,7 +599,7 @@ export default function CustomerBookingFlow({
                   </div>
                   <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                     <button type="button" onClick={() => setStep(3)} style={{ color: '#64748b', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>Voltar</button>
-                    <button type="submit" style={{ padding: '10px 24px', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: 'pointer' }}>
+                    <button type="submit" style={{ padding: '10px 24px', background: pc, color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: 'pointer' }}>
                       Concluir agendamento
                     </button>
                   </div>
@@ -606,7 +647,7 @@ export default function CustomerBookingFlow({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 16 }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#334155', textTransform: 'capitalize' }}>{MONTH_NAMES_PT[viewMonth].toLowerCase()} {viewYear}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <button onClick={handleGoToToday} style={{ color: '#2563eb', fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
+                    <button onClick={handleGoToToday} style={{ color: pc, fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button onClick={handlePrevMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={14} /></button>
                       <button onClick={handleNextMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={14} /></button>
@@ -647,10 +688,10 @@ export default function CustomerBookingFlow({
                   {HOURLY_SLOTS.map(time => {
                     const occ = checkSlotOccupied(time); const sel = selectedTime === time;
                     if (occ) return <div key={time} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', color: '#cbd5e1', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', textDecoration: 'line-through' }}>{time}</div>;
-                    return <button key={time} onClick={() => setSelectedTime(time)} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 10, border: sel ? 'none' : '1px solid #bfdbfe', background: sel ? '#2563eb' : '#fff', color: sel ? '#fff' : '#2563eb', cursor: 'pointer' }}>{time}</button>;
+                    return <button key={time} onClick={() => setSelectedTime(time)} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 10, border: sel ? 'none' : `1px solid ${pcBorder}`, background: sel ? '#2563eb' : '#fff', color: sel ? '#fff' : '#2563eb', cursor: 'pointer' }}>{time}</button>;
                   })}
                 </div>
-                <button onClick={() => setStep(4)} disabled={!selectedTime} style={{ width: '100%', padding: '12px 0', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <button onClick={() => setStep(4)} disabled={!selectedTime} style={{ width: '100%', padding: '12px 0', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                   Continuar <ArrowRight size={16} />
                 </button>
               </div>
@@ -684,7 +725,7 @@ export default function CustomerBookingFlow({
                 </div>
                 <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                   <button type="button" onClick={() => setStep(3)} style={{ color: '#64748b', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>Voltar</button>
-                  <button type="submit" style={{ padding: '10px 24px', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: 'pointer' }}>Concluir agendamento</button>
+                  <button type="submit" style={{ padding: '10px 24px', background: pc, color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: 'pointer' }}>Concluir agendamento</button>
                 </div>
               </form>
             </div>
@@ -700,21 +741,44 @@ export default function CustomerBookingFlow({
           {activeTab === 'booking' && step === 1 && (
             <div style={{ maxWidth: 420, margin: '0 auto', padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               {(activeTenant.logo?.startsWith('http') || activeTenant.logo?.startsWith('data:'))
-                ? <div style={{ width: 112, height: 112, borderRadius: '50%', overflow: 'hidden', marginBottom: 28, border: '2px solid #bfdbfe', flexShrink: 0 }}>
+                ? <div style={{ width: 112, height: 112, borderRadius: '50%', overflow: 'hidden', marginBottom: 28, border: `2px solid ${pcBorder}`, flexShrink: 0 }}>
                     <img src={activeTenant.logo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   </div>
-                : <div style={{ width: 112, height: 112, borderRadius: '50%', border: '2px solid #2563eb', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 28, background: '#fff', position: 'relative', flexShrink: 0 }}>
-                    <span style={{ position: 'absolute', top: 8, right: 8, transform: 'rotate(45deg)', color: '#2563eb', fontSize: 14 }}>✂</span>
-                    <span style={{ fontSize: 36, fontWeight: 300, color: '#2563eb', lineHeight: 1 }}>{getInitials(activeTenant.name)}</span>
-                    <span style={{ fontSize: 8, fontWeight: 700, color: '#2563eb', letterSpacing: 2, textTransform: 'uppercase', marginTop: 6, textAlign: 'center', maxWidth: 90, lineHeight: 1.3 }}>
+                : <div style={{ width: 112, height: 112, borderRadius: '50%', border: `2px solid ${pc}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 28, background: '#fff', position: 'relative', flexShrink: 0 }}>
+                    <span style={{ position: 'absolute', top: 8, right: 8, transform: 'rotate(45deg)', color: pc, fontSize: 14 }}>✂</span>
+                    <span style={{ fontSize: 36, fontWeight: 300, color: pc, lineHeight: 1 }}>{getInitials(activeTenant.name)}</span>
+                    <span style={{ fontSize: 8, fontWeight: 700, color: pc, letterSpacing: 2, textTransform: 'uppercase', marginTop: 6, textAlign: 'center', maxWidth: 90, lineHeight: 1.3 }}>
                       {activeTenant.name.replace(/barbearia|salao|studio|estetica/gi,'').trim()}
                     </span>
                   </div>
               }
+              {(cfg?.showPhone || cfg?.showAddress || cfg?.showInstagram) && (
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                  {cfg?.showPhone && activeTenant.phone && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b', background: '#f8fafc', borderRadius: 10, padding: '7px 12px', border: '1px solid #f1f5f9' }}>
+                      <Phone size={12} style={{ color: pc, flexShrink: 0 }} />
+                      <span>{activeTenant.phone}</span>
+                    </div>
+                  )}
+                  {cfg?.showAddress && activeTenant.address && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b', background: '#f8fafc', borderRadius: 10, padding: '7px 12px', border: '1px solid #f1f5f9' }}>
+                      <MapPin size={12} style={{ color: pc, flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTenant.address}</span>
+                    </div>
+                  )}
+                  {cfg?.showInstagram && activeTenant.instagram && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b', background: '#f8fafc', borderRadius: 10, padding: '7px 12px', border: '1px solid #f1f5f9' }}>
+                      <Instagram size={12} style={{ color: pc, flexShrink: 0 }} />
+                      <span>{activeTenant.instagram}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {myServices.map(srv => (
                   <button key={srv.id} onClick={() => { setSelectedServiceId(srv.id); setStep(2); }}
-                    style={{ width: '100%', padding: '14px 20px', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 16, border: '1px solid #1d4ed8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>
+                    style={{ width: '100%', padding: '14px 20px', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 16, border: `1px solid ${pc}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 12px rgba(37,99,235,0.25)' }}>
                     <span>{srv.name}</span>
                     <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: 6 }}>
                       {srv.durationMinutes} min ▶
@@ -754,7 +818,7 @@ export default function CustomerBookingFlow({
                 Cancelar agendamento
               </button>
               <button onClick={() => { setRecentBookedId(null); setSelectedServiceId(''); setSelectedProfId(''); setSelectedTime(''); setStep(1); }}
-                style={{ fontSize: 13, fontWeight: 700, color: '#2563eb', background: 'none', border: 'none', borderBottom: '2px solid #bfdbfe', paddingBottom: 2, cursor: 'pointer' }}>
+                style={{ fontSize: 13, fontWeight: 700, color: pc, background: 'none', border: 'none', borderBottom: `2px solid ${pcBorder}`, paddingBottom: 2, cursor: 'pointer' }}>
                 Novo agendamento
               </button>
             </div>
@@ -764,7 +828,7 @@ export default function CustomerBookingFlow({
           {activeTab === 'history' && (
             <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 16 }}>
-                <button onClick={() => setActiveTab('booking')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer' }}>
+                <button onClick={() => setActiveTab('booking')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: pc, background: 'none', border: 'none', cursor: 'pointer' }}>
                   <ArrowLeft size={14} /> Voltar
                 </button>
                 <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', margin: 0 }}>Meus agendamentos</h3>
@@ -777,7 +841,7 @@ export default function CustomerBookingFlow({
                   <input type="tel" required placeholder="(11) 99999-8888" value={historySearchPhone} onChange={e => setHistorySearchPhone(e.target.value)}
                     style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, fontFamily: 'monospace' }} />
                 </div>
-                <button type="submit" style={{ padding: '0 16px', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer' }}>Buscar</button>
+                <button type="submit" style={{ padding: '0 16px', background: pc, color: '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer' }}>Buscar</button>
               </form>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {!searchedHistory && <p style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8', fontSize: 12 }}>Digite seu telefone para buscar agendamentos.</p>}

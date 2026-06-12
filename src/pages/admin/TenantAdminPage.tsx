@@ -73,7 +73,7 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
               Seu período de teste encerrou
             </h2>
             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, lineHeight: 1.7, margin: '0 0 8px' }}>
-              Esperamos que tenha aproveitado o BarberFlow! 😊
+              Esperamos que tenha aproveitado o WorkAgenda! 😊
             </p>
             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, lineHeight: 1.7, margin: '0 0 28px' }}>
               Para continuar usando o sistema e manter seus agendamentos e clientes, realize o pagamento da assinatura mensal.
@@ -96,11 +96,12 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
         ) : payUrl ? (
           <a href={payUrl} target="_blank" rel="noopener noreferrer"
             style={{ display: 'inline-block', padding: '12px 28px', background: '#22c55e', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: 'none' }}>
-            Pagar agora — R$ 89,90/mês
+            Regularizar assinatura
           </a>
         ) : (
           <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>
-            Nenhuma cobrança pendente encontrada.
+            Nenhuma cobrança pendente encontrada.<br />
+            <span style={{ fontSize: 12 }}>Acesse a aba Assinatura após o login para escolher um plano.</span>
           </p>
         )}
 
@@ -126,9 +127,9 @@ import {
   getTenants, getServices, getProfessionals, getProducts,
   getCustomers, getAppointments, getPayments,
   updateTenant, createService, updateService, deleteService,
-  createProfessional, createProduct,
-  updateProductStock, createAppointment, updateAppointmentStatus,
-  createPayment, upsertCustomerByPhone, logAudit, notifyAppointmentWhatsApp,
+  createProfessional, updateProfessional, createProduct, updateCustomer, deleteCustomer,
+  updateProductStock, createAppointment, updateAppointmentStatus, rescheduleAppointment,
+  createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours,
 } from '../../lib/db';
 import { supabase } from '../../lib/supabase';
@@ -138,14 +139,15 @@ export default function TenantAdminPage() {
   const { profile, signOut } = useAuth();
   const tenantId = profile?.tenant_id ?? '';
 
-  const [tenant,        setTenant]        = useState<Tenant | null>(null);
-  const [services,      setServices]      = useState<Service[]>([]);
-  const [professionals, setProfessionals] = useState<Professional[]>([]);
-  const [products,      setProducts]      = useState<Product[]>([]);
-  const [customers,     setCustomers]     = useState<Customer[]>([]);
-  const [appointments,  setAppointments]  = useState<Appointment[]>([]);
-  const [payments,      setPayments]      = useState<Payment[]>([]);
-  const [loading,       setLoading]       = useState(true);
+  const [tenant,              setTenant]              = useState<Tenant | null>(null);
+  const [services,            setServices]            = useState<Service[]>([]);
+  const [professionals,       setProfessionals]       = useState<Professional[]>([]);
+  const [products,            setProducts]            = useState<Product[]>([]);
+  const [customers,           setCustomers]           = useState<Customer[]>([]);
+  const [appointments,        setAppointments]        = useState<Appointment[]>([]);
+  const [payments,            setPayments]            = useState<Payment[]>([]);
+  const [loading,             setLoading]             = useState(true);
+  const [openSubscription,    setOpenSubscription]    = useState(false);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -180,78 +182,58 @@ export default function TenantAdminPage() {
     <BlockedScreen tenant={tenant} signOut={signOut} onUnblocked={load} />
   );
 
+  const isTenantTrial = tenant?.plan === 'trial';
   const daysUntilExpiry = (() => {
-    if (!tenant?.subscriptionEndsAt) return null;
-    const diff = Math.ceil((new Date(tenant.subscriptionEndsAt).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
-    return diff >= 0 && diff <= 5 ? diff : null;
+    const dateStr = isTenantTrial ? tenant?.trialEndsAt : tenant?.subscriptionEndsAt;
+    if (!dateStr) return null;
+    const diff = Math.ceil((new Date(dateStr).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
+    return diff >= 0 && diff <= 10 ? diff : null;
   })();
 
-  const handleExpiryClick = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const r = await fetch(`${((window as any).__BARBER_CONFIG__?.API_URL || '').replace(/\/$/, '')}/api/billing/payment-link?tenantId=${tenant!.id}`, {
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-      if (r.ok) { const { url } = await r.json(); window.open(url, '_blank'); }
-    } catch {}
-  };
+  const handleExpiryClick = () => setOpenSubscription(true);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
       {/* Barra de aviso de vencimento */}
       {daysUntilExpiry !== null && (
         <button onClick={handleExpiryClick} style={{ width: '100%', background: '#f59e0b', color: '#1c1000', padding: '8px 20px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'Outfit, sans-serif', border: 'none', cursor: 'pointer' }}>
           <span>⚠️</span>
           <span>
-            {daysUntilExpiry === 0
-              ? 'Sua assinatura vence hoje! Clique aqui para renovar.'
-              : `Sua assinatura vence em ${daysUntilExpiry} dia${daysUntilExpiry > 1 ? 's' : ''}. Clique aqui para renovar.`}
+            {isTenantTrial
+              ? daysUntilExpiry === 0
+                ? 'Seu período de teste encerra hoje! Assine um plano para continuar.'
+                : `Seu período de teste encerra em ${daysUntilExpiry} dia${daysUntilExpiry! > 1 ? 's' : ''}. Assine agora para não perder o acesso.`
+              : daysUntilExpiry === 0
+                ? 'Sua assinatura vence hoje! Clique aqui para renovar.'
+                : `Sua assinatura vence em ${daysUntilExpiry} dia${daysUntilExpiry! > 1 ? 's' : ''}. Clique aqui para renovar.`}
           </span>
         </button>
       )}
       {/* Top bar */}
-      <div
-        style={{
-          backgroundColor: '#021340',
-          borderBottom: '1px solid rgba(255,255,255,0.09)',
-          padding: '6px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ backgroundColor: '#021340', borderBottom: '1px solid rgba(255,255,255,0.09)', padding: '0 20px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <img
-            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%201%20de%20jun.%20de%202026,%2011_34_59%20(1).png"
-            alt="BarberFlow"
-            style={{ height: 40, objectFit: 'contain' }}
+            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"
+            alt="WorkAgenda"
+            style={{ height: 36, objectFit: 'contain' }}
           />
           {tenant && (
             <>
-              <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.18)' }} />
-              <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 14, fontWeight: 500 }}>{tenant.name}</span>
+              <span style={{ width: 1, height: 22, background: 'rgba(255,255,255,0.12)' }} />
+              {(tenant.logo?.startsWith('http') || tenant.logo?.startsWith('data:')) && (
+                <div style={{ width: 28, height: 28, borderRadius: 7, overflow: 'hidden', flexShrink: 0 }}>
+                  <img src={tenant.logo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                </div>
+              )}
+              <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 14, fontWeight: 600, fontFamily: 'Outfit, sans-serif' }}>{tenant.name}</span>
             </>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13 }}>{profile?.name}</span>
-          <button
-            onClick={signOut}
-            style={{
-              color: 'rgba(255,255,255,0.65)',
-              background: 'none',
-              border: '1px solid rgba(255,255,255,0.18)',
-              borderRadius: 8,
-              padding: '5px 14px',
-              fontSize: 12,
-              cursor: 'pointer',
-              fontFamily: 'Outfit, sans-serif',
-              fontWeight: 600,
-            }}
-          >
-            Sair
-          </button>
-        </div>
+        <button onClick={signOut} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.28)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', fontWeight: 500, padding: '4px 8px', borderRadius: 6, transition: 'color 150ms' }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.28)')}>
+          Sair
+        </button>
       </div>
 
       {loading ? (
@@ -294,6 +276,10 @@ export default function TenantAdminPage() {
             const c = await createProfessional(p, sIds ?? []);
             setProfessionals(prev => [...prev, c]);
           }}
+          onUpdateProfessional={async (id, updates) => {
+            await updateProfessional(id, updates);
+            setProfessionals(prev => prev.map(x => x.id === id ? { ...x, ...updates } : x));
+          }}
           onAddProduct={async p => {
             const c = await createProduct(p);
             setProducts(prev => [c, ...prev]);
@@ -311,13 +297,28 @@ export default function TenantAdminPage() {
             await updateAppointmentStatus(id, status);
             setAppointments(p => p.map(a => a.id === id ? { ...a, status } : a));
           }}
+          onRescheduleAppointment={async (id, date, time) => {
+            await rescheduleAppointment(id, date, time);
+            setAppointments(p => p.map(a => a.id === id ? { ...a, date, time } : a));
+          }}
           onAddPayment={async p => {
             const c = await createPayment(p);
             setPayments(prev => [c, ...prev]);
           }}
           onAddCustomer={async c => {
-            const created = await upsertCustomerByPhone(c.tenantId, c.phone, c.name, c.email);
+            const created = c.phone
+              ? await upsertCustomerByPhone(c.tenantId, c.phone, c.name, c.email)
+              : await createCustomerDirect(c.tenantId, c.name, undefined, c.email);
             setCustomers(prev => prev.find(x => x.id === created.id) ? prev : [created, ...prev]);
+            return created;
+          }}
+          onUpdateCustomer={async (id, updates) => {
+            await updateCustomer(id, updates);
+            setCustomers(prev => prev.map(x => x.id === id ? { ...x, ...updates } : x));
+          }}
+          onDeleteCustomer={async id => {
+            await deleteCustomer(id);
+            setCustomers(prev => prev.filter(x => x.id !== id));
           }}
           onUpdateTenantDetails={async (id, details) => {
             await updateTenant(id, details);
@@ -340,6 +341,8 @@ export default function TenantAdminPage() {
             if (!r.ok) { const e = await r.json(); throw new Error(e.error); }
             await signOut();
           }}
+          openSubscriptionTab={openSubscription}
+          onSubscriptionTabOpened={() => setOpenSubscription(false)}
         />
       )}
     </div>
