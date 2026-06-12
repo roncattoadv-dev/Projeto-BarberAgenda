@@ -82,6 +82,11 @@ export async function createProfessional(p: Omit<Professional, 'id'>, serviceIds
   return { ...mapProfessional(data), services: serviceIds };
 }
 
+export async function deleteProfessional(id: string): Promise<void> {
+  const { error } = await supabase.from('professionals').update({ is_active: false }).eq('id', id);
+  if (error) throw error;
+}
+
 export async function updateProfessional(id: string, p: Partial<Omit<Professional, 'id' | 'tenantId'>>): Promise<void> {
   const updates: any = {};
   if (p.name               !== undefined) updates.name                = p.name;

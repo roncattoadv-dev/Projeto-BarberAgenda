@@ -10,7 +10,7 @@ import {
   Check, X, RefreshCw, Scissors, CreditCard, Package,
   Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck, Pencil,
   Palette, Phone, MapPin, Instagram, Eye, EyeOff,
-  Mail, Lock, Clock, Shield,
+  Mail, Lock, Clock, Shield, Trash2,
 } from 'lucide-react';
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
@@ -42,6 +42,7 @@ interface Props {
   onDeleteService: (id: string) => void | Promise<void>;
   onAddProfessional: (p: Omit<Professional, 'id'>) => void;
   onUpdateProfessional: (id: string, p: Partial<Omit<Professional, 'id' | 'tenantId'>>) => void;
+  onDeleteProfessional: (id: string) => Promise<void>;
   onAddProduct: (p: Omit<Product, 'id'>) => void;
   onUpdateProductStock: (id: string, stock: number) => void;
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
@@ -83,7 +84,7 @@ const STATUS_DOT: Record<string, string> = { confirmed: '#22c55e', pending: '#f5
 export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
-  onAddProfessional, onUpdateProfessional, onAddProduct, onUpdateProductStock,
+  onAddProfessional, onUpdateProfessional, onDeleteProfessional, onAddProduct, onUpdateProductStock,
   onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
   openSubscriptionTab, onSubscriptionTabOpened,
@@ -963,6 +964,10 @@ export default function ClientAdminPanel({
                             onSubmit={async e => {
                               e.preventDefault();
                               if (!profName.trim()) return;
+                              if (!editingProf && myProfessionals.length >= 6) {
+                                toast.error('Limite de 6 colaboradores atingido.');
+                                return;
+                              }
                               if (editingProf) {
                                 await onUpdateProfessional(editingProf.id, {
                                   name: profName, role: profRole,
@@ -1021,8 +1026,9 @@ export default function ClientAdminPanel({
                               ))}
                             </div>
                             <button type="submit"
-                              style={{ padding: 12, background: editingProf ? '#3b82f6' : '#ffffff', color: editingProf ? '#fff' : '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                              {editingProf ? 'Salvar alterações' : 'Adicionar'}
+                              disabled={!editingProf && myProfessionals.length >= 6}
+                              style={{ padding: 12, background: !editingProf && myProfessionals.length >= 6 ? 'rgba(255,255,255,0.08)' : editingProf ? '#3b82f6' : '#ffffff', color: !editingProf && myProfessionals.length >= 6 ? 'rgba(255,255,255,0.25)' : editingProf ? '#fff' : '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: !editingProf && myProfessionals.length >= 6 ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                              {!editingProf && myProfessionals.length >= 6 ? 'Limite de 6 atingido' : editingProf ? 'Salvar alterações' : 'Adicionar'}
                             </button>
                           </form>
 
@@ -1045,6 +1051,16 @@ export default function ClientAdminPanel({
                                   title={editingProf?.id === p.id ? 'Cancelar edição' : 'Editar'}
                                   style={{ width: 30, height: 30, borderRadius: 8, background: editingProf?.id === p.id ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: editingProf?.id === p.id ? '#60a5fa' : 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                   {editingProf?.id === p.id ? <X size={13} /> : <Pencil size={13} />}
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm(`Remover ${p.name} da equipe?`)) return;
+                                    await onDeleteProfessional(p.id);
+                                    toast.success(`${p.name} removido.`);
+                                  }}
+                                  title="Remover colaborador"
+                                  style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                  <Trash2 size={13} />
                                 </button>
                               </div>
                             ))}

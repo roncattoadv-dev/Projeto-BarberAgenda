@@ -276,7 +276,7 @@ import {
   getTenants, getServices, getProfessionals, getProducts,
   getCustomers, getAppointments, getPayments,
   updateTenant, createService, updateService, deleteService,
-  createProfessional, updateProfessional, createProduct, updateCustomer, deleteCustomer,
+  createProfessional, updateProfessional, deleteProfessional, createProduct, updateCustomer, deleteCustomer,
   updateProductStock, createAppointment, updateAppointmentStatus, rescheduleAppointment,
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours,
@@ -422,12 +422,17 @@ export default function TenantAdminPage() {
             setServices(p => p.filter(x => x.id !== id));
           }}
           onAddProfessional={async (p, sIds) => {
+            if (professionals.length >= 6) return;
             const c = await createProfessional(p, sIds ?? []);
             setProfessionals(prev => [...prev, c]);
           }}
           onUpdateProfessional={async (id, updates) => {
             await updateProfessional(id, updates);
             setProfessionals(prev => prev.map(x => x.id === id ? { ...x, ...updates } : x));
+          }}
+          onDeleteProfessional={async id => {
+            await deleteProfessional(id);
+            setProfessionals(prev => prev.filter(x => x.id !== id));
           }}
           onAddProduct={async p => {
             const c = await createProduct(p);
