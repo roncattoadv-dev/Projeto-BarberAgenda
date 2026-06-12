@@ -13,7 +13,7 @@ function tenantFilter<T extends { tenantId?: string; tenant_id?: string }>(items
 
 // ── TENANTS ────────────────────────────────────────────────────────────────────
 export async function getTenants(): Promise<Tenant[]> {
-  const { data, error } = await supabase.from('tenants').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('tenants').select('*').neq('slug', 'platform').order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []).map(mapTenant);
 }
