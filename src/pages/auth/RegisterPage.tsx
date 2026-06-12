@@ -135,17 +135,17 @@ function BarberSetupForm({
             style={{ height: 200, objectFit: 'contain', marginBottom: 16 }}
           />
           <h1 style={{ color: 'rgba(255,255,255,0.88)', fontSize: 20, fontWeight: 800, marginBottom: 4 }}>
-            Configure sua barbearia
+            Configure seu negócio
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, textAlign: 'center' }}>
-            Conta Google conectada. Só falta o nome da barbearia.
+            Conta Google conectada. Só falta o nome do negócio.
           </p>
         </div>
 
         <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20, padding: 32 }}>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label style={labelStyle}>Nome da barbearia <span style={{ color: '#fca5a5' }}>*</span></label>
+              <label style={labelStyle}>Nome do negócio <span style={{ color: '#fca5a5' }}>*</span></label>
               <input
                 type="text" value={name} onChange={e => handleNameChange(e.target.value)} autoFocus
                 placeholder="Ex: Barbearia Dom Pedro"
@@ -167,12 +167,12 @@ function BarberSetupForm({
                   borderRight: '1px solid rgba(255,255,255,0.09)',
                   background: 'rgba(255,255,255,0.02)', whiteSpace: 'nowrap',
                 }}>
-                  barberflow.com/
+                  workagenda.org/
                 </span>
                 <input
                   type="text" value={slug}
                   onChange={e => { setSlug(slugify(e.target.value)); setSlugEdited(true); }}
-                  placeholder="minha-barbearia"
+                  placeholder="meu-negocio"
                   style={{ flex: 1, background: 'transparent', border: 'none', padding: '12px 12px',
                     color: errors.slug ? '#fca5a5' : 'rgba(255,255,255,0.88)',
                     fontSize: 14, outline: 'none', fontFamily: 'monospace' }}
@@ -204,7 +204,7 @@ function BarberSetupForm({
                 fontFamily: 'Outfit, sans-serif',
               }}
             >
-              {busy ? 'Criando sua barbearia…' : 'Criar barbearia →'}
+              {busy ? 'Criando seu negócio…' : 'Criar negócio →'}
             </button>
           </form>
         </div>
@@ -445,36 +445,43 @@ export default function RegisterPage() {
           </div>
 
           {/* Steps indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-            {[1, 2].map(s => (
-              <React.Fragment key={s}>
-                <div style={{
-                  width: 26, height: 26, borderRadius: '50%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, fontWeight: 700, flexShrink: 0, transition: 'all 0.2s',
-                  background: step === s ? '#ffffff' : step > s ? 'rgba(255,255,255,0.18)' : 'transparent',
-                  border: `2px solid ${step === s ? '#ffffff' : step > s ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.18)'}`,
-                  color: step === s ? '#031D3C' : step > s ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)',
-                }}>
-                  {step > s ? '✓' : s}
-                </div>
-                {s === 1 && (
-                  <div style={{ flex: 1, height: 1, margin: '0 8px', background: step > 1 ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.09)', transition: 'all 0.3s' }} />
-                )}
-              </React.Fragment>
-            ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '26px 1fr 26px', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+            {/* Círculo 1 */}
+            <div style={{
+              width: 26, height: 26, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 700, transition: 'all 0.2s',
+              background: step === 1 ? '#ffffff' : 'rgba(255,255,255,0.18)',
+              border: `2px solid ${step === 1 ? '#ffffff' : 'rgba(255,255,255,0.38)'}`,
+              color: step === 1 ? '#031D3C' : 'rgba(255,255,255,0.65)',
+            }}>
+              {step > 1 ? '✓' : '1'}
+            </div>
+            {/* Linha */}
+            <div style={{ height: 1, background: step > 1 ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.09)', transition: 'all 0.3s' }} />
+            {/* Círculo 2 */}
+            <div style={{
+              width: 26, height: 26, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 700, transition: 'all 0.2s',
+              background: step === 2 ? '#ffffff' : 'transparent',
+              border: `2px solid ${step === 2 ? '#ffffff' : 'rgba(255,255,255,0.18)'}`,
+              color: step === 2 ? '#031D3C' : 'rgba(255,255,255,0.38)',
+            }}>
+              2
+            </div>
           </div>
 
           {/* ── Step 1: dados da barbearia ── */}
           {step === 1 && (
             <div className="space-y-5">
               <div>
-                <h2 style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Sua barbearia</h2>
+                <h2 style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Seu negócio</h2>
                 <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 12 }}>Informações básicas do seu negócio</p>
               </div>
 
               <div>
-                <label style={labelStyle}>Nome da barbearia <span style={{ color: '#fca5a5' }}>*</span></label>
+                <label style={labelStyle}>Nome do negócio <span style={{ color: '#fca5a5' }}>*</span></label>
                 <input
                   type="text" value={name} onChange={e => handleNameChange(e.target.value)}
                   placeholder="Ex: Barbearia Dom Pedro"
@@ -492,12 +499,12 @@ export default function RegisterPage() {
                   borderRadius: 12, overflow: 'hidden',
                 }}>
                   <span style={{ padding: '12px 12px', color: 'rgba(255,255,255,0.38)', fontSize: 13, borderRight: '1px solid rgba(255,255,255,0.09)', background: 'rgba(255,255,255,0.02)', whiteSpace: 'nowrap' }}>
-                    barberflow.com/
+                    workagenda.org/
                   </span>
                   <input
                     type="text" value={slug}
                     onChange={e => { setSlug(slugify(e.target.value)); setSlugEdited(true); }}
-                    placeholder="minha-barbearia"
+                    placeholder="meu-negocio"
                     style={{ flex: 1, background: 'transparent', border: 'none', padding: '12px 12px', color: errors.slug ? '#fca5a5' : 'rgba(255,255,255,0.88)', fontSize: 14, outline: 'none', fontFamily: 'monospace' }}
                   />
                 </div>
