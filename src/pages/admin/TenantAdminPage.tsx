@@ -9,11 +9,27 @@ function getApiUrl() {
   return (w.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
 }
 
+const BASE_PRICE = 89.90;
+const PLAN_META = {
+  mensal:     { label: 'Mensal',     months: 1,  discountPct: 0,  color: '#3b82f6', desc: 'R$ 89,90/mês' },
+  trimestral: { label: 'Trimestral', months: 3,  discountPct: 15, color: '#8b5cf6', desc: 'R$ 76,42/mês · 15% off' },
+  anual:      { label: 'Anual',      months: 12, discountPct: 25, color: '#10b981', desc: 'R$ 67,43/mês · 25% off' },
+} as const;
+type PlanKey = keyof typeof PLAN_META;
+
 function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signOut: () => void; onUnblocked: () => void }) {
-  const [payUrl, setPayUrl]         = useState<string | null>(null);
-  const [loading, setLoading]       = useState(true);
-  const [verifying, setVerifying]   = useState(false);
-  const [verifyMsg, setVerifyMsg]   = useState('');
+  // step: 'loading' | 'select-plan' | 'cpf-form' | 'generating' | 'payment' | 'has-link'
+  const [step,       setStep]       = useState<'loading' | 'select-plan' | 'cpf-form' | 'generating' | 'payment' | 'has-link'>('loading');
+  const [payUrl,     setPayUrl]     = useState('');
+  const [pixImage,   setPixImage]   = useState('');
+  const [pixCode,    setPixCode]    = useState('');
+  const [plan,       setPlan]       = useState<PlanKey>('mensal');
+  const [cpfCnpj,    setCpfCnpj]    = useState('');
+  const [cpfError,   setCpfError]   = useState('');
+  const [genError,   setGenError]   = useState('');
+  const [pixCopied,  setPixCopied]  = useState(false);
+  const [verifying,  setVerifying]  = useState(false);
+  const [verifyMsg,  setVerifyMsg]  = useState('');
 
   const isTrialEnd = tenant.plan === 'trial';
 
@@ -22,7 +38,7 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
     return session?.access_token ?? '';
   };
 
-  // Busca link de pagamento
+  // Tenta buscar cobrança existente
   useEffect(() => {
     (async () => {
       try {
@@ -30,13 +46,16 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
         const r = await fetch(`${getApiUrl()}/api/billing/payment-link?tenantId=${tenant.id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (r.ok) setPayUrl((await r.json()).url);
-      } catch (e) { console.error('[BlockedScreen] payment-link error:', e); }
-      finally { setLoading(false); }
+        if (r.ok) {
+          const json = await r.json();
+          if (json.url) { setPayUrl(json.url); setPixImage(json.pixImage ?? ''); setPixCode(json.pixCode ?? ''); setStep('has-link'); return; }
+        }
+      } catch {}
+      setStep('select-plan');
     })();
   }, [tenant.id]);
 
-  // Polling: verifica status no banco a cada 10s e desbloqueia se ativo
+  // Polling: desbloqueia automaticamente quando status virar 'active'
   useEffect(() => {
     const interval = setInterval(async () => {
       const { data } = await supabase.from('tenants').select('status').eq('id', tenant.id).maybeSingle();
@@ -45,15 +64,31 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
     return () => clearInterval(interval);
   }, [tenant.id]);
 
-  // Verificação manual via Asaas
+  const handleGenerate = async () => {
+    const clean = cpfCnpj.replace(/\D/g, '');
+    if (clean.length !== 11 && clean.length !== 14) { setCpfError('Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido.'); return; }
+    setCpfError('');
+    setGenError('');
+    setStep('generating');
+    try {
+      const token = await getToken();
+      const r = await fetch(
+        `${getApiUrl()}/api/billing/payment-link?tenantId=${tenant.id}&plan=${plan}&cpfCnpj=${clean}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const json = await r.json();
+      if (!r.ok) { setGenError(json.error ?? 'Erro ao gerar cobrança.'); setStep('cpf-form'); return; }
+      setPayUrl(json.url ?? ''); setPixImage(json.pixImage ?? ''); setPixCode(json.pixCode ?? '');
+      setStep('payment');
+    } catch { setGenError('Erro de conexão. Tente novamente.'); setStep('cpf-form'); }
+  };
+
   const handleVerify = async () => {
-    setVerifying(true);
-    setVerifyMsg('');
+    setVerifying(true); setVerifyMsg('');
     try {
       const token = await getToken();
       const r = await fetch(`${getApiUrl()}/api/billing/verify-payment?tenantId=${tenant.id}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
       const json = await r.json();
       if (json.activated) { onUnblocked(); return; }
@@ -62,59 +97,173 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
     finally { setVerifying(false); }
   };
 
+  const pm = PLAN_META[plan];
+  const monthly = parseFloat((BASE_PRICE * (1 - pm.discountPct / 100)).toFixed(2));
+  const total   = parseFloat((monthly * pm.months).toFixed(2));
+
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif' }}>
-      <div style={{ textAlign: 'center', maxWidth: 440, padding: '40px 32px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20 }}>
-        <div style={{ fontSize: 44, marginBottom: 16 }}>{isTrialEnd ? '⏰' : '🔒'}</div>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#031D3C', fontFamily: 'Outfit, sans-serif', padding: 20 }}>
+      <div style={{ width: '100%', maxWidth: 460, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20, overflow: 'hidden' }}>
 
-        {isTrialEnd ? (
-          <>
-            <h2 style={{ color: 'rgba(255,255,255,0.88)', fontSize: 20, fontWeight: 700, margin: '0 0 10px' }}>
-              Seu período de teste encerrou
-            </h2>
-            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, lineHeight: 1.7, margin: '0 0 8px' }}>
-              Esperamos que tenha aproveitado o WorkAgenda! 😊
-            </p>
-            <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, lineHeight: 1.7, margin: '0 0 28px' }}>
-              Para continuar usando o sistema e manter seus agendamentos e clientes, realize o pagamento da assinatura mensal.
-            </p>
-          </>
-        ) : (
-          <>
-            <h2 style={{ color: '#fca5a5', fontSize: 20, fontWeight: 700, margin: '0 0 10px' }}>
-              Acesso suspenso
-            </h2>
-            <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14, lineHeight: 1.7, margin: '0 0 28px' }}>
-              Sua assinatura está com pagamento pendente.<br />
-              Regularize para reativar o acesso ao painel.
-            </p>
-          </>
-        )}
-
-        {loading ? (
-          <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>Buscando link de pagamento…</div>
-        ) : payUrl ? (
-          <a href={payUrl} target="_blank" rel="noopener noreferrer"
-            style={{ display: 'inline-block', padding: '12px 28px', background: '#22c55e', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: 'none' }}>
-            Regularizar assinatura
-          </a>
-        ) : (
-          <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>
-            Nenhuma cobrança pendente encontrada.<br />
-            <span style={{ fontSize: 12 }}>Acesse a aba Assinatura após o login para escolher um plano.</span>
-          </p>
-        )}
-
-        {/* Verificação após pagamento */}
-        <div style={{ marginTop: 20 }}>
-          <button onClick={handleVerify} disabled={verifying}
-            style={{ padding: '8px 20px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: 600, cursor: verifying ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-            {verifying ? 'Verificando…' : 'Já paguei — verificar agora'}
-          </button>
-          {verifyMsg && <p style={{ marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{verifyMsg}</p>}
+        {/* Header */}
+        <div style={{ padding: '32px 32px 24px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          <div style={{ fontSize: 44, marginBottom: 12 }}>{isTrialEnd ? '⏰' : '🔒'}</div>
+          {isTrialEnd ? (
+            <>
+              <h2 style={{ color: 'rgba(255,255,255,0.88)', fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>Seu período de teste encerrou</h2>
+              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.7, margin: 0 }}>
+                Escolha um plano para continuar usando o WorkAgenda e manter todos os seus dados.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 style={{ color: '#fca5a5', fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>Acesso suspenso</h2>
+              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.7, margin: 0 }}>
+                Regularize sua assinatura para reativar o acesso ao painel.
+              </p>
+            </>
+          )}
         </div>
 
-        <div style={{ marginTop: 16 }}>
+        {/* Body */}
+        <div style={{ padding: '24px 32px 28px' }}>
+
+          {/* Loading */}
+          {step === 'loading' && (
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+              <div style={{ width: 32, height: 32, border: '3px solid rgba(255,255,255,0.08)', borderTopColor: 'rgba(255,255,255,0.5)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13, margin: 0 }}>Verificando assinatura…</p>
+            </div>
+          )}
+
+          {/* Selecionar plano */}
+          {step === 'select-plan' && (
+            <>
+              <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 14px' }}>Escolha seu plano</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+                {(Object.entries(PLAN_META) as [PlanKey, typeof PLAN_META[PlanKey]][]).map(([key, p]) => (
+                  <button key={key} onClick={() => { setPlan(key); setStep('cpf-form'); }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: `${p.color}15`, border: `1.5px solid ${p.color}44`, borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'border-color 0.15s' }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = p.color)}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = `${p.color}44`)}>
+                    <div style={{ textAlign: 'left' }}>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{p.label}</p>
+                      <p style={{ fontSize: 12, color: p.color, margin: '2px 0 0' }}>{p.desc}</p>
+                    </div>
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>→</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Formulário CPF */}
+          {step === 'cpf-form' && (
+            <>
+              <button onClick={() => setStep('select-plan')} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 4 }}>
+                ← Voltar
+              </button>
+              <div style={{ background: `${pm.color}12`, border: `1px solid ${pm.color}30`, borderRadius: 10, padding: '12px 16px', marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <p style={{ fontSize: 10, fontWeight: 800, color: pm.color, textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 2px' }}>Plano {pm.label}</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.7)', margin: 0 }}>R$ {monthly.toFixed(2).replace('.', ',')} /mês</p>
+                </div>
+                <p style={{ fontSize: 20, fontWeight: 900, color: 'rgba(255,255,255,0.88)', margin: 0 }}>R$ {total.toFixed(2).replace('.', ',')}</p>
+              </div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: 8 }}>CPF ou CNPJ *</label>
+              <input autoFocus type="text" placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                value={cpfCnpj} onChange={e => { setCpfCnpj(e.target.value); setCpfError(''); }}
+                onKeyDown={e => e.key === 'Enter' && handleGenerate()}
+                style={{ width: '100%', padding: '11px 14px', background: 'rgba(255,255,255,0.06)', border: `1.5px solid ${cpfError ? '#f87171' : 'rgba(255,255,255,0.12)'}`, borderRadius: 10, color: 'rgba(255,255,255,0.88)', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'Outfit, sans-serif' }} />
+              {cpfError && <p style={{ color: '#f87171', fontSize: 12, margin: '6px 0 0' }}>{cpfError}</p>}
+              <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11, margin: '6px 0 16px' }}>Necessário para emissão da cobrança.</p>
+              {genError && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}><p style={{ color: '#f87171', fontSize: 13, margin: 0 }}>{genError}</p></div>}
+              <button onClick={handleGenerate}
+                style={{ width: '100%', padding: '13px 0', background: pm.color, color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                Gerar cobrança →
+              </button>
+            </>
+          )}
+
+          {/* Gerando */}
+          {step === 'generating' && (
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+              <div style={{ width: 32, height: 32, border: `3px solid ${pm.color}33`, borderTopColor: pm.color, borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+              <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, margin: 0 }}>Gerando cobrança…</p>
+            </div>
+          )}
+
+          {/* Pagamento — cobrança existente */}
+          {step === 'has-link' && (
+            <div style={{ textAlign: 'center' }}>
+              {pixImage && (
+                <div style={{ marginBottom: 20 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 12px' }}>Pagar via PIX</p>
+                  <div style={{ display: 'inline-block', padding: 10, border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: 14, marginBottom: 12 }}>
+                    <img src={`data:image/png;base64,${pixImage}`} alt="QR Code PIX" style={{ width: 180, height: 180, display: 'block' }} />
+                  </div>
+                  {pixCode && (
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                      <input readOnly value={pixCode} style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, fontSize: 10, color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} />
+                      <button onClick={() => { navigator.clipboard.writeText(pixCode); setPixCopied(true); setTimeout(() => setPixCopied(false), 2000); }}
+                        style={{ padding: '8px 14px', background: pixCopied ? '#10b981' : 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {pixCopied ? '✓' : 'Copiar'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <a href={payUrl} target="_blank" rel="noopener noreferrer"
+                style={{ display: 'block', padding: '12px 0', background: '#22c55e', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: 'none', textAlign: 'center' }}>
+                Pagar via boleto / outro método
+              </a>
+            </div>
+          )}
+
+          {/* Pagamento — cobrança recém-gerada */}
+          {step === 'payment' && (
+            <div style={{ textAlign: 'center' }}>
+              {pixImage && (
+                <div style={{ marginBottom: 20 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 12px' }}>Pagar via PIX</p>
+                  <div style={{ display: 'inline-block', padding: 10, border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: 14, marginBottom: 12 }}>
+                    <img src={`data:image/png;base64,${pixImage}`} alt="QR Code PIX" style={{ width: 180, height: 180, display: 'block' }} />
+                  </div>
+                  {pixCode && (
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                      <input readOnly value={pixCode} style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, fontSize: 10, color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} />
+                      <button onClick={() => { navigator.clipboard.writeText(pixCode); setPixCopied(true); setTimeout(() => setPixCopied(false), 2000); }}
+                        style={{ padding: '8px 14px', background: pixCopied ? '#10b981' : 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {pixCopied ? '✓' : 'Copiar'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {payUrl && (
+                <a href={payUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'block', padding: '12px 0', background: pm.color, color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: 'none', textAlign: 'center', marginBottom: 8 }}>
+                  Pagar via boleto / outro método
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Verificar pagamento — mostrado após ter cobrança */}
+          {(step === 'has-link' || step === 'payment') && (
+            <div style={{ marginTop: 18, textAlign: 'center' }}>
+              <button onClick={handleVerify} disabled={verifying}
+                style={{ padding: '9px 22px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: 600, cursor: verifying ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                {verifying ? 'Verificando…' : 'Já paguei — verificar agora'}
+              </button>
+              {verifyMsg && <p style={{ marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{verifyMsg}</p>}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '0 32px 20px', textAlign: 'center' }}>
           <button onClick={signOut} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.2)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
             Sair da conta
           </button>
