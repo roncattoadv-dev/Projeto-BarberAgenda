@@ -97,6 +97,12 @@ export default function CustomerBookingFlow({
 
   const selectedService = myServices.find(s => s.id === selectedServiceId);
   const selectedProfessional = myProfessionals.find(p => p.id === selectedProfId);
+  const assignedToService = selectedServiceId
+    ? myProfessionals.filter(p => p.services.includes(selectedServiceId))
+    : [];
+  const professionalsForService = selectedServiceId && assignedToService.length > 0
+    ? assignedToService
+    : myProfessionals;
 
   // Get the selected date's day of the week
   const getWeekdayKeyFromDate = (dateStr: string) => {
@@ -436,13 +442,13 @@ export default function CustomerBookingFlow({
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 20, margin: '0 0 20px' }}>
                   Selecione o profissional
                 </h3>
-                {myProfessionals.length === 0 ? (
+                {professionalsForService.length === 0 ? (
                   <div style={{ padding: '32px 0', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-                    Nenhum profissional disponível no momento.
+                    Nenhum profissional disponível para este serviço.
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', gap: 12 }}>
-                    {myProfessionals.map(prof => (
+                    {professionalsForService.map(prof => (
                       <button key={prof.id}
                         onClick={() => { setSelectedProfId(prof.id); setStep(3); }}
                         style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', cursor: 'pointer', transition: 'all 120ms', gap: 8 }}
@@ -777,7 +783,7 @@ export default function CustomerBookingFlow({
 
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {myServices.map(srv => (
-                  <button key={srv.id} onClick={() => { setSelectedServiceId(srv.id); setStep(2); }}
+                  <button key={srv.id} onClick={() => { setSelectedServiceId(srv.id); setSelectedProfId(''); setStep(2); }}
                     style={{ width: '100%', padding: '14px 20px', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 16, border: `1px solid ${pc}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 12px rgba(37,99,235,0.25)' }}>
                     <span>{srv.name}</span>
                     <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: 6 }}>
