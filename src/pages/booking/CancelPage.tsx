@@ -23,6 +23,7 @@ interface ApptInfo {
   tenantLogo: string;
   tenantAddress: string;
   primaryColor: string;
+  mapsUrl: string;
   status: string;
 }
 
@@ -93,6 +94,7 @@ export default function CancelPage() {
           tenantLogo:       tenant?.logo ?? '💈',
           tenantAddress:    tenant?.address ?? '',
           primaryColor:     pc,
+          mapsUrl:          tenant?.booking_page_config?.mapsUrl ?? '',
           status:           data.status,
         });
 
@@ -246,6 +248,14 @@ export default function CancelPage() {
               <p style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>
                 Seu agendamento foi cancelado com sucesso.
               </p>
+            )}
+
+            {/* Como chegar */}
+            {appt.mapsUrl && (
+              <a href={appt.mapsUrl} target="_blank" rel="noopener noreferrer"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '10px 0', background: 'none', border: `1px solid ${pcBorder}`, borderRadius: 10, color: pc, fontWeight: 600, fontSize: 13, textDecoration: 'none', marginBottom: 12, boxSizing: 'border-box' }}>
+                📍 Como chegar
+              </a>
             )}
 
             {/* Novo agendamento */}

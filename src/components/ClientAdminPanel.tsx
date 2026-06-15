@@ -246,6 +246,7 @@ export default function ClientAdminPanel({
   const [bookingShowPhone,     setBookingShowPhone]     = useState(activeTenant.bookingPageConfig?.showPhone     ?? true);
   const [bookingShowAddress,   setBookingShowAddress]   = useState(activeTenant.bookingPageConfig?.showAddress   ?? true);
   const [bookingShowInstagram, setBookingShowInstagram] = useState(activeTenant.bookingPageConfig?.showInstagram ?? true);
+  const [bookingMapsUrl,       setBookingMapsUrl]       = useState(activeTenant.bookingPageConfig?.mapsUrl       ?? '');
   const [vacEndDate,       setVacEndDate]       = useState('');
   const PRESET_SERVICES: { name: string; durationMinutes: number; category: Service['category'] }[] = [
     { name: 'Barba',                        durationMinutes: 40, category: 'Barba'  },
@@ -310,6 +311,7 @@ export default function ClientAdminPanel({
     setBookingShowPhone(activeTenant.bookingPageConfig?.showPhone     ?? true);
     setBookingShowAddress(activeTenant.bookingPageConfig?.showAddress   ?? true);
     setBookingShowInstagram(activeTenant.bookingPageConfig?.showInstagram ?? true);
+    setBookingMapsUrl(activeTenant.bookingPageConfig?.mapsUrl ?? '');
   }, [activeTenant.id]);
 
   // ── ⌘K handler ───────────────────────────────────────────────────────────
@@ -1425,8 +1427,25 @@ export default function ClientAdminPanel({
                               ))}
                             </div>
 
+                            {/* Link Google Maps */}
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <MapPin size={13} /> Localização no Maps
+                              </p>
+                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 10 }}>
+                                Cole o link do Google Maps do estabelecimento. Aparece na confirmação e no cancelamento do agendamento.
+                              </p>
+                              <input
+                                type="url"
+                                placeholder="https://maps.app.goo.gl/..."
+                                value={bookingMapsUrl}
+                                onChange={e => setBookingMapsUrl(e.target.value)}
+                                style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#fff', outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' }}
+                              />
+                            </div>
+
                             <button type="button"
-                              onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { bookingPageConfig: { primaryColor: bookingPrimaryColor, showPhone: bookingShowPhone, showAddress: bookingShowAddress, showInstagram: bookingShowInstagram } }); toast.success('Página do cliente atualizada!'); } catch { toast.error('Erro ao salvar.'); } }}
+                              onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { bookingPageConfig: { primaryColor: bookingPrimaryColor, showPhone: bookingShowPhone, showAddress: bookingShowAddress, showInstagram: bookingShowInstagram, mapsUrl: bookingMapsUrl || undefined } }); toast.success('Página do cliente atualizada!'); } catch { toast.error('Erro ao salvar.'); } }}
                               style={{ padding: 13, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                               Salvar Configurações
                             </button>

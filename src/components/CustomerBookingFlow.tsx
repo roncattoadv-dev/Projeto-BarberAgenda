@@ -810,6 +810,12 @@ export default function CustomerBookingFlow({
                   </div>
                 ))}
               </div>
+              {activeTenant.bookingPageConfig?.mapsUrl && (
+                <a href={activeTenant.bookingPageConfig.mapsUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '10px 0', background: 'none', border: `1px solid ${pcBorder}`, borderRadius: 10, color: pc, fontWeight: 600, fontSize: 13, textDecoration: 'none', marginBottom: 12, boxSizing: 'border-box' }}>
+                  <MapPin size={14} /> Como chegar
+                </a>
+              )}
               <button onClick={async () => {
                 if (!recentBookedId || !confirm('Cancelar agendamento?')) return;
                 try {

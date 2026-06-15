@@ -27,6 +27,7 @@ export interface Tenant {
     showPhone: boolean;
     showAddress: boolean;
     showInstagram: boolean;
+    mapsUrl?: string;
   };
 }
 
