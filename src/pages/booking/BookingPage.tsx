@@ -14,9 +14,20 @@ function getApiUrl() {
 }
 import type { Tenant, Service, Professional, Appointment, Customer } from '../../types';
 
+function deriveBg(pc: string): string {
+  const r = parseInt(pc.slice(1, 3), 16);
+  const g = parseInt(pc.slice(3, 5), 16);
+  const b = parseInt(pc.slice(5, 7), 16);
+  const mix = (ch: number, n: number) => Math.round(n + (ch - n) * 0.18);
+  return `rgb(${mix(r, 110)},${mix(g, 116)},${mix(b, 98)})`;
+}
+
 export default function BookingPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate  = useNavigate();
+
+  const cachedPc  = (() => { try { return (slug && localStorage.getItem(`bfpc_${slug}`)) || ''; } catch { return ''; } })();
+  const loadingBg = deriveBg(cachedPc || '#6b8096');
 
   const [tenant,        setTenant]        = useState<Tenant | null>(null);
   const [services,      setServices]      = useState<Service[]>([]);
@@ -34,6 +45,9 @@ export default function BookingPage() {
         const t = await getTenantBySlug(slug);
         if (!t) { setNotFound(true); setLoading(false); return; }
         if (t.status === 'blocked') { setNotFound(true); setLoading(false); return; }
+
+        const pc = t.bookingPageConfig?.primaryColor ?? '#2563EB';
+        try { localStorage.setItem(`bfpc_${slug}`, pc); } catch {}
 
         setTenant(t);
         const [svcs, profs, appts, custs] = await Promise.allSettled([
@@ -58,14 +72,14 @@ export default function BookingPage() {
   if (loading) return (
     <div
       className="min-h-screen flex items-center justify-center"
-      style={{ backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}
+      style={{ backgroundColor: loadingBg, fontFamily: 'Outfit, sans-serif' }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
         <div style={{ position: 'relative', width: 48, height: 48 }}>
-          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.08)' }} />
-          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid transparent', borderTopColor: 'rgba(255,255,255,0.7)', animation: 'spin 0.85s linear infinite' }} />
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.15)' }} />
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid transparent', borderTopColor: 'rgba(255,255,255,0.8)', animation: 'spin 0.85s linear infinite' }} />
         </div>
-        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, fontWeight: 500, letterSpacing: '0.5px' }}>Carregando agendamento…</p>
+        <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: 500, letterSpacing: '0.5px' }}>Carregando agendamento…</p>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </div>
@@ -87,13 +101,7 @@ export default function BookingPage() {
   );
 
   const pc = tenant.bookingPageConfig?.primaryColor ?? '#2563EB';
-  const tintBg = (() => {
-    const r = parseInt(pc.slice(1, 3), 16);
-    const g = parseInt(pc.slice(3, 5), 16);
-    const b = parseInt(pc.slice(5, 7), 16);
-    const mix = (ch: number, n: number) => Math.round(n + (ch - n) * 0.18);
-    return `rgb(${mix(r, 110)},${mix(g, 116)},${mix(b, 98)})`;
-  })();
+  const tintBg = deriveBg(pc);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: tintBg, fontFamily: 'Outfit, sans-serif', padding: '32px 16px' }}>
