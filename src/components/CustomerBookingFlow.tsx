@@ -30,7 +30,7 @@ interface CustomerBookingFlowProps {
   professionals: Professional[];
   appointments: Appointment[];
   customers: Customer[];
-  onAddAppointment: (appt: Omit<Appointment, 'id'>) => void;
+  onAddAppointment: (appt: Omit<Appointment, 'id'>) => Promise<Appointment>;
   onUpdateAppointmentStatus: (apptId: string, status: Appointment['status']) => void;
   onAddCustomer: (customer: Omit<Customer, 'id'>) => void;
   onRegisterReview: (stars: number, comment: string, apptId: string) => void;
@@ -238,7 +238,7 @@ export default function CustomerBookingFlow({
     return `${dayNum} de ${monthName} de ${yearNum}`;
   };
 
-  const handleFormSubmission = (e: React.FormEvent) => {
+  const handleFormSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientName.trim() || !clientPhone.trim()) return;
     if (!selectedService || !selectedProfessional || !selectedTime) return;
@@ -247,7 +247,6 @@ export default function CustomerBookingFlow({
     let matchedCustomer = customers.find(c => c.tenantId === activeTenant.id && c.phone === clientPhone.trim());
 
     if (!matchedCustomer) {
-      const generatedCustId = `cust-gen-${Date.now()}`;
       onAddCustomer({
         tenantId: activeTenant.id,
         name: clientName.trim(),
@@ -255,7 +254,7 @@ export default function CustomerBookingFlow({
         phone: clientPhone.trim()
       });
       matchedCustomer = {
-        id: generatedCustId,
+        id: `cust-gen-${Date.now()}`,
         tenantId: activeTenant.id,
         name: clientName.trim(),
         phone: clientPhone.trim(),
@@ -266,14 +265,10 @@ export default function CustomerBookingFlow({
     // Alphanumeric booking code like '231NW1E5'
     const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     let randCode = '';
-    for (let i = 0; i < 8; i++) {
-      randCode += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    for (let i = 0; i < 8; i++) randCode += chars.charAt(Math.floor(Math.random() * chars.length));
     setBookingCode(randCode);
 
-    const generatedApptId = `appt-user-gen-${Date.now()}`;
-
-    onAddAppointment({
+    const created = await onAddAppointment({
       tenantId: activeTenant.id,
       serviceId: selectedServiceId,
       professionalId: selectedProfId,
@@ -289,7 +284,7 @@ export default function CustomerBookingFlow({
     });
 
     setOccupiedSlots(prev => [...prev, selectedTime]);
-    setRecentBookedId(generatedApptId);
+    setRecentBookedId(created.id);
     setStep(5);
   };
 
@@ -815,7 +810,16 @@ export default function CustomerBookingFlow({
                   </div>
                 ))}
               </div>
-              <button onClick={() => { if (confirm('Cancelar agendamento?')) { if (recentBookedId) onUpdateAppointmentStatus(recentBookedId,'cancelled'); alert('Cancelado.'); setStep(1); } }}
+              <button onClick={async () => {
+                if (!recentBookedId || !confirm('Cancelar agendamento?')) return;
+                try {
+                  await onUpdateAppointmentStatus(recentBookedId, 'cancelled');
+                  alert('Agendamento cancelado.');
+                  setStep(1);
+                } catch {
+                  alert('Não foi possível cancelar. Entre em contato com a barbearia.');
+                }
+              }}
                 style={{ fontSize: 12, color: '#64748b', background: 'none', border: 'none', borderBottom: '1px solid #e2e8f0', paddingBottom: 2, cursor: 'pointer', marginBottom: 16 }}>
                 Cancelar agendamento
               </button>

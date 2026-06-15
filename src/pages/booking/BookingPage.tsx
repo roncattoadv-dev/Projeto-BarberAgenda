@@ -6,7 +6,12 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CustomerBookingFlow from '../../components/CustomerBookingFlow';
 import { supabase } from '../../lib/supabase';
-import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, updateAppointmentStatus, upsertCustomerByPhone, notifyAppointmentWhatsApp, getOccupiedSlots } from '../../lib/db';
+import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, upsertCustomerByPhone, notifyAppointmentWhatsApp, getOccupiedSlots } from '../../lib/db';
+
+function getApiUrl() {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  return (w.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+}
 import type { Tenant, Service, Professional, Appointment, Customer } from '../../types';
 
 export default function BookingPage() {
@@ -101,16 +106,23 @@ export default function BookingPage() {
           appointments={appointments}
           customers={customers}
           onAddAppointment={async a => {
-            // Garante customer real no banco antes de inserir o agendamento
-            // (CustomerBookingFlow pode passar customerId fake para novos clientes)
             const customer = await upsertCustomerByPhone(a.tenantId, a.customerPhone, a.customerName);
             setCustomers(prev => prev.find(x => x.id === customer.id) ? prev : [customer, ...prev]);
             const c = await createAppointment({ ...a, customerId: customer.id });
             setAppointments(p => [c, ...p]);
             notifyAppointmentWhatsApp(a.tenantId, c.id, '').catch(() => {});
+            return c;
           }}
           onUpdateAppointmentStatus={async (id, status) => {
-            await updateAppointmentStatus(id, status);
+            if (status === 'cancelled') {
+              const res = await fetch(`${getApiUrl()}/api/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slug, appointmentId: id }),
+              });
+              const json = await res.json();
+              if (!res.ok) throw new Error(json.error || 'Erro ao cancelar.');
+            }
             setAppointments(p => p.map(a => a.id === id ? { ...a, status } : a));
           }}
           onAddCustomer={async c => {
