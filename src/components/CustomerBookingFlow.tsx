@@ -52,15 +52,16 @@ export default function CustomerBookingFlow({
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [activeTab, setActiveTab] = useState<'booking' | 'history'>('booking');
 
-  // Booking selections - Default to June 18th, 2026 to match Image 3 screenshot exactly
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [selectedProfId, setSelectedProfId] = useState('');
-  const [selectedDate, setSelectedDate] = useState('2026-06-18');
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+  });
   const [selectedTime, setSelectedTime] = useState('');
 
-  // Calendar month/year navigation state (Default to index 5 = June, year 2026)
-  const [viewYear, setViewYear] = useState(2026);
-  const [viewMonth, setViewMonth] = useState(5);
+  const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => new Date().getMonth());
 
   // Client account login/identification states
   const [clientName, setClientName] = useState('');
@@ -330,6 +331,17 @@ export default function CustomerBookingFlow({
     daysArray.push(d);
   }
 
+  const todayStr = (() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+  })();
+
+  const checkSlotPast = (timeSlot: string) => {
+    if (selectedDate !== todayStr) return false;
+    const now = new Date();
+    return toMin(timeSlot) <= now.getHours() * 60 + now.getMinutes();
+  };
+
 
   /* ── dynamic theme from bookingPageConfig ── */
   const pc = activeTenant.bookingPageConfig?.primaryColor ?? '#2563eb';
@@ -425,13 +437,13 @@ export default function CustomerBookingFlow({
      RETURN
   ═══════════════════════════════════════════════════════════════ */
   return (
-    <div style={{ width: '100%', maxWidth: 960, margin: '0 auto', background: '#fff', borderRadius: 24, boxShadow: '0 8px 40px rgba(0,0,0,0.12)', border: '1px solid #f1f5f9', fontFamily: 'inherit', overflow: 'hidden' }}>
+    <div style={{ width: '100%', maxWidth: 1060, margin: '0 auto', background: '#fff', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0', fontFamily: 'inherit', overflow: 'hidden' }}>
 
       {/* ══ Steps 2 / 3 / 4 ══ */}
       {activeTab === 'booking' && step > 1 && step < 5 && (isDesktop ? (
         /* ── DESKTOP: flex row ── */
         <div style={{ display: 'flex', flexDirection: 'row' }}>
-          <div style={{ width: 280, background: '#f8fafc', borderRight: '1px solid #e2e8f0', flexShrink: 0, borderRadius: '24px 0 0 24px' }}>
+          <div style={{ width: 280, background: '#f8fafc', borderRight: '1px solid #e2e8f0', flexShrink: 0, borderRadius: '12px 0 0 12px' }}>
             <SidebarInfo />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>{/* desktop step content below */}
@@ -469,108 +481,51 @@ export default function CustomerBookingFlow({
               </div>
             )}
 
-            {/* Step 3: calendar + time */}
+            {/* Step 3: calendar */}
             {step === 3 && (
-              <div style={{ padding: '20px' }}>
-                <div style={isDesktop
-                  ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }
-                  : { display: 'flex', flexDirection: 'column', gap: 24 }}>
-
-                  {/* Calendar */}
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 16 }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: '#334155', textTransform: 'capitalize' }}>
-                        {MONTH_NAMES_PT[viewMonth].toLowerCase()} {viewYear}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <button onClick={handleGoToToday} style={{ color: pc, fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={handlePrevMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <ChevronLeft size={14} />
-                          </button>
-                          <button onClick={handleNextMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <ChevronRight size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Week headers */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 6 }}>
-                      {['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => (
-                        <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', padding: '0 0 4px' }}>{d}</div>
-                      ))}
-                    </div>
-
-                    {/* Day cells — plain grid, no aspect-ratio tricks */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
-                      {daysArray.map((day, idx) => {
-                        if (!day) return <div key={`e-${idx}`} style={{ height: 32 }} />;
-
-                        const dow = new Date(viewYear, viewMonth, day).getDay();
-                        const isClosed = selectedProfessional?.businessDays?.length
-                          ? !selectedProfessional.businessDays.includes(WEEKDAYS_MAP[dow])
-                          : activeTenant.businessDays?.length
-                          ? !activeTenant.businessDays.includes(WEEKDAYS_MAP[dow])
-                          : false;
-                        const dk = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                        const isBlocked = (activeTenant.blockedDates ?? []).includes(dk);
-                        const ps = selectedDate.split('-');
-                        const isSel = ps.length === 3 && +ps[0] === viewYear && +ps[1]-1 === viewMonth && +ps[2] === day;
-
-                        const cellBase: React.CSSProperties = { height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', border: 'none' };
-
-                        if (isClosed) return <div key={dk} style={{ ...cellBase, background: '#f8fafc', cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#cbd5e1' }}>{day}</span></div>;
-                        if (isBlocked) return <div key={dk} style={{ ...cellBase, background: 'rgba(239,68,68,0.06)', cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#fca5a5' }}>{day}</span></div>;
-                        return (
-                          <button key={dk} onClick={() => handleSelectDay(day)} type="button"
-                            style={{ ...cellBase, background: isSel ? '#2563eb' : 'transparent', color: isSel ? '#fff' : '#475569', fontWeight: isSel ? 700 : 500, cursor: 'pointer' }}
-                            onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLElement).style.background = '#f1f5f9'; }}
-                            onMouseOut={e => { if (!isSel) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-                            {day}
-                          </button>
-                        );
-                      })}
-                    </div>
+              <div style={{ padding: '30px 28px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', textTransform: 'capitalize' }}>
+                    {MONTH_NAMES_PT[viewMonth].toLowerCase()} {viewYear}
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <button onClick={handleGoToToday} style={{ color: pc, fontWeight: 600, fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
+                    <button onClick={handlePrevMonth} style={{ background: 'none', border: 'none', color: pc, cursor: 'pointer', fontSize: 22, lineHeight: 1, padding: '0 2px' }}>&#8249;</button>
+                    <button onClick={handleNextMonth} style={{ background: 'none', border: 'none', color: pc, cursor: 'pointer', fontSize: 22, lineHeight: 1, padding: '0 2px' }}>&#8250;</button>
                   </div>
-
-                  {/* Time slots */}
-                  <div style={{ minWidth: 0, borderTop: isDesktop ? 'none' : '1px solid #f1f5f9', paddingTop: isDesktop ? 0 : 16, borderLeft: isDesktop ? '1px solid #f1f5f9' : 'none', paddingLeft: isDesktop ? 16 : 0 }}>
-                    <div style={{ marginBottom: 12 }}>
-                      <p style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>
-                        {selectedDate ? selectedDate.split('-').reverse().join('/') : '—'}
-                      </p>
-                      {selectedProfessional && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b' }}>
-                          <div style={{ width: 20, height: 20, borderRadius: '50%', overflow: 'hidden', border: '1px solid #e2e8f0', flexShrink: 0 }}>
-                            <img src={selectedProfessional.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).src = av(selectedProfessional!.name); }} />
-                          </div>
-                          {selectedProfessional.name}
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
-                      {HOURLY_SLOTS.map(time => {
-                        const occ = checkSlotOccupied(time);
-                        const sel = selectedTime === time;
-                        if (occ) return (
-                          <div key={time} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', color: '#cbd5e1', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', textDecoration: 'line-through', userSelect: 'none' }}>{time}</div>
-                        );
-                        return (
-                          <button key={time} onClick={() => setSelectedTime(time)}
-                            style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 10, border: sel ? 'none' : `1px solid ${pcBorder}`, background: sel ? '#2563eb' : '#fff', color: sel ? '#fff' : '#2563eb', cursor: 'pointer', transition: 'all 120ms' }}>
-                            {time}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <button onClick={() => setStep(4)} disabled={!selectedTime}
-                      style={{ width: '100%', padding: '12px 0', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                      Continuar <ArrowRight size={16} />
-                    </button>
-                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 10 }}>
+                  {['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => (
+                    <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#475569', textTransform: 'uppercase', paddingBottom: 14 }}>{d}</div>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', rowGap: 6 }}>
+                  {daysArray.map((day, idx) => {
+                    if (!day) return <div key={`e-${idx}`} style={{ height: 36 }} />;
+                    const dow = new Date(viewYear, viewMonth, day).getDay();
+                    const isClosed = selectedProfessional?.businessDays?.length
+                      ? !selectedProfessional.businessDays.includes(WEEKDAYS_MAP[dow])
+                      : activeTenant.businessDays?.length
+                      ? !activeTenant.businessDays.includes(WEEKDAYS_MAP[dow])
+                      : false;
+                    const dk = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    const isPast = dk < todayStr;
+                    const isBlocked = (activeTenant.blockedDates ?? []).includes(dk);
+                    const ps = selectedDate.split('-');
+                    const isSel = ps.length === 3 && +ps[0] === viewYear && +ps[1]-1 === viewMonth && +ps[2] === day;
+                    const cellD: React.CSSProperties = { width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: 13, fontFamily: 'monospace', border: 'none', margin: '0 auto' };
+                    if (isPast) return <div key={dk} style={{ ...cellD }}><span style={{ color: '#9fa7b3' }}>{day}</span></div>;
+                    if (isClosed) return <div key={dk} style={{ ...cellD, cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#9fa7b3' }}>{day}</span></div>;
+                    if (isBlocked) return <div key={dk} style={{ ...cellD, cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#fca5a5' }}>{day}</span></div>;
+                    return (
+                      <button key={dk} onClick={() => handleSelectDay(day)} type="button"
+                        style={{ ...cellD, background: isSel ? pc : 'transparent', color: isSel ? '#fff' : '#1e293b', fontWeight: isSel ? 700 : 600, cursor: 'pointer' }}
+                        onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLElement).style.background = '#f1f5f9'; }}
+                        onMouseOut={e => { if (!isSel) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+                        {day}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -614,6 +569,45 @@ export default function CustomerBookingFlow({
             )}
 
           </div>{/* end desktop step content */}
+          {step === 3 && (
+            <div style={{ width: 280, borderLeft: '1px solid #e2e8f0', flexShrink: 0, display: 'flex', flexDirection: 'column', padding: '30px 24px' }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', marginBottom: 20, margin: '0 0 20px' }}>
+                {selectedDate
+                  ? `${parseInt(selectedDate.split('-')[2])} de ${MONTH_NAMES_PT[parseInt(selectedDate.split('-')[1])-1].toLowerCase()}`
+                  : '—'}
+              </h2>
+              {selectedProfessional && (
+                <div style={{ marginBottom: 20 }}>
+                  <p style={{ fontSize: 10, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Exibindo horários para:</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: '50%', overflow: 'hidden', border: '1px solid #e2e8f0', flexShrink: 0 }}>
+                      <img src={selectedProfessional.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).src = av(selectedProfessional!.name); }} />
+                    </div>
+                    {selectedProfessional.name}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16, flex: 1 }}>
+                {HOURLY_SLOTS.map(time => {
+                  const occ = checkSlotOccupied(time) || checkSlotPast(time);
+                  const sel = selectedTime === time;
+                  if (occ) return (
+                    <div key={time} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', color: '#9fa7b3', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', textDecoration: 'line-through', userSelect: 'none' }}>{time}</div>
+                  );
+                  return (
+                    <button key={time} onClick={() => setSelectedTime(time)}
+                      style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 8, border: sel ? 'none' : `1px solid ${pcBorder}`, background: sel ? pc : '#fff', color: sel ? '#fff' : pc, cursor: 'pointer', transition: 'all 120ms' }}>
+                      {time}
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={() => setStep(4)} disabled={!selectedTime}
+                style={{ width: '100%', padding: '12px 0', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 8, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                Continuar <ArrowRight size={16} />
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         /* ── MOBILE: pure block, sem flex wrapper ── */
@@ -650,34 +644,36 @@ export default function CustomerBookingFlow({
             <div style={{ padding: '20px' }}>
               {/* Calendar */}
               <div style={{ marginBottom: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 16 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#334155', textTransform: 'capitalize' }}>{MONTH_NAMES_PT[viewMonth].toLowerCase()} {viewYear}</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: '#1e293b', textTransform: 'capitalize' }}>{MONTH_NAMES_PT[viewMonth].toLowerCase()} {viewYear}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <button onClick={handleGoToToday} style={{ color: pc, fontWeight: 700, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <button onClick={handlePrevMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={14} /></button>
-                      <button onClick={handleNextMonth} style={{ width: 28, height: 28, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={14} /></button>
+                    <button onClick={handleGoToToday} style={{ color: pc, fontWeight: 600, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Hoje</button>
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      <button onClick={handlePrevMonth} style={{ background: 'none', border: 'none', color: pc, cursor: 'pointer', fontSize: 22, lineHeight: 1, padding: '0 2px' }}>&#8249;</button>
+                      <button onClick={handleNextMonth} style={{ background: 'none', border: 'none', color: pc, cursor: 'pointer', fontSize: 22, lineHeight: 1, padding: '0 2px' }}>&#8250;</button>
                     </div>
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 6 }}>
                   {['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => (
-                    <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', padding: '0 0 4px' }}>{d}</div>
+                    <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 600, color: '#475569', textTransform: 'uppercase', paddingBottom: 10 }}>{d}</div>
                   ))}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', rowGap: 4 }}>
                   {daysArray.map((day, idx) => {
-                    if (!day) return <div key={`e-${idx}`} style={{ height: 32 }} />;
+                    if (!day) return <div key={`e-${idx}`} style={{ height: 34 }} />;
                     const dow = new Date(viewYear, viewMonth, day).getDay();
                     const isClosed = selectedProfessional?.businessDays?.length ? !selectedProfessional.businessDays.includes(WEEKDAYS_MAP[dow]) : activeTenant.businessDays?.length ? !activeTenant.businessDays.includes(WEEKDAYS_MAP[dow]) : false;
                     const dk = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    const isPast = dk < todayStr;
                     const isBlocked = (activeTenant.blockedDates ?? []).includes(dk);
                     const ps = selectedDate.split('-');
                     const isSel = ps.length === 3 && +ps[0] === viewYear && +ps[1]-1 === viewMonth && +ps[2] === day;
-                    const cell: React.CSSProperties = { height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', border: 'none' };
-                    if (isClosed) return <div key={dk} style={{ ...cell, background: '#f8fafc', cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#cbd5e1' }}>{day}</span></div>;
-                    if (isBlocked) return <div key={dk} style={{ ...cell, background: 'rgba(239,68,68,0.06)', cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#fca5a5' }}>{day}</span></div>;
-                    return <button key={dk} onClick={() => handleSelectDay(day)} type="button" style={{ ...cell, background: isSel ? '#2563eb' : 'transparent', color: isSel ? '#fff' : '#475569', fontWeight: isSel ? 700 : 500, cursor: 'pointer' }}>{day}</button>;
+                    const cellM: React.CSSProperties = { width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: 12, fontFamily: 'monospace', border: 'none', margin: '0 auto' };
+                    if (isPast) return <div key={dk} style={{ ...cellM }}><span style={{ color: '#9fa7b3' }}>{day}</span></div>;
+                    if (isClosed) return <div key={dk} style={{ ...cellM, cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#9fa7b3' }}>{day}</span></div>;
+                    if (isBlocked) return <div key={dk} style={{ ...cellM, cursor: 'not-allowed' }}><span style={{ textDecoration: 'line-through', color: '#fca5a5' }}>{day}</span></div>;
+                    return <button key={dk} onClick={() => handleSelectDay(day)} type="button" style={{ ...cellM, background: isSel ? pc : 'transparent', color: isSel ? '#fff' : '#1e293b', fontWeight: isSel ? 700 : 600, cursor: 'pointer' }}>{day}</button>;
                   })}
                 </div>
               </div>
@@ -692,9 +688,9 @@ export default function CustomerBookingFlow({
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
                   {HOURLY_SLOTS.map(time => {
-                    const occ = checkSlotOccupied(time); const sel = selectedTime === time;
+                    const occ = checkSlotOccupied(time) || checkSlotPast(time); const sel = selectedTime === time;
                     if (occ) return <div key={time} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', color: '#cbd5e1', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', textDecoration: 'line-through' }}>{time}</div>;
-                    return <button key={time} onClick={() => setSelectedTime(time)} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 10, border: sel ? 'none' : `1px solid ${pcBorder}`, background: sel ? '#2563eb' : '#fff', color: sel ? '#fff' : '#2563eb', cursor: 'pointer' }}>{time}</button>;
+                    return <button key={time} onClick={() => setSelectedTime(time)} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontFamily: 'monospace', fontWeight: 700, borderRadius: 10, border: sel ? 'none' : `1px solid ${pcBorder}`, background: sel ? pc : '#fff', color: sel ? '#fff' : pc, cursor: 'pointer' }}>{time}</button>;
                   })}
                 </div>
                 <button onClick={() => setStep(4)} disabled={!selectedTime} style={{ width: '100%', padding: '12px 0', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
@@ -745,7 +741,7 @@ export default function CustomerBookingFlow({
 
           {/* Step 1: select service */}
           {activeTab === 'booking' && step === 1 && (
-            <div style={{ maxWidth: 420, margin: '0 auto', padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ maxWidth: 420, margin: '0 auto', padding: isDesktop ? '32px 20px' : '24px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               {(activeTenant.logo?.startsWith('http') || activeTenant.logo?.startsWith('data:'))
                 ? <div style={{ width: 112, height: 112, borderRadius: '50%', overflow: 'hidden', marginBottom: 28, border: `2px solid ${pcBorder}`, flexShrink: 0 }}>
                     <img src={activeTenant.logo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -784,7 +780,7 @@ export default function CustomerBookingFlow({
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {myServices.map(srv => (
                   <button key={srv.id} onClick={() => { setSelectedServiceId(srv.id); setSelectedProfId(''); setStep(2); }}
-                    style={{ width: '100%', padding: '14px 20px', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 16, border: `1px solid ${pc}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 12px rgba(37,99,235,0.25)' }}>
+                    style={{ width: '100%', padding: isDesktop ? '14px 20px' : '16px 18px', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: isDesktop ? 16 : 10, border: `1px solid ${pc}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 12px rgba(37,99,235,0.25)' }}>
                     <span>{srv.name}</span>
                     <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: 6 }}>
                       {srv.durationMinutes} min ▶

@@ -86,42 +86,14 @@ export default function BookingPage() {
     const r = parseInt(pc.slice(1, 3), 16);
     const g = parseInt(pc.slice(3, 5), 16);
     const b = parseInt(pc.slice(5, 7), 16);
-    return `rgb(${Math.round(4 + r * 0.13)},${Math.round(4 + g * 0.13)},${Math.round(4 + b * 0.13)})`;
-  })();
-  const tintHeader = (() => {
-    const r = parseInt(pc.slice(1, 3), 16);
-    const g = parseInt(pc.slice(3, 5), 16);
-    const b = parseInt(pc.slice(5, 7), 16);
-    return `rgb(${Math.round(2 + r * 0.08)},${Math.round(2 + g * 0.08)},${Math.round(2 + b * 0.08)})`;
+    const mix = (ch: number, n: number) => Math.round(n + (ch - n) * 0.18);
+    return `rgb(${mix(r, 110)},${mix(g, 116)},${mix(b, 98)})`;
   })();
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: tintBg, fontFamily: 'Outfit, sans-serif' }}>
-      {/* Minimal public header */}
-      <div
-        style={{
-          backgroundColor: tintHeader,
-          borderBottom: '1px solid rgba(255,255,255,0.09)',
-          padding: '10px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-        }}
-      >
-        {(tenant.logo?.startsWith('http') || tenant.logo?.startsWith('data:'))
-          ? <div style={{ width: 36, height: 36, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
-              <img src={tenant.logo} alt={tenant.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            </div>
-          : <span style={{ fontSize: 22, flexShrink: 0 }}>{tenant.logo}</span>
-        }
-        <div>
-          <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, lineHeight: 1.3 }}>{tenant.name}</p>
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{tenant.address}</p>
-        </div>
-      </div>
-
+    <div className="min-h-screen" style={{ backgroundColor: tintBg, fontFamily: 'Outfit, sans-serif', padding: '32px 16px' }}>
       {/* Booking widget */}
-      <div className="max-w-2xl mx-auto px-4 py-6">
+      <div style={{ maxWidth: 1060, margin: '0 auto' }}>
         <CustomerBookingFlow
           activeTenant={tenant}
           services={services}
