@@ -795,7 +795,11 @@ function bookingCode(id: string): string {
 }
 
 function buildLink(tenant: { slug: string }, appointmentId: string): string {
-  return SITE_URL ? `${SITE_URL}/${tenant.slug}/cancelar/${appointmentId}` : '';
+  return SITE_URL ? `${SITE_URL}/api/og/${tenant.slug}/cancelar/${appointmentId}` : '';
+}
+
+function buildCancelUrl(slug: string, appointmentId: string): string {
+  return SITE_URL ? `${SITE_URL}/${slug}/cancelar/${appointmentId}` : '';
 }
 
 function applyTemplate(tpl: string, vars: Record<string, string>): string {
@@ -1176,6 +1180,54 @@ app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
   } catch (err: any) {
     console.error('[WhatsApp Send]', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/og/:slug/cancelar/:appointmentId
+// Serve HTML mínimo com Open Graph meta tags para preview no WhatsApp,
+// depois redireciona via JS/meta-refresh para a página real da SPA.
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/og/:slug/cancelar/:appointmentId', async (req, res) => {
+  const { slug, appointmentId } = req.params;
+  const cancelUrl = buildCancelUrl(slug, appointmentId);
+  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  try {
+    const { data: appt } = await supabase
+      .from('appointments')
+      .select('customer_name, scheduled_date, scheduled_time, services(name), tenants(name, slug)')
+      .eq('id', appointmentId)
+      .maybeSingle();
+
+    const tenant = appt?.tenants as any;
+    if (!appt || tenant?.slug !== slug) { res.redirect(302, cancelUrl); return; }
+
+    const salonName   = esc(tenant?.name ?? 'Barbearia');
+    const serviceName = esc((appt.services as any)?.name ?? '');
+    const date        = appt.scheduled_date ? formatDatePT(appt.scheduled_date) : '';
+    const time        = appt.scheduled_time?.slice(0, 5) ?? '';
+    const title       = `${salonName} — Agendamento`;
+    const description = serviceName && date
+      ? `${serviceName} · ${date} às ${time} · Toque para ver detalhes ou cancelar.`
+      : 'Toque para ver os detalhes ou cancelar seu agendamento.';
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store');
+    res.send(`<!DOCTYPE html><html lang="pt-BR"><head>
+<meta charset="UTF-8">
+<title>${title}</title>
+<meta property="og:title" content="${title}" />
+<meta property="og:description" content="${esc(description)}" />
+<meta property="og:url" content="${cancelUrl}" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="WorkAgenda" />
+<meta http-equiv="refresh" content="0; url=${cancelUrl}" />
+</head><body>
+<script>window.location.replace(${JSON.stringify(cancelUrl)});</script>
+</body></html>`);
+  } catch {
+    res.redirect(302, cancelUrl);
   }
 });
 
