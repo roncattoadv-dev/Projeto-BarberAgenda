@@ -882,7 +882,7 @@ app.post('/api/whatsapp/notify', async (req, res) => {
       const instanceToken = evoInstanceToken(tenant.slug, tenantId);
       await evoInstance(instanceToken, '/send/text', {
         method: 'POST',
-        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg, linkPreview: true }),
       });
       await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appointmentId);
     }
@@ -961,7 +961,7 @@ app.post('/api/whatsapp/remind', async (req, res) => {
 
     await evoInstance(instanceToken, '/send/text', {
       method: 'POST',
-      body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
+      body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg, linkPreview: true }),
     });
 
     await supabase.from('appointments').update({ wpp_reminder_sent: true }).eq('id', appointmentId);
@@ -1170,7 +1170,7 @@ app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
   try {
     await evoInstance(instanceToken, '/send/text', {
       method: 'POST',
-      body: JSON.stringify({ instanceId: tenant.slug, number: phone, text: message }),
+      body: JSON.stringify({ instanceId: tenant.slug, number: phone, text: message, linkPreview: true }),
     });
     res.json({ ok: true });
   } catch (err: any) {
