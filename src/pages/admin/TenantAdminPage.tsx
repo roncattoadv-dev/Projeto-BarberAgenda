@@ -279,7 +279,7 @@ import {
   createProfessional, updateProfessional, deleteProfessional, setServiceProfessionals, createProduct, updateCustomer, deleteCustomer,
   updateProductStock, createAppointment, updateAppointmentStatus, rescheduleAppointment,
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
-  syncProfessionalsHours,
+  syncProfessionalsHours, mapAppointment,
 } from '../../lib/db';
 import { supabase } from '../../lib/supabase';
 import type { Tenant, Service, Professional, Product, Customer, Appointment, Payment } from '../../types';
@@ -317,6 +317,68 @@ export default function TenantAdminPage() {
   }, [tenantId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Sincroniza INSERT e UPDATE de appointments via WebSocket + polling de fallback
+  useEffect(() => {
+    if (!tenantId) return;
+
+    const applyUpdate = (prev: Appointment[], row: Record<string, unknown>) =>
+      prev.map(a => a.id !== row.id ? a : {
+        ...a,
+        ...(row.wpp_confirm_sent  !== undefined && { wppConfirmSent:  row.wpp_confirm_sent  as boolean }),
+        ...(row.wpp_reminder_sent !== undefined && { wppReminderSent: row.wpp_reminder_sent as boolean }),
+        ...(row.status            !== undefined && { status:           row.status            as Appointment['status'] }),
+        ...(row.scheduled_date    !== undefined && { date:             row.scheduled_date    as string }),
+        ...(row.scheduled_time    !== undefined && { time:            (row.scheduled_time as string).slice(0, 5) }),
+      });
+
+    const channel = supabase
+      .channel(`appt-updates-${tenantId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'barber', table: 'appointments' },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          if (row.tenant_id !== tenantId) return;
+          setAppointments(prev => {
+            if (prev.some(a => a.id === row.id)) return prev; // já existe (admin criou via UI)
+            return [mapAppointment(row), ...prev];
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'barber', table: 'appointments' },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          if (row.tenant_id !== tenantId) return;
+          setAppointments(prev => applyUpdate(prev, row));
+        }
+      )
+      .subscribe();
+
+    // Polling de 30s como fallback caso o WebSocket não entregue o evento
+    const pollId = setInterval(async () => {
+      const { data } = await supabase
+        .from('appointments')
+        .select('id, wpp_confirm_sent, wpp_reminder_sent')
+        .eq('tenant_id', tenantId);
+      if (!data) return;
+      setAppointments(prev =>
+        prev.map(a => {
+          const r = (data as any[]).find(d => d.id === a.id);
+          if (!r) return a;
+          if (r.wpp_confirm_sent === a.wppConfirmSent && r.wpp_reminder_sent === a.wppReminderSent) return a;
+          return { ...a, wppConfirmSent: r.wpp_confirm_sent, wppReminderSent: r.wpp_reminder_sent };
+        })
+      );
+    }, 30_000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(pollId);
+    };
+  }, [tenantId]);
 
   if (!tenant && !loading) return (
     <div

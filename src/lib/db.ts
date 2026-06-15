@@ -312,7 +312,7 @@ function mapProfessional(r: any): Professional {
 function mapCustomer(r: any): Customer {
   return { id: r.id, tenantId: r.tenant_id, name: r.name, email: r.email ?? '', phone: r.phone, notes: r.notes, createdAt: r.created_at };
 }
-function mapAppointment(r: any): Appointment {
+export function mapAppointment(r: any): Appointment {
   return { id: r.id, tenantId: r.tenant_id, serviceId: r.service_id, professionalId: r.professional_id, customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone, customerEmail: r.customer_email ?? '', date: r.scheduled_date, time: r.scheduled_time?.substring(0,5) ?? '', durationMinutes: r.duration_minutes, price: Number(r.price), status: r.status, notes: r.notes, wppConfirmSent: r.wpp_confirm_sent ?? false, wppReminderSent: r.wpp_reminder_sent ?? false, emailConfirmSent: r.email_confirm_sent ?? false };
 }
 function mapPayment(r: any): Payment {
