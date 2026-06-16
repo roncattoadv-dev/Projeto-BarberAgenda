@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import PrivacyModal from '../../components/PrivacyModal';
 
 const API_URL = (() => {
   const w = (window as any).__BARBER_CONFIG__ || {};
@@ -68,12 +69,14 @@ function BarberSetupForm({
   onSignOut: () => void;
 }) {
   const toast = useToast();
-  const [name,       setName]       = useState(googleName);
-  const [slug,       setSlug]       = useState(slugify(googleName));
-  const [slugEdited, setSlugEdited] = useState(false);
-  const [phone,      setPhone]      = useState('');
-  const [busy,       setBusy]       = useState(false);
-  const [errors,     setErrors]     = useState<Record<string, string>>({});
+  const [name,          setName]          = useState(googleName);
+  const [slug,          setSlug]          = useState(slugify(googleName));
+  const [slugEdited,    setSlugEdited]    = useState(false);
+  const [phone,         setPhone]         = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showModal,     setShowModal]     = useState(false);
+  const [busy,          setBusy]          = useState(false);
+  const [errors,        setErrors]        = useState<Record<string, string>>({});
 
   const handleNameChange = (val: string) => {
     setName(val);
@@ -82,9 +85,10 @@ function BarberSetupForm({
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!name.trim())                     e.name = 'Nome obrigatório.';
-    if (!slug.trim())                     e.slug = 'Endereço obrigatório.';
-    if (!/^[a-z0-9-]+$/.test(slug))      e.slug = 'Apenas letras minúsculas, números e hífens.';
+    if (!name.trim())                     e.name  = 'Nome obrigatório.';
+    if (!slug.trim())                     e.slug  = 'Endereço obrigatório.';
+    if (!/^[a-z0-9-]+$/.test(slug))      e.slug  = 'Apenas letras minúsculas, números e hífens.';
+    if (!acceptedTerms)                   e.terms = 'Você precisa aceitar os Termos de Uso para continuar.';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -193,6 +197,26 @@ function BarberSetupForm({
               />
             </div>
 
+            <div>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={e => setAcceptedTerms(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: '#ffffff', width: 15, height: 15, flexShrink: 0, cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5 }}>
+                  Li e aceito os{' '}
+                  <button type="button" onClick={() => setShowModal(true)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'rgba(255,255,255,0.88)', textDecoration: 'underline', fontSize: 12, fontFamily: 'Outfit, sans-serif' }}>
+                    Termos de Uso e Política de Privacidade
+                  </button>
+                </span>
+              </label>
+              {errors.terms && <p style={{ ...errorStyle, marginTop: 6 }}>{errors.terms}</p>}
+            </div>
+
+            {showModal && <PrivacyModal onClose={() => setShowModal(false)} />}
+
             <button
               type="submit" disabled={busy}
               style={{
@@ -289,8 +313,10 @@ export default function RegisterPage() {
   const [email,      setEmail]      = useState('');
   const [password,   setPassword]   = useState('');
   const [confirm,    setConfirm]    = useState('');
-  const [cpfCnpj,    setCpfCnpj]    = useState('');
-  const [errors,     setErrors]     = useState<Record<string, string>>({});
+  const [cpfCnpj,       setCpfCnpj]       = useState('');
+  const [acceptedTerms2, setAcceptedTerms2] = useState(false);
+  const [showModal2,     setShowModal2]     = useState(false);
+  const [errors,         setErrors]         = useState<Record<string, string>>({});
 
   // Redireciona se já tem conta completa
   useEffect(() => {
@@ -334,6 +360,7 @@ export default function RegisterPage() {
     if (!email.trim())        e.email    = 'Email obrigatório.';
     if (password.length < 8)  e.password = 'Mínimo 8 caracteres.';
     if (password !== confirm)  e.confirm  = 'As senhas não coincidem.';
+    if (!acceptedTerms2)       e.terms2   = 'Você precisa aceitar os Termos de Uso para continuar.';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -572,6 +599,26 @@ export default function RegisterPage() {
                 <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginBottom: 3 }}>✓ Após o trial: <strong style={{ color: 'rgba(255,255,255,0.88)' }}>R$ 89,90/mês</strong> via boleto ou Pix</p>
                 <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>✓ Cancele quando quiser, sem fidelidade</p>
               </div>
+
+              <div>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms2}
+                    onChange={e => setAcceptedTerms2(e.target.checked)}
+                    style={{ marginTop: 2, accentColor: '#ffffff', width: 15, height: 15, flexShrink: 0, cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5 }}>
+                    Li e aceito os{' '}
+                    <button type="button" onClick={() => setShowModal2(true)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'rgba(255,255,255,0.88)', textDecoration: 'underline', fontSize: 12, fontFamily: 'Outfit, sans-serif' }}>
+                      Termos de Uso e Política de Privacidade
+                    </button>
+                  </span>
+                </label>
+                {errors.terms2 && <p style={{ ...errorStyle, marginTop: 6 }}>{errors.terms2}</p>}
+              </div>
+
+              {showModal2 && <PrivacyModal onClose={() => setShowModal2(false)} />}
 
               <button
                 type="submit" disabled={busy}
