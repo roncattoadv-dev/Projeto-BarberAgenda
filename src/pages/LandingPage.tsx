@@ -239,6 +239,18 @@ export default function LandingPage() {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
+  // Meta Pixel
+  useEffect(() => {
+    if ((window as any).fbq) { (window as any).fbq('track', 'PageView'); return; }
+    const script = document.createElement('script');
+    script.async = true;
+    script.innerHTML = `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','1333043925464739');fbq('track','PageView');`;
+    document.head.appendChild(script);
+    const noscript = document.createElement('noscript');
+    noscript.innerHTML = `<img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1333043925464739&ev=PageView&noscript=1"/>`;
+    document.head.appendChild(noscript);
+  }, []);
+
   const navStyle: React.CSSProperties = {
     position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
