@@ -77,6 +77,8 @@ services:
       ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_TOKEN}
       ASAAS_SANDBOX: ${ASAAS_SANDBOX:-false}
       CORS_ORIGIN: https://workagenda.org
+      SITE_URL: https://workagenda.org
+      API_PUBLIC_URL: https://api.workagenda.org
       RESEND_API_KEY: re_2BLvozWY_LdyvwfYJyQaWyLTZVbRiHp4B
       # Evolution Go — URL interna do EasyPanel (nunca exposta ao browser)
       EVO_URL: http://evolutionapi_evogo:8080
@@ -91,9 +93,11 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - barberflow
-      - supabase_net
-      - easypanel
+      barberflow:
+      supabase_net:
+      easypanel:
+        aliases:
+          - barberflow_barberflow_api
 
 ##############################################################################
 # VOLUMES

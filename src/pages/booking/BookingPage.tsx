@@ -148,7 +148,13 @@ export default function BookingPage() {
       </div>
 
       {/* Powered by footer */}
-      <div className="pb-8" />
+      <div style={{ textAlign: 'center', padding: '24px 0 32px' }}>
+        <img
+          src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%208%20de%20jun.%20de%202026,%2019_42_41.png"
+          alt="WorkAgenda"
+          style={{ height: 36, opacity: 0.45, display: 'inline-block' }}
+        />
+      </div>
     </div>
   );
 }

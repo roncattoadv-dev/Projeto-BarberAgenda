@@ -31,6 +31,7 @@ const WEBHOOK_SECRET  = process.env.ASAAS_WEBHOOK_SECRET || '';
 const EVO_URL         = (process.env.EVO_URL || '').replace(/\/$/, '');
 const EVO_GLOBAL_KEY  = process.env.EVO_GLOBAL_KEY || process.env.EVO_APIKEY || '';
 const SITE_URL        = (process.env.SITE_URL || process.env.CORS_ORIGIN || '').replace(/\/$/, '');
+const API_PUBLIC_URL  = (process.env.API_PUBLIC_URL || '').replace(/\/$/, '');
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('[Server] SUPABASE_URL e SUPABASE_SERVICE_KEY são obrigatórios');
@@ -795,11 +796,32 @@ function bookingCode(id: string): string {
 }
 
 function buildLink(tenant: { slug: string }, appointmentId: string): string {
-  return SITE_URL ? `${SITE_URL}/api/og/${tenant.slug}/cancelar/${appointmentId}` : '';
+  const base = API_PUBLIC_URL || SITE_URL;
+  return base ? `${base}/api/og/${tenant.slug}/cancelar/${appointmentId}` : '';
 }
 
 function buildCancelUrl(slug: string, appointmentId: string): string {
   return SITE_URL ? `${SITE_URL}/${slug}/cancelar/${appointmentId}` : '';
+}
+
+async function evoSendWpp(
+  instanceToken: string,
+  slug: string,
+  number: string,
+  text: string,
+  link?: { url: string; title: string; description: string }
+) {
+  if (link) {
+    await evoInstance(instanceToken, '/send/link', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId: slug, number, text, url: link.url, title: link.title, description: link.description }),
+    });
+  } else {
+    await evoInstance(instanceToken, '/send/text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId: slug, number, text }),
+    });
+  }
 }
 
 function applyTemplate(tpl: string, vars: Record<string, string>): string {
@@ -884,10 +906,11 @@ app.post('/api/whatsapp/notify', async (req, res) => {
     if (phone) {
       const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
       const instanceToken = evoInstanceToken(tenant.slug, tenantId);
-      await evoInstance(instanceToken, '/send/text', {
-        method: 'POST',
-        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg, linkPreview: true }),
-      });
+      await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
+        url: link,
+        title: `${tenant.name} — Agendamento confirmado`,
+        description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
+      } : undefined);
       await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appointmentId);
     }
 
@@ -963,10 +986,11 @@ app.post('/api/whatsapp/remind', async (req, res) => {
     const msg           = applyTemplate(tenant.wpp_template_remind ?? TPL_REMIND_DEFAULT, vars);
     const instanceToken = evoInstanceToken(tenant.slug, tenantId);
 
-    await evoInstance(instanceToken, '/send/text', {
-      method: 'POST',
-      body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg, linkPreview: true }),
-    });
+    await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
+      url: link,
+      title: `${tenant.name} — Lembrete de agendamento`,
+      description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
+    } : undefined);
 
     await supabase.from('appointments').update({ wpp_reminder_sent: true }).eq('id', appointmentId);
 
@@ -1174,7 +1198,7 @@ app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
   try {
     await evoInstance(instanceToken, '/send/text', {
       method: 'POST',
-      body: JSON.stringify({ instanceId: tenant.slug, number: phone, text: message, linkPreview: true }),
+      body: JSON.stringify({ instanceId: tenant.slug, number: phone, text: message }),
     });
     res.json({ ok: true });
   } catch (err: any) {
@@ -1337,10 +1361,11 @@ async function sendConfirmations(): Promise<void> {
       const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
       const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
 
-      await evoInstance(instanceToken, '/send/text', {
-        method: 'POST',
-        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
-      });
+      await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
+        url: link,
+        title: `${tenant.name} — Agendamento confirmado`,
+        description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
+      } : undefined);
 
       await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appt.id);
       console.log(`[Confirm] Confirmação enviada: ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time?.slice(0,5)})`);
@@ -1433,10 +1458,11 @@ async function sendReminders(): Promise<void> {
       const msg           = applyTemplate(tenant.wpp_template_remind ?? TPL_REMIND_DEFAULT, vars);
       const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
 
-      await evoInstance(instanceToken, '/send/text', {
-        method: 'POST',
-        body: JSON.stringify({ instanceId: tenant.slug, number: `55${phone}`, text: msg }),
-      });
+      await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
+        url: link,
+        title: `${tenant.name} — Lembrete de agendamento`,
+        description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
+      } : undefined);
 
       await supabase.from('appointments').update({ wpp_reminder_sent: true }).eq('id', appt.id);
       console.log(`[Reminder] Lembrete enviado: ${appt.customer_name} (${appt.scheduled_date} ${apptTime})`);

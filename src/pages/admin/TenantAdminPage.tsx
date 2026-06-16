@@ -1,5 +1,5 @@
 // src/pages/admin/TenantAdminPage.tsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import ClientAdminPanel from '../../components/ClientAdminPanel';
 import { Scissors } from 'lucide-react';
@@ -283,10 +283,15 @@ import {
 } from '../../lib/db';
 import { supabase } from '../../lib/supabase';
 import type { Tenant, Service, Professional, Product, Customer, Appointment, Payment } from '../../types';
+import { useNotifications } from '../../hooks/useNotifications';
 
 export default function TenantAdminPage() {
   const { profile, signOut } = useAuth();
   const tenantId = profile?.tenant_id ?? '';
+
+  const notifications = useNotifications();
+  const notifyRef = useRef(notifications.notify);
+  useEffect(() => { notifyRef.current = notifications.notify; }, [notifications.notify]);
 
   const [tenant,              setTenant]              = useState<Tenant | null>(null);
   const [services,            setServices]            = useState<Service[]>([]);
@@ -343,6 +348,11 @@ export default function TenantAdminPage() {
           setAppointments(prev => {
             if (prev.some(a => a.id === row.id)) return prev; // já existe (admin criou via UI)
             return [mapAppointment(row), ...prev];
+          });
+          const appt = mapAppointment(row);
+          notifyRef.current('Novo agendamento! 📅', {
+            body: `${appt.customerName} — ${appt.date.split('-').reverse().join('/')} às ${appt.time}`,
+            tag: appt.id,
           });
         }
       )
@@ -569,6 +579,7 @@ export default function TenantAdminPage() {
           }}
           openSubscriptionTab={openSubscription}
           onSubscriptionTabOpened={() => setOpenSubscription(false)}
+          notifications={notifications}
         />
       )}
     </div>

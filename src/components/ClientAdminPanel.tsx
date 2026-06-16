@@ -16,6 +16,7 @@ import {
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../contexts/AuthContext';
+import { UseNotificationsReturn } from '../hooks/useNotifications';
 import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import LogoCropModal from './LogoCropModal';
@@ -27,7 +28,7 @@ import WhatsAppTab     from './tabs/WhatsAppTab';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Tab = 'agenda' | 'agendamentos' | 'financeiro' | 'clientes' | 'negocio' | 'automacoes' | 'configuracoes';
-type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'pagina-cliente' | 'assinatura' | 'conta';
+type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'pagina-cliente' | 'assinatura' | 'conta' | 'notificacoes';
 
 interface Props {
   activeTenant: Tenant;
@@ -58,6 +59,7 @@ interface Props {
   onDeleteAccount: () => Promise<void>;
   openSubscriptionTab?: boolean;
   onSubscriptionTabOpened?: () => void;
+  notifications: UseNotificationsReturn;
 }
 
 // ── Motion presets ─────────────────────────────────────────────────────────────
@@ -90,6 +92,7 @@ export default function ClientAdminPanel({
   onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
   openSubscriptionTab, onSubscriptionTabOpened,
+  notifications,
 }: Props) {
   const toast = useToast();
   const { user } = useAuth();
@@ -327,7 +330,7 @@ export default function ClientAdminPanel({
   useEffect(() => { if (cmdOpen) setTimeout(() => cmdRef.current?.focus(), 50); }, [cmdOpen]);
 
   const NEGOCIO_TABS: CfgTab[] = ['identidade', 'horarios', 'equipe', 'catalogo'];
-  const CONFIG_TABS:  CfgTab[] = ['assinatura', 'conta'];
+  const CONFIG_TABS:  CfgTab[] = ['assinatura', 'conta', 'notificacoes'];
   useEffect(() => {
     if (activeTab === 'negocio'       && !NEGOCIO_TABS.includes(cfgTab)) setCfgTab('identidade');
     if (activeTab === 'configuracoes' && !CONFIG_TABS.includes(cfgTab))  setCfgTab('assinatura');
@@ -750,7 +753,7 @@ export default function ClientAdminPanel({
                   <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0, overflowX: 'auto' }} className="no-scrollbar">
                     {(activeTab === 'negocio'
                       ? [['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['pagina-cliente','Página do Cliente']] as [CfgTab, string][]
-                      : [['assinatura','Assinatura'], ['conta','Conta']] as [CfgTab, string][]
+                      : [['assinatura','Assinatura'], ['conta','Conta'], ['notificacoes','Notificações']] as [CfgTab, string][]
                     ).map(([id, label]) => (
                       <button key={id} onClick={() => setCfgTab(id)}
                         style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: cfgTab === id ? '2px solid #ffffff' : '2px solid transparent', color: cfgTab === id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', marginBottom: -1, whiteSpace: 'nowrap', transition: 'color 150ms' }}>
@@ -1862,6 +1865,98 @@ export default function ClientAdminPanel({
                             )}
                           </div>
                         </div>
+                        );
+                      })()}
+
+                      {cfgTab === 'notificacoes' && (() => {
+                        const permLabels: Record<string, { label: string; color: string; bg: string }> = {
+                          granted: { label: 'Permitida',      color: '#16a34a', bg: '#E6F4EC' },
+                          denied:  { label: 'Bloqueada',      color: '#dc2626', bg: '#FEECEC' },
+                          default: { label: 'Não solicitada', color: '#92400e', bg: '#FEF9EC' },
+                        };
+                        const perm = permLabels[notifications.permission] ?? permLabels.default;
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 520 }}>
+                            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                              <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Bell style={{ width: 12, height: 12 }} /> Notificações do Navegador
+                              </h4>
+
+                              {!notifications.supported && (
+                                <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>
+                                  Seu navegador não suporta notificações push. Tente usar Chrome, Firefox ou Edge.
+                                </p>
+                              )}
+
+                              {notifications.supported && (
+                                <>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '14px 18px' }}>
+                                    <div style={{ width: 36, height: 36, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)' }}>
+                                      <Bell style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 4 }}>Permissão do navegador</div>
+                                      <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: perm.bg, color: perm.color }}>
+                                        {perm.label}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '14px 18px' }}>
+                                    <div>
+                                      <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: 2 }}>Novos agendamentos</div>
+                                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>Receba um alerta quando um cliente agendar online</div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={notifications.permission !== 'granted'}
+                                      onClick={() => notifications.setEnabled(!notifications.enabled)}
+                                      style={{
+                                        width: 44, height: 24, borderRadius: 12, border: 'none',
+                                        cursor: notifications.permission === 'granted' ? 'pointer' : 'not-allowed',
+                                        background: notifications.enabled && notifications.permission === 'granted' ? '#22c55e' : 'rgba(255,255,255,0.12)',
+                                        position: 'relative', transition: 'background 200ms', flexShrink: 0,
+                                        opacity: notifications.permission !== 'granted' ? 0.4 : 1,
+                                      }}
+                                    >
+                                      <span style={{
+                                        position: 'absolute', top: 3,
+                                        left: notifications.enabled && notifications.permission === 'granted' ? 23 : 3,
+                                        width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                                        transition: 'left 200ms', display: 'block',
+                                      }} />
+                                    </button>
+                                  </div>
+
+                                  {notifications.permission === 'default' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => notifications.requestPermission()}
+                                      style={{ padding: '11px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}>
+                                      <Bell style={{ width: 14, height: 14 }} /> Habilitar notificações
+                                    </button>
+                                  )}
+
+                                  {notifications.permission === 'denied' && (
+                                    <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 10, padding: '12px 16px' }}>
+                                      <p style={{ margin: 0, fontSize: 12, color: '#fca5a5', lineHeight: 1.6 }}>
+                                        As notificações estão bloqueadas no seu navegador. Para habilitar, clique no cadeado na barra de endereços e permita notificações para este site.
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {notifications.enabled && notifications.permission === 'granted' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => notifications.notify('Notificação de teste ✅', { body: 'As notificações estão funcionando corretamente!' })}
+                                      style={{ padding: '9px 18px', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', alignSelf: 'flex-start' }}>
+                                      Enviar notificação de teste
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
                         );
                       })()}
                     </motion.div>
