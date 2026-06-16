@@ -137,16 +137,16 @@ export default function TourOverlay({ steps, onFinish }: Props) {
         {/* ── Overlay (4 quadrants around spotlight) ──────────── */}
         {visible && !isWelcome && rect && (
           <>
-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: rect.top - PAD, background: 'rgba(3,20,50,0.78)', pointerEvents: 'auto' }} onClick={onFinish} />
-            <div style={{ position: 'absolute', top: rect.top + rect.height + PAD, left: 0, right: 0, bottom: 0, background: 'rgba(3,20,50,0.78)', pointerEvents: 'auto' }} onClick={onFinish} />
-            <div style={{ position: 'absolute', top: rect.top - PAD, left: 0, width: rect.left - PAD, height: rect.height + PAD * 2, background: 'rgba(3,20,50,0.78)', pointerEvents: 'auto' }} onClick={onFinish} />
-            <div style={{ position: 'absolute', top: rect.top - PAD, left: rect.left + rect.width + PAD, right: 0, height: rect.height + PAD * 2, background: 'rgba(3,20,50,0.78)', pointerEvents: 'auto' }} onClick={onFinish} />
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: rect.top - PAD, background: 'rgba(3,20,50,0.78)', pointerEvents: 'auto' }} />
+            <div style={{ position: 'absolute', top: rect.top + rect.height + PAD, left: 0, right: 0, bottom: 0, background: 'rgba(3,20,50,0.78)', pointerEvents: 'auto' }} />
+            <div style={{ position: 'absolute', top: rect.top - PAD, left: 0, width: rect.left - PAD, height: rect.height + PAD * 2, background: 'rgba(3,20,50,0.78)', pointerEvents: 'auto' }} />
+            <div style={{ position: 'absolute', top: rect.top - PAD, left: rect.left + rect.width + PAD, right: 0, height: rect.height + PAD * 2, background: 'rgba(3,20,50,0.78)', pointerEvents: 'auto' }} />
           </>
         )}
 
         {/* ── Full overlay for welcome step ───────────────────── */}
         {visible && isWelcome && (
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(3,20,50,0.85)', pointerEvents: 'auto' }} onClick={onFinish} />
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(3,20,50,0.85)', pointerEvents: 'auto' }} />
         )}
 
         {/* ── Spotlight ring ───────────────────────────────────── */}

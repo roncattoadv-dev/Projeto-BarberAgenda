@@ -149,9 +149,10 @@ export default function ClientAdminPanel({
   const [supportSending, setSupportSending] = useState(false);
   const [supportSent,    setSupportSent]    = useState(false);
 
-  const TOUR_KEY = `workagenda_tour_done_${activeTenant.id}`;
+  const TOUR_KEY = `workagenda_setup_v2_${activeTenant.id}`;
   const [tourOpen, setTourOpen] = useState(() => !localStorage.getItem(TOUR_KEY));
-  const finishTour = () => { localStorage.setItem(TOUR_KEY, '1'); setTourOpen(false); };
+  const finishTour  = () => { localStorage.setItem(TOUR_KEY, '1'); setTourOpen(false); };
+  const restartTour = () => { localStorage.removeItem(TOUR_KEY); setTourOpen(true); };
 
   const TOUR_STEPS: TourStep[] = [
     {
@@ -1849,6 +1850,20 @@ export default function ClientAdminPanel({
                               {salvandoSenha ? 'Salvando…' : isGoogleUser ? 'Definir Senha' : 'Alterar Senha'}
                             </button>
                           </form>
+
+                          {/* Guia de configuração */}
+                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                            <div>
+                              <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', marginBottom: 6 }}>Guia de Configuração</h4>
+                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: 0, lineHeight: 1.6 }}>
+                                Rever o assistente que guia a configuração do negócio e do link de agendamento.
+                              </p>
+                            </div>
+                            <button onClick={restartTour}
+                              style={{ padding: '9px 18px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 9, color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              🗺️ Rever guia
+                            </button>
+                          </div>
 
                           <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 16, padding: 24 }}>
                             <h4 style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(239,68,68,0.15)', paddingBottom: 12, margin: '0 0 16px' }}>Excluir Conta</h4>
