@@ -154,13 +154,52 @@ export default function ClientAdminPanel({
   const finishTour = () => { localStorage.setItem(TOUR_KEY, '1'); setTourOpen(false); };
 
   const TOUR_STEPS: TourStep[] = [
-    { navId: 'agenda',        emoji: '📅', title: 'Agenda',        description: 'Visualize todos os atendimentos do dia em um calendário visual. Clique em qualquer horário para criar um novo agendamento rapidamente.' },
-    { navId: 'agendamentos',  emoji: '📋', title: 'Agendamentos',  description: 'Acompanhe todos os pedidos de agendamento feitos pelos seus clientes. Confirme, cancele ou remarque com um único clique.' },
-    { navId: 'financeiro',    emoji: '💰', title: 'Financeiro',    description: 'Acompanhe KPIs de faturamento, despesas, lucro e gráficos mensais. Lance receitas avulsas, despesas e visualize comissões da equipe.' },
-    { navId: 'clientes',      emoji: '👥', title: 'Clientes',      description: 'Gerencie sua base de clientes, veja o histórico de atendimentos e o total gasto por cada um.' },
-    { navId: 'negocio',       emoji: '🏪', title: 'Meu Negócio',   description: 'Configure os serviços oferecidos, sua equipe de profissionais e os horários de funcionamento.' },
-    { navId: 'automacoes',    emoji: '💬', title: 'Automações',    description: 'Ative mensagens automáticas de confirmação e lembrete via WhatsApp para reduzir faltas e melhorar a comunicação.' },
-    { navId: 'configuracoes', emoji: '⚙️', title: 'Configurações', description: 'Gerencie sua assinatura, personalize a página de agendamento online e configure as preferências da sua conta.' },
+    {
+      targetId: '__welcome__',
+      emoji: '👋',
+      title: `Bem-vindo, ${activeTenant.name}!`,
+      description: 'Vamos configurar seu negócio em 5 passos rápidos. Ao final, seu link de agendamento estará pronto para compartilhar com seus clientes.',
+    },
+    {
+      targetId: 'tour-cfgtab-identidade',
+      emoji: '🏪',
+      title: 'Identidade do negócio',
+      description: 'Preencha o nome, telefone, endereço e faça upload da sua logo. Essas informações aparecem no link de agendamento que seus clientes vão acessar.',
+      cta: 'Configurar identidade',
+      onEnter: () => { setActiveTab('negocio'); setTimeout(() => setCfgTab('identidade'), 60); },
+    },
+    {
+      targetId: 'tour-cfgtab-horarios',
+      emoji: '🕐',
+      title: 'Horários de funcionamento',
+      description: 'Defina os dias da semana e os horários em que seu negócio atende. Os clientes só poderão agendar dentro desses horários.',
+      cta: 'Configurar horários',
+      onEnter: () => setCfgTab('horarios'),
+    },
+    {
+      targetId: 'tour-cfgtab-equipe',
+      emoji: '✂️',
+      title: 'Sua equipe',
+      description: 'Adicione os profissionais que realizam os atendimentos. Cada profissional pode ser vinculado a serviços específicos e terá sua própria agenda.',
+      cta: 'Adicionar profissionais',
+      onEnter: () => setCfgTab('equipe'),
+    },
+    {
+      targetId: 'tour-cfgtab-catalogo',
+      emoji: '💈',
+      title: 'Serviços e preços',
+      description: 'Crie os serviços que você oferece informando nome, preço e duração. São eles que aparecem para o cliente escolher na hora de agendar.',
+      cta: 'Criar serviços',
+      onEnter: () => setCfgTab('catalogo'),
+    },
+    {
+      targetId: 'tour-cfgtab-pagina-cliente',
+      emoji: '🔗',
+      title: 'Seu link está pronto! 🎉',
+      description: 'Configure a aparência da página de agendamento e copie o link. Compartilhe pelo WhatsApp, Instagram ou onde preferir — seu cliente agenda em menos de 1 minuto.',
+      cta: 'Ver meu link',
+      onEnter: () => setCfgTab('pagina-cliente'),
+    },
   ];
   const [billingModal, setBillingModal] = useState<null | {
     plan: 'mensal' | 'trimestral' | 'anual';
@@ -756,7 +795,7 @@ export default function ClientAdminPanel({
                       ? [['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['pagina-cliente','Página do Cliente']] as [CfgTab, string][]
                       : [['assinatura','Assinatura'], ['conta','Conta'], ['notificacoes','Notificações']] as [CfgTab, string][]
                     ).map(([id, label]) => (
-                      <button key={id} onClick={() => setCfgTab(id)}
+                      <button key={id} id={`tour-cfgtab-${id}`} onClick={() => setCfgTab(id)}
                         style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: cfgTab === id ? '2px solid #ffffff' : '2px solid transparent', color: cfgTab === id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', marginBottom: -1, whiteSpace: 'nowrap', transition: 'color 150ms' }}>
                         {label}
                       </button>
