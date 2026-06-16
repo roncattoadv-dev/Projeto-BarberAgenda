@@ -148,11 +148,12 @@ export default function BookingPage() {
       </div>
 
       {/* Powered by footer */}
-      <div style={{ textAlign: 'center', padding: '24px 0 32px' }}>
+      <div style={{ textAlign: 'center', padding: '24px 0 32px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.3px' }}>Powered by WorkAgenda</span>
         <img
           src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%208%20de%20jun.%20de%202026,%2019_42_41.png"
           alt="WorkAgenda"
-          style={{ height: 36, opacity: 0.45, display: 'inline-block' }}
+          style={{ height: 28, display: 'inline-block', opacity: 0.4 }}
         />
       </div>
     </div>

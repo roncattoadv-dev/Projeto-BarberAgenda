@@ -835,7 +835,7 @@ app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { data } = await supabase
     .from('tenants')
-    .select('wpp_template_confirm, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes')
+    .select('wpp_template_confirm, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes, wpp_enabled, email_enabled')
     .eq('id', tenantId)
     .maybeSingle();
   res.json({
@@ -844,6 +844,8 @@ app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
     remind:          data?.wpp_template_remind    ?? TPL_REMIND_DEFAULT,
     bookingUrl:      data?.wpp_booking_url        ?? '',
     reminderMinutes: data?.wpp_reminder_minutes   ?? 60,
+    wppEnabled:      data?.wpp_enabled            ?? true,
+    emailEnabled:    data?.email_enabled          ?? true,
   });
 });
 
@@ -852,12 +854,14 @@ app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.put('/api/whatsapp/templates', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
-  const { confirm, remind, bookingUrl, reminderMinutes } = req.body as { confirm?: string; remind?: string; bookingUrl?: string; reminderMinutes?: number };
+  const { confirm, remind, bookingUrl, reminderMinutes, wppEnabled, emailEnabled } = req.body as { confirm?: string; remind?: string; bookingUrl?: string; reminderMinutes?: number; wppEnabled?: boolean; emailEnabled?: boolean };
   await supabase.from('tenants').update({
     wpp_template_confirm:  confirm          ?? null,
     wpp_template_remind:   remind           ?? null,
     wpp_booking_url:       bookingUrl       ?? null,
     wpp_reminder_minutes:  reminderMinutes  ?? 60,
+    ...(wppEnabled   !== undefined ? { wpp_enabled:   wppEnabled   } : {}),
+    ...(emailEnabled !== undefined ? { email_enabled: emailEnabled } : {}),
   }).eq('id', tenantId);
   res.json({ ok: true });
 });
@@ -879,7 +883,7 @@ app.post('/api/whatsapp/notify', async (req, res) => {
         .select('*, services(name), professionals(name)')
         .eq('id', appointmentId).eq('tenant_id', tenantId).maybeSingle(),
       supabase.from('tenants')
-        .select('name, slug, wpp_template_confirm, wpp_booking_url, contact_email')
+        .select('name, slug, wpp_template_confirm, wpp_booking_url, contact_email, wpp_enabled, email_enabled')
         .eq('id', tenantId).maybeSingle(),
     ]);
 
@@ -902,8 +906,8 @@ app.post('/api/whatsapp/notify', async (req, res) => {
       link,
     };
 
-    // WhatsApp (se tem telefone)
-    if (phone) {
+    // WhatsApp (se tem telefone e canal habilitado)
+    if (phone && tenant.wpp_enabled !== false) {
       const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
       const instanceToken = evoInstanceToken(tenant.slug, tenantId);
       await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
@@ -914,8 +918,8 @@ app.post('/api/whatsapp/notify', async (req, res) => {
       await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appointmentId);
     }
 
-    // Email (se tem email e ainda não foi enviado)
-    if (appt.customer_email && !appt.email_confirm_sent) {
+    // Email (se tem email, ainda não foi enviado, e canal habilitado)
+    if (appt.customer_email && !appt.email_confirm_sent && tenant.email_enabled !== false) {
       const replyTo = await getTenantReplyEmail(tenantId, tenant.contact_email);
       sendBookingConfirmationEmail({
         to:             appt.customer_email,
@@ -1333,7 +1337,7 @@ async function sendConfirmations(): Promise<void> {
   const since = new Date(Date.now() - 10 * 60_000).toISOString();
   const { data: appts } = await supabase
     .from('appointments')
-    .select('*, tenants(id, name, slug, wpp_template_confirm, wpp_booking_url, contact_email), services(name), professionals(name)')
+    .select('*, tenants(id, name, slug, wpp_template_confirm, wpp_booking_url, contact_email, wpp_enabled, email_enabled), services(name), professionals(name)')
     .eq('wpp_confirm_sent', false)
     .neq('status', 'cancelled')
     .gte('created_at', since);
@@ -1342,7 +1346,6 @@ async function sendConfirmations(): Promise<void> {
     const tenant = (appt.tenants as any);
     if (!tenant) continue;
     const phone = appt.customer_phone?.replace(/\D/g, '');
-    if (!phone) continue;
 
     try {
       const code = bookingCode(appt.id);
@@ -1358,20 +1361,23 @@ async function sendConfirmations(): Promise<void> {
         codigo:       code,
         link,
       };
-      const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
-      const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
 
-      await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
-        url: link,
-        title: `${tenant.name} — Agendamento confirmado`,
-        description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
-      } : undefined);
+      if (phone && tenant.wpp_enabled !== false) {
+        const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
+        const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
 
+        await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
+          url: link,
+          title: `${tenant.name} — Agendamento confirmado`,
+          description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
+        } : undefined);
+
+        console.log(`[Confirm] Confirmação WPP enviada: ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time?.slice(0,5)})`);
+      }
       await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appt.id);
-      console.log(`[Confirm] Confirmação enviada: ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time?.slice(0,5)})`);
 
-      // Email de confirmação (se o cliente informou email e ainda não foi enviado)
-      if (appt.customer_email && !appt.email_confirm_sent) {
+      // Email de confirmação (se o cliente informou email, canal habilitado e ainda não foi enviado)
+      if (appt.customer_email && !appt.email_confirm_sent && tenant.email_enabled !== false) {
         const replyTo = await getTenantReplyEmail(tenant.id, tenant.contact_email);
         sendBookingConfirmationEmail({
           to:             appt.customer_email,
@@ -1410,7 +1416,7 @@ async function sendReminders(): Promise<void> {
 
   const { data: appts } = await supabase
     .from('appointments')
-    .select('*, tenants(id, name, slug, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes), services(name), professionals(name)')
+    .select('*, tenants(id, name, slug, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes, wpp_enabled), services(name), professionals(name)')
     .eq('wpp_reminder_sent', false)
     .neq('status', 'cancelled')
     .gte('scheduled_date', todayBrasilia);
@@ -1437,6 +1443,7 @@ async function sendReminders(): Promise<void> {
     if (appt.scheduled_date === hiDate && apptTime > hiTime) continue;
 
     if (!tenant) continue;
+    if (tenant.wpp_enabled === false) continue;
 
     const phone = appt.customer_phone?.replace(/\D/g, '');
     if (!phone) continue;

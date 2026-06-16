@@ -580,6 +580,15 @@ export default function CustomerBookingFlow({
                     </div>
                     {selectedProfessional.name}
                   </div>
+                  {myProfessionals.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => { setStep(2); setSelectedTime(''); }}
+                      style={{ marginTop: 8, fontSize: 11, fontWeight: 600, color: pc, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: 3 }}
+                    >
+                      Trocar profissional
+                    </button>
+                  )}
                 </div>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16, flex: 1 }}>
@@ -676,10 +685,23 @@ export default function CustomerBookingFlow({
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
                 <div style={{ marginBottom: 12 }}>
                   <p style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>{selectedDate ? selectedDate.split('-').reverse().join('/') : '—'}</p>
-                  {selectedProfessional && <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b' }}>
-                    <div style={{ width: 20, height: 20, borderRadius: '50%', overflow: 'hidden', border: '1px solid #e2e8f0', flexShrink: 0 }}><img src={selectedProfessional.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).src = av(selectedProfessional!.name); }} /></div>
-                    {selectedProfessional.name}
-                  </div>}
+                  {selectedProfessional && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b' }}>
+                        <div style={{ width: 20, height: 20, borderRadius: '50%', overflow: 'hidden', border: '1px solid #e2e8f0', flexShrink: 0 }}><img src={selectedProfessional.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).src = av(selectedProfessional!.name); }} /></div>
+                        {selectedProfessional.name}
+                      </div>
+                      {myProfessionals.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => { setStep(2); setSelectedTime(''); }}
+                          style={{ fontSize: 11, fontWeight: 600, color: pc, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: 3 }}
+                        >
+                          Trocar
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
                   {HOURLY_SLOTS.map(time => {

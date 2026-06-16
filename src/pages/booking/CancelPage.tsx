@@ -269,11 +269,12 @@ export default function CancelPage() {
           </div>
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24 }}>
+          <span style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.3px' }}>Powered by WorkAgenda</span>
           <img
             src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%208%20de%20jun.%20de%202026,%2019_42_41.png"
             alt="WorkAgenda"
-            style={{ height: 32, opacity: 0.35, display: 'inline-block' }}
+            style={{ height: 28, opacity: 0.3, display: 'inline-block' }}
           />
         </div>
       </div>

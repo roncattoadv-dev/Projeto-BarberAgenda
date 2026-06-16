@@ -652,6 +652,7 @@ export default function ClientAdminPanel({
               {/* ─────────── AGENDAMENTOS ─────────── */}
               {activeTab === 'agendamentos' && (
                 <AgendamentosTab
+                  activeTenant={activeTenant}
                   myAppointments={myAppointments}
                   myServices={myServices}
                   myProfessionals={myProfessionals}
@@ -742,7 +743,7 @@ export default function ClientAdminPanel({
 
               {/* ─────────── AUTOMAÇÕES ─────────── */}
               {activeTab === 'automacoes' && (
-                <WhatsAppTab activeTenant={activeTenant} myAppointments={myAppointments} myServices={myServices} myProfessionals={myProfessionals}
+                <WhatsAppTab activeTenant={activeTenant}
                   onStatusChange={(state, name) => { setWppConnState(state); setWppConnName(name); }} />
               )}
 
