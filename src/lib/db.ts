@@ -334,6 +334,7 @@ function mapSupportTicket(r: any): SupportTicket {
 // ── REVERSE MAPPERS (camelCase → snake_case for INSERT) ────────────────────────
 function dbTenant(t: Partial<Tenant>): any {
   return {
+    ...(t.slug       !== undefined && { slug: t.slug }),
     ...(t.name       !== undefined && { name: t.name }),
     ...(t.logo       !== undefined && { logo: t.logo }),
     ...(t.phone      !== undefined && { phone: t.phone }),

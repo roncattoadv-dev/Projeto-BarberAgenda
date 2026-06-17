@@ -151,8 +151,13 @@ export default function ClientAdminPanel({
 
   const TOUR_KEY = `workagenda_setup_v2_${activeTenant.id}`;
   const [tourOpen, setTourOpen] = useState(() => !localStorage.getItem(TOUR_KEY));
+  const [tourKey,  setTourKey]  = useState(0);
   const finishTour  = () => { localStorage.setItem(TOUR_KEY, '1'); setTourOpen(false); };
-  const restartTour = () => { localStorage.removeItem(TOUR_KEY); setTourOpen(true); };
+  const restartTour = () => {
+    localStorage.removeItem(TOUR_KEY);
+    setTourKey(k => k + 1);
+    setTourOpen(true);
+  };
 
   const TOUR_STEPS: TourStep[] = [
     {
@@ -197,7 +202,7 @@ export default function ClientAdminPanel({
       targetId: 'tour-cfgtab-pagina-cliente',
       emoji: '🔗',
       title: 'Seu link está pronto! 🎉',
-      description: 'Configure a aparência da página de agendamento e copie o link. Compartilhe pelo WhatsApp, Instagram ou onde preferir — seu cliente agenda em menos de 1 minuto.',
+      description: 'Em "Link do Cliente" você visualiza e copia seu endereço de agendamento. Em "Personalizar URL" pode trocar o nome no link — o sistema verifica a disponibilidade antes de salvar. Compartilhe pelo WhatsApp ou Instagram e seu cliente agenda em menos de 1 minuto.',
       cta: 'Ver meu link',
       onEnter: () => setCfgTab('pagina-cliente'),
     },
@@ -232,6 +237,39 @@ export default function ClientAdminPanel({
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 2000);
     });
+  };
+
+  const handleCopyBookingLink = () => {
+    const url = `${window.location.origin}/${activeTenant.slug}/agendamento`;
+    navigator.clipboard.writeText(url).then(() => {
+      setSlugCopied(true);
+      setTimeout(() => setSlugCopied(false), 2000);
+    });
+  };
+
+  const handleSlugChange = (val: string) => {
+    const sanitized = val.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    setSlugInput(sanitized);
+    if (slugTimerRef.current) clearTimeout(slugTimerRef.current);
+    if (!sanitized || sanitized === activeTenant.slug) { setSlugStatus('idle'); return; }
+    setSlugStatus('checking');
+    slugTimerRef.current = setTimeout(async () => {
+      const { data } = await supabase.from('tenants').select('id').eq('slug', sanitized).neq('id', activeTenant.id).maybeSingle();
+      setSlugStatus(data ? 'taken' : 'available');
+    }, 600);
+  };
+
+  const handleSaveSlug = async () => {
+    if (slugStatus !== 'available' || !slugInput) return;
+    setSlugStatus('saving');
+    try {
+      await onUpdateTenantDetails(activeTenant.id, { slug: slugInput });
+      toast.success('URL atualizada! Compartilhe o novo link.');
+      setSlugStatus('idle');
+    } catch {
+      toast.error('Erro ao salvar a URL.');
+      setSlugStatus('available');
+    }
   };
 
   // ── Agenda form state ─────────────────────────────────────────────────────
@@ -290,6 +328,12 @@ export default function ClientAdminPanel({
   const [bookingShowAddress,   setBookingShowAddress]   = useState(activeTenant.bookingPageConfig?.showAddress   ?? true);
   const [bookingShowInstagram, setBookingShowInstagram] = useState(activeTenant.bookingPageConfig?.showInstagram ?? true);
   const [bookingMapsUrl,       setBookingMapsUrl]       = useState(activeTenant.bookingPageConfig?.mapsUrl       ?? '');
+
+  // ── Slug / link editing ────────────────────────────────────────────────────
+  const [slugInput,  setSlugInput]  = useState(activeTenant.slug);
+  const [slugStatus, setSlugStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'saving'>('idle');
+  const [slugCopied, setSlugCopied] = useState(false);
+  const slugTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [vacEndDate,       setVacEndDate]       = useState('');
   const PRESET_SERVICES: { name: string; durationMinutes: number; category: Service['category'] }[] = [
     { name: 'Barba',                        durationMinutes: 40, category: 'Barba'  },
@@ -355,6 +399,8 @@ export default function ClientAdminPanel({
     setBookingShowAddress(activeTenant.bookingPageConfig?.showAddress   ?? true);
     setBookingShowInstagram(activeTenant.bookingPageConfig?.showInstagram ?? true);
     setBookingMapsUrl(activeTenant.bookingPageConfig?.mapsUrl ?? '');
+    setSlugInput(activeTenant.slug);
+    setSlugStatus('idle');
   }, [activeTenant.id]);
 
   // ── ⌘K handler ───────────────────────────────────────────────────────────
@@ -1412,6 +1458,60 @@ export default function ClientAdminPanel({
                           {/* Form */}
                           <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+                            {/* Link do Cliente */}
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <ExternalLink size={13} /> Link do Cliente
+                              </p>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '10px 14px' }}>
+                                <span style={{ flex: 1, fontFamily: 'monospace', fontSize: 12, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {window.location.origin}/{activeTenant.slug}/agendamento
+                                </span>
+                                <button type="button" onClick={handleCopyBookingLink} title="Copiar link"
+                                  style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: slugCopied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.07)', border: `1px solid ${slugCopied ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.1)'}`, color: slugCopied ? '#4ade80' : 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 200ms' }}>
+                                  {slugCopied ? <CheckCheck size={13} /> : <Copy size={13} />}
+                                </button>
+                                <button type="button" onClick={() => window.open(`${window.location.origin}/${activeTenant.slug}/agendamento`, '_blank')} title="Abrir link"
+                                  style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <ExternalLink size={13} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Personalizar URL */}
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Pencil size={13} /> Personalizar URL
+                              </p>
+                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 10 }}>
+                                Edite o nome que aparece no link de agendamento. Use apenas letras, números e hífens.
+                              </p>
+                              <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.04)', border: `1px solid ${slugStatus === 'available' ? 'rgba(34,197,94,0.4)' : slugStatus === 'taken' ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 12, padding: '10px 14px', gap: 4, transition: 'border-color 200ms' }}>
+                                <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(255,255,255,0.3)', whiteSpace: 'nowrap', flexShrink: 0 }}>{window.location.origin}/</span>
+                                <input
+                                  value={slugInput}
+                                  onChange={e => handleSlugChange(e.target.value)}
+                                  placeholder={activeTenant.slug}
+                                  style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'monospace', fontSize: 13, color: 'rgba(255,255,255,0.85)', minWidth: 60 }}
+                                />
+                                <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(255,255,255,0.3)', whiteSpace: 'nowrap', flexShrink: 0 }}>/agendamento</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                                <span style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  {slugStatus === 'checking' && <><RefreshCw size={12} style={{ color: '#94a3b8', animation: 'spin 1s linear infinite' }} /><span style={{ color: '#94a3b8' }}>Verificando…</span></>}
+                                  {slugStatus === 'available' && <><Check size={12} style={{ color: '#4ade80' }} /><span style={{ color: '#4ade80' }}>Disponível</span></>}
+                                  {slugStatus === 'taken' && <><X size={12} style={{ color: '#f87171' }} /><span style={{ color: '#f87171' }}>Já está em uso</span></>}
+                                  {slugStatus === 'saving' && <><RefreshCw size={12} style={{ color: '#94a3b8', animation: 'spin 1s linear infinite' }} /><span style={{ color: '#94a3b8' }}>Salvando…</span></>}
+                                  {slugStatus === 'idle' && slugInput === activeTenant.slug && <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>URL atual</span>}
+                                </span>
+                                <button type="button" onClick={handleSaveSlug}
+                                  disabled={slugStatus !== 'available'}
+                                  style={{ padding: '7px 16px', background: slugStatus === 'available' ? '#ffffff' : 'rgba(255,255,255,0.08)', color: slugStatus === 'available' ? '#0F172A' : 'rgba(255,255,255,0.25)', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 9, cursor: slugStatus === 'available' ? 'pointer' : 'not-allowed', fontFamily: 'Outfit, sans-serif', transition: 'all 200ms' }}>
+                                  Salvar URL
+                                </button>
+                              </div>
+                            </div>
+
                             {/* Cor principal */}
                             <div>
                               <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1497,44 +1597,72 @@ export default function ClientAdminPanel({
 
                           {/* Pré-visualização */}
                           <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }}>
-                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 20 }}>Pré-visualização</p>
-                            <div style={{ background: '#ffffff', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, boxShadow: '0 4px 24px rgba(0,0,0,0.18)' }}>
-                              <div style={{ width: 80, height: 80, borderRadius: '50%', border: `2px solid ${bookingPrimaryColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                                <span style={{ fontSize: 22, fontWeight: 300, color: bookingPrimaryColor }}>
-                                  {activeTenant.name.replace(/barbearia|salao|studio|estetica/gi, '').trim().substring(0, 2).toUpperCase()}
-                                </span>
-                                <span style={{ fontSize: 6, fontWeight: 700, color: bookingPrimaryColor, letterSpacing: '0.15em', textTransform: 'uppercase', marginTop: 2 }}>BARBEARIA</span>
-                              </div>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{activeTenant.name}</span>
-                              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                {bookingShowPhone && activeTenant.phone && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '6px 10px' }}>
-                                    <Phone size={11} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
-                                    <span>{activeTenant.phone}</span>
+                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 16 }}>Pré-visualização</p>
+                            {(() => {
+                              const h = bookingPrimaryColor.replace('#', '');
+                              const pr = parseInt(h.slice(0,2),16), pg = parseInt(h.slice(2,4),16), pb = parseInt(h.slice(4,6),16);
+                              const mix = (ch: number, n: number) => Math.round(n + (ch-n)*0.18);
+                              const tintBg  = `rgb(${mix(pr,110)},${mix(pg,116)},${mix(pb,98)})`;
+                              const pcBorder = `rgba(${pr},${pg},${pb},0.28)`;
+                              const getInitials = (name: string) => {
+                                const clean = name.replace(/barbearia|salao|studio|estetica/gi,'').trim();
+                                const words = clean.split(/\s+/);
+                                return words.length >= 2 ? (words[0][0]+words[1][0]).toUpperCase() : (clean.substring(0,2)||'BR').toUpperCase();
+                              };
+                              const previewServices = myServices.length > 0 ? myServices.slice(0,4) : [
+                                { id:'p1', name:'Corte + Barba', durationMinutes:45 },
+                                { id:'p2', name:'Barba',         durationMinutes:30 },
+                              ];
+                              return (
+                                <div style={{ background: tintBg, borderRadius: 12, padding: '24px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                                  {/* Logo */}
+                                  {(tenantLogo?.startsWith('http') || tenantLogo?.startsWith('data:'))
+                                    ? <div style={{ width: 112, height: 112, borderRadius: '50%', overflow: 'hidden', border: `2px solid ${pcBorder}`, flexShrink: 0 }}>
+                                        <img src={tenantLogo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                      </div>
+                                    : <div style={{ width: 112, height: 112, borderRadius: '50%', border: `2px solid ${bookingPrimaryColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#fff', position: 'relative', flexShrink: 0 }}>
+                                        <span style={{ position: 'absolute', top: 8, right: 8, transform: 'rotate(45deg)', color: bookingPrimaryColor, fontSize: 14 }}>✂</span>
+                                        <span style={{ fontSize: 36, fontWeight: 300, color: bookingPrimaryColor, lineHeight: 1 }}>{getInitials(activeTenant.name)}</span>
+                                        <span style={{ fontSize: 8, fontWeight: 700, color: bookingPrimaryColor, letterSpacing: 2, textTransform: 'uppercase' as const, marginTop: 6, textAlign: 'center' as const, maxWidth: 90, lineHeight: 1.3 }}>
+                                          {activeTenant.name.replace(/barbearia|salao|studio|estetica/gi,'').trim()}
+                                        </span>
+                                      </div>
+                                  }
+                                  {/* Infos de contato */}
+                                  {(bookingShowPhone || bookingShowAddress || bookingShowInstagram) && (
+                                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      {bookingShowPhone && activeTenant.phone && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b', background: '#f8fafc', borderRadius: 10, padding: '7px 12px', border: '1px solid #f1f5f9' }}>
+                                          <Phone size={12} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
+                                          <span>{activeTenant.phone}</span>
+                                        </div>
+                                      )}
+                                      {bookingShowAddress && activeTenant.address && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b', background: '#f8fafc', borderRadius: 10, padding: '7px 12px', border: '1px solid #f1f5f9' }}>
+                                          <MapPin size={12} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
+                                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTenant.address}</span>
+                                        </div>
+                                      )}
+                                      {bookingShowInstagram && activeTenant.instagram && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b', background: '#f8fafc', borderRadius: 10, padding: '7px 12px', border: '1px solid #f1f5f9' }}>
+                                          <Instagram size={12} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
+                                          <span>{activeTenant.instagram}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {/* Serviços */}
+                                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    {previewServices.map((srv, i) => (
+                                      <div key={srv.id} style={{ width: '100%', padding: '14px 20px', background: bookingPrimaryColor, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: `0 4px 12px rgba(${pr},${pg},${pb},0.25)`, opacity: myServices.length === 0 && i === 1 ? 0.7 : 1 }}>
+                                        <span>{srv.name}</span>
+                                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: 6 }}>{srv.durationMinutes} min ▶</span>
+                                      </div>
+                                    ))}
                                   </div>
-                                )}
-                                {bookingShowAddress && activeTenant.address && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '6px 10px' }}>
-                                    <MapPin size={11} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeTenant.address}</span>
-                                  </div>
-                                )}
-                                {bookingShowInstagram && activeTenant.instagram && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '6px 10px' }}>
-                                    <Instagram size={11} style={{ color: bookingPrimaryColor, flexShrink: 0 }} />
-                                    <span>{activeTenant.instagram}</span>
-                                  </div>
-                                )}
-                              </div>
-                              <div style={{ width: '100%', background: bookingPrimaryColor, borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>Corte + Barba</span>
-                                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)' }}>45 min ▶</span>
-                              </div>
-                              <div style={{ width: '100%', background: bookingPrimaryColor, borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.7 }}>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>Barba</span>
-                                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)' }}>30 min ▶</span>
-                              </div>
-                            </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       )}
@@ -2073,7 +2201,7 @@ export default function ClientAdminPanel({
       )}
 
       {/* ── Tour ──────────────────────────────────────────────────────────────── */}
-      {tourOpen && <TourOverlay steps={TOUR_STEPS} onFinish={finishTour} />}
+      {tourOpen && <TourOverlay key={tourKey} steps={TOUR_STEPS} onFinish={finishTour} />}
 
       {/* ── Modal: Política de Privacidade ────────────────────────────────────── */}
       {privacyModal && (
