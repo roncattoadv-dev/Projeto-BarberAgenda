@@ -175,19 +175,11 @@ export default function ClientAdminPanel({
       onEnter: () => { setActiveTab('negocio'); setTimeout(() => setCfgTab('identidade'), 60); },
     },
     {
-      targetId: 'tour-cfgtab-horarios',
-      emoji: '🕐',
-      title: 'Horários de funcionamento',
-      description: 'Defina os dias da semana e os horários em que seu negócio atende. Salve as alterações e clique em "Pronto, avançar" quando estiver pronto.',
-      cta: 'Ir configurar',
-      onEnter: () => setCfgTab('horarios'),
-    },
-    {
       targetId: 'tour-cfgtab-equipe',
       emoji: '✂️',
-      title: 'Sua equipe',
-      description: 'Adicione os profissionais que realizam os atendimentos. Quando terminar, clique em "Pronto, avançar" para continuar.',
-      cta: 'Ir adicionar',
+      title: 'Equipe & Horários',
+      description: 'Adicione os profissionais e configure os horários de atendimento individuais de cada um. Quando terminar, clique em "Pronto, avançar" para continuar.',
+      cta: 'Ir configurar',
       onEnter: () => setCfgTab('equipe'),
     },
     {
@@ -361,8 +353,14 @@ export default function ClientAdminPanel({
   const [profRole,       setProfRole]       = useState('Barbeiro');
   const [profCommission, setProfCommission] = useState(40);
   const [profAvatar,     setProfAvatar]     = useState('');
-  const [profDays,       setProfDays]       = useState<string[]>(['seg','ter','qua','qui','sex','sab']);
-  const [editingProf,    setEditingProf]    = useState<Professional | null>(null);
+  const [profDays,         setProfDays]         = useState<string[]>(['seg','ter','qua','qui','sex','sab']);
+  const [profHoursByDay,   setProfHoursByDay]   = useState<Record<string, string[]>>(
+    Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d => [d, []]))
+  );
+  const [profSelectedDay,  setProfSelectedDay]  = useState('seg');
+  const [profNewHourInput, setProfNewHourInput] = useState('');
+  const [profPickerOpen,   setProfPickerOpen]   = useState(false);
+  const [editingProf,      setEditingProf]      = useState<Professional | null>(null);
 
   const startEditProf = (p: Professional) => {
     setEditingProf(p);
@@ -371,15 +369,24 @@ export default function ClientAdminPanel({
     setProfAvatar(p.avatar || '');
     setProfCommission(p.commissionPercentage);
     setProfDays(p.businessDays || ['seg','ter','qua','qui','sex','sab']);
+    setProfHoursByDay(
+      p.businessHoursByDay && Object.keys(p.businessHoursByDay).length > 0
+        ? p.businessHoursByDay
+        : Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d => [d, []]))
+    );
+    setProfSelectedDay('seg');
   };
   const cancelEditProf = () => {
     setEditingProf(null);
     setProfName(''); setProfRole('Barbeiro'); setProfAvatar('');
-    setProfCommission(40); setProfDays(['seg','ter','qua','qui','sex','sab']);
+    setProfCommission(40);
+    setProfDays(['seg','ter','qua','qui','sex','sab']);
+    setProfHoursByDay(Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d => [d, []])));
+    setProfSelectedDay('seg');
   };
 
-  const logoInputRef   = useRef<HTMLInputElement>(null);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef    = useRef<HTMLInputElement>(null);
+  const avatarInputRef  = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setTenantLogo(activeTenant.logo || '');
@@ -415,7 +422,7 @@ export default function ClientAdminPanel({
 
   useEffect(() => { if (cmdOpen) setTimeout(() => cmdRef.current?.focus(), 50); }, [cmdOpen]);
 
-  const NEGOCIO_TABS: CfgTab[] = ['identidade', 'horarios', 'equipe', 'catalogo'];
+  const NEGOCIO_TABS: CfgTab[] = ['identidade', 'equipe', 'catalogo'];
   const CONFIG_TABS:  CfgTab[] = ['assinatura', 'conta', 'notificacoes'];
   useEffect(() => {
     if (activeTab === 'negocio'       && !NEGOCIO_TABS.includes(cfgTab)) setCfgTab('identidade');
@@ -839,7 +846,7 @@ export default function ClientAdminPanel({
                   {/* Sub-nav — tabs dinâmicos conforme o menu ativo */}
                   <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0, overflowX: 'auto' }} className="no-scrollbar">
                     {(activeTab === 'negocio'
-                      ? [['identidade','Identidade'], ['horarios','Horários'], ['equipe','Equipe'], ['catalogo','Catálogo'], ['pagina-cliente','Página do Cliente']] as [CfgTab, string][]
+                      ? [['identidade','Identidade'], ['equipe','Equipe & Horários'], ['catalogo','Catálogo'], ['pagina-cliente','Página do Cliente']] as [CfgTab, string][]
                       : [['assinatura','Assinatura'], ['conta','Conta'], ['notificacoes','Notificações']] as [CfgTab, string][]
                     ).map(([id, label]) => (
                       <button key={id} id={`tour-cfgtab-${id}`} onClick={() => setCfgTab(id)}
@@ -874,18 +881,10 @@ export default function ClientAdminPanel({
                         </form>
                       )}
 
-                      {/* Horários */}
-                      {cfgTab === 'horarios' && (() => {
-                        const curHours = editedHoursByDay[selectedHoursDay] || [];
-                        const isOpen   = editedDays.includes(selectedHoursDay);
-
-                        const toggleHour = (h: string) => {
-                          setEditedHoursByDay(prev => {
-                            const cur = prev[selectedHoursDay] || [];
-                            const next = cur.includes(h) ? cur.filter(x => x !== h) : [...cur, h].sort();
-                            return { ...prev, [selectedHoursDay]: next };
-                          });
-                        };
+                      {/* Equipe & Horários (fusão) */}
+                      {cfgTab === 'equipe' && (() => {
+                        const profCurHours = profHoursByDay[profSelectedDay] || [];
+                        const profDayOpen  = profDays.includes(profSelectedDay);
 
                         const addVacationRange = () => {
                           if (!vacStartDate) return;
@@ -901,9 +900,6 @@ export default function ClientAdminPanel({
                           setVacStartDate(''); setVacEndDate('');
                         };
 
-                        const removeBlocked = (d: string) => setBlockedDates(prev => prev.filter(x => x !== d));
-
-                        // Group consecutive blocked dates into ranges for display
                         const groupRanges = (dates: string[]) => {
                           if (!dates.length) return [];
                           const sorted = [...dates].sort();
@@ -912,274 +908,262 @@ export default function ClientAdminPanel({
                           for (let i = 1; i < sorted.length; i++) {
                             const prev = new Date(sorted[i - 1] + 'T12:00:00');
                             const curr = new Date(sorted[i] + 'T12:00:00');
-                            const diff = (curr.getTime() - prev.getTime()) / 86400000;
-                            if (diff === 1) { group.push(sorted[i]); }
+                            if ((curr.getTime() - prev.getTime()) / 86400000 === 1) { group.push(sorted[i]); }
                             else { ranges.push({ start: group[0], end: group[group.length - 1], dates: [...group] }); group = [sorted[i]]; }
                           }
                           ranges.push({ start: group[0], end: group[group.length - 1], dates: [...group] });
                           return ranges;
                         };
 
-                        const fmtDate = (s: string) => {
-                          const [y, m, d] = s.split('-');
-                          return `${d}/${m}/${y}`;
-                        };
-
+                        const fmtDate = (s: string) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
                         const upcomingBlocked = blockedDates.filter(d => d >= new Date().toISOString().split('T')[0]);
-                        const ranges = groupRanges(upcomingBlocked);
+                        const vacRanges = groupRanges(upcomingBlocked);
 
                         return (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 20, alignItems: 'start' }}>
 
-                            {/* ── Coluna 1: Horários por dia ── */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 14px' }}>Horários por Dia</p>
+                            {/* ── Coluna esquerda: formulário completo ── */}
+                            <form
+                              onSubmit={async e => {
+                                e.preventDefault();
+                                if (!profName.trim()) return;
+                                if (!editingProf && myProfessionals.length >= 6) {
+                                  toast.error('Limite de 6 colaboradores atingido.');
+                                  return;
+                                }
+                                if (editingProf) {
+                                  await onUpdateProfessional(editingProf.id, {
+                                    name: profName, role: profRole,
+                                    avatar: profAvatar || editingProf.avatar,
+                                    commissionPercentage: profCommission,
+                                    businessDays: profDays,
+                                    businessHoursByDay: profHoursByDay,
+                                  });
+                                  toast.success(`${profName} atualizado!`);
+                                  cancelEditProf();
+                                } else {
+                                  onAddProfessional({ tenantId: activeTenant.id, name: profName, role: profRole, avatar: profAvatar || 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80', rating: 5, services: myServices.map(s => s.id), commissionPercentage: profCommission, businessDays: profDays, businessHoursByDay: profHoursByDay });
+                                  toast.success(`${profName} adicionado!`);
+                                  setProfName(''); setProfAvatar('');
+                                  cancelEditProf();
+                                }
+                              }}
+                              style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${editingProf ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-                                {/* Day selector */}
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 14 }}>
+                              {/* Header */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: editingProf ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                                  {editingProf ? `Editando: ${editingProf.name}` : 'Novo Colaborador'}
+                                </p>
+                                {editingProf && (
+                                  <button type="button" onClick={cancelEditProf}
+                                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                                    Cancelar
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Foto + nome + cargo */}
+                              <input ref={avatarInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e => { if (e.target.files?.[0]) setProfAvatar(await fileToDataURL(e.target.files[0])); }} />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ width: 48, height: 48, borderRadius: 12, border: '1px solid rgba(255,255,255,0.09)', overflow: 'hidden', background: 'rgba(255,255,255,0.07)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} onClick={() => avatarInputRef.current?.click()}>
+                                  {(profAvatar || editingProf?.avatar)
+                                    ? <img src={profAvatar || editingProf?.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    : <User size={18} style={{ color: 'rgba(255,255,255,0.3)' }} />}
+                                </div>
+                                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                  <input placeholder="Nome" value={profName} onChange={e => setProfName(e.target.value)} required className="navy-input" />
+                                  <input placeholder="Cargo" value={profRole} onChange={e => setProfRole(e.target.value)} className="navy-input" />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="navy-label">Comissão %</label>
+                                <input type="number" min={0} max={100} value={profCommission} onChange={e => setProfCommission(Number(e.target.value))} className="navy-input" />
+                              </div>
+
+                              {/* Divisor */}
+                              <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 14 }}>
+                                <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 10px' }}>Horários de Atendimento</p>
+
+                                {/* Seletor de dia */}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
                                   {ALL_DAYS.map(d => {
-                                    const active = selectedHoursDay === d;
-                                    const open   = editedDays.includes(d);
+                                    const active = profSelectedDay === d;
+                                    const open   = profDays.includes(d);
                                     return (
-                                      <button key={d} type="button" onClick={() => setSelectedHoursDay(d)}
-                                        style={{ padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', position: 'relative', background: active ? '#ffffff' : 'rgba(255,255,255,0.05)', color: active ? '#0F172A' : open ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.25)', border: `1px solid ${active ? '#ffffff' : 'rgba(255,255,255,0.09)'}`, opacity: open ? 1 : 0.5 }}>
+                                      <button key={d} type="button" onClick={() => setProfSelectedDay(d)}
+                                        style={{ padding: '4px 10px', borderRadius: 7, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: active ? '#ffffff' : 'rgba(255,255,255,0.05)', color: active ? '#0F172A' : open ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.2)', border: `1px solid ${active ? '#ffffff' : 'rgba(255,255,255,0.08)'}`, opacity: open ? 1 : 0.45 }}>
                                         {d}
                                       </button>
                                     );
                                   })}
                                 </div>
 
-                                {/* Open/closed toggle */}
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)' }}>
-                                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>{selectedHoursDay} — {isOpen ? `${curHours.length} horários` : 'Fechado'}</span>
-                                  <button type="button" onClick={() => setEditedDays(prev => prev.includes(selectedHoursDay) ? prev.filter(d => d !== selectedHoursDay) : [...prev, selectedHoursDay])}
-                                    style={{ padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: isOpen ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.1)', color: isOpen ? '#86efac' : '#fca5a5', border: `1px solid ${isOpen ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.25)'}` }}>
-                                    {isOpen ? 'Aberto' : 'Fechado'}
+                                {/* Toggle aberto/fechado */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, padding: '7px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)' }}>
+                                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', textTransform: 'capitalize' }}>
+                                    {profSelectedDay} — {profDayOpen ? `${profCurHours.length} horários` : 'Folga'}
+                                  </span>
+                                  <button type="button" onClick={() => setProfDays(prev => prev.includes(profSelectedDay) ? prev.filter(d => d !== profSelectedDay) : [...prev, profSelectedDay])}
+                                    style={{ padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: profDayOpen ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.1)', color: profDayOpen ? '#86efac' : '#fca5a5', border: `1px solid ${profDayOpen ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.25)'}` }}>
+                                    {profDayOpen ? 'Trabalha' : 'Folga'}
                                   </button>
                                 </div>
 
-                                {/* Default hour chips — toggleable */}
-                                <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 8px' }}>Horários padrão</p>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                                  {DEFAULT_HOURS.map(h => {
-                                    const on = curHours.includes(h);
-                                    return (
-                                      <motion.button key={h} type="button" onClick={() => toggleHour(h)}
-                                        whileTap={{ scale: 0.93 }}
-                                        style={{ padding: '5px 11px', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', fontWeight: 700, cursor: 'pointer', background: on ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.03)', color: on ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.25)', border: `1px solid ${on ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.07)'}`, transition: 'all 120ms' }}>
+                                {/* Horários salvos */}
+                                {profCurHours.length > 0 && (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+                                    {profCurHours.map(h => (
+                                      <span key={h} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 9px', borderRadius: 7, fontSize: 11, fontFamily: 'monospace', fontWeight: 700, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.85)' }}>
                                         {h}
-                                      </motion.button>
-                                    );
-                                  })}
-                                </div>
-
-                                {/* Custom hours */}
-                                {curHours.filter(h => !DEFAULT_HOURS.includes(h)).length > 0 && (
-                                  <>
-                                    <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 8px' }}>Horários extras</p>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                                      {curHours.filter(h => !DEFAULT_HOURS.includes(h)).map(h => (
-                                        <span key={h} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', fontWeight: 700, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', color: '#fcd34d' }}>
-                                          {h}
-                                          <button type="button" onClick={() => setEditedHoursByDay(prev => ({ ...prev, [selectedHoursDay]: prev[selectedHoursDay].filter(x => x !== h) }))} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </>
+                                        <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: (prev[profSelectedDay] || []).filter(x => x !== h) }))} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 0 0 2px' }}>×</button>
+                                      </span>
+                                    ))}
+                                  </div>
                                 )}
 
-                                {/* Add custom time */}
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                  <input type="time" value={newHourInput} onChange={e => setNewHourInput(e.target.value)} className="navy-input" style={{ flex: 1 }} />
-                                  <button type="button" onClick={() => { if (newHourInput) { setEditedHoursByDay(prev => ({ ...prev, [selectedHoursDay]: Array.from(new Set([...(prev[selectedHoursDay] || []), newHourInput])).sort() })); setNewHourInput(''); } }}
-                                    style={{ padding: '0 16px', background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)', fontWeight: 700, borderRadius: 8, border: '1px solid rgba(255,255,255,0.09)', cursor: 'pointer', fontSize: 13, fontFamily: 'Outfit, sans-serif' }}>+</button>
+                                {/* Botão fixo + mini janela de escolha de horário */}
+                                <div style={{ position: 'relative' }}>
+                                  <button type="button"
+                                    onClick={() => { setProfNewHourInput(''); setProfPickerOpen(o => !o); }}
+                                    style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, color: '#0F172A', background: '#ffffff', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                    + Adicionar Horário
+                                  </button>
+
+                                  {profPickerOpen && (
+                                    <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 60, background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 14, padding: 16, boxShadow: '0 12px 32px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 210 }}>
+                                      <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
+                                        Novo horário — {profSelectedDay}
+                                      </p>
+                                      <input
+                                        type="time"
+                                        value={profNewHourInput}
+                                        onChange={e => setProfNewHourInput(e.target.value)}
+                                        autoFocus
+                                        className="navy-input"
+                                        style={{ fontSize: 22, fontFamily: 'monospace', textAlign: 'center', letterSpacing: 2 }}
+                                      />
+                                      <div style={{ display: 'flex', gap: 8 }}>
+                                        <button type="button"
+                                          onClick={() => {
+                                            if (profNewHourInput) {
+                                              setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: Array.from(new Set([...(prev[profSelectedDay] || []), profNewHourInput])).sort() }));
+                                            }
+                                            setProfPickerOpen(false);
+                                            setProfNewHourInput('');
+                                          }}
+                                          style={{ flex: 1, padding: '9px 0', background: '#ffffff', color: '#0F172A', fontWeight: 800, fontSize: 13, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                          OK
+                                        </button>
+                                        <button type="button"
+                                          onClick={() => { setProfPickerOpen(false); setProfNewHourInput(''); }}
+                                          style={{ padding: '9px 14px', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)', fontWeight: 600, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                          Cancelar
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
 
-                                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                                  <button type="button" onClick={() => { const h = editedHoursByDay[selectedHoursDay] || []; setEditedHoursByDay(Object.fromEntries(ALL_DAYS.map(d => [d, d === 'dom' ? [] : [...h]]))); toast.info('Copiado para todos os dias úteis.'); }}
-                                    style={{ flex: 1, padding: '8px 0', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.45)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Copiar p/ todos</button>
-                                  <button type="button" onClick={() => setEditedHoursByDay(prev => ({ ...prev, [selectedHoursDay]: [...DEFAULT_HOURS] }))}
-                                    style={{ flex: 1, padding: '8px 0', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.45)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Resetar padrão</button>
+                                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                                  <button type="button" onClick={() => { const h = profHoursByDay[profSelectedDay] || []; setProfHoursByDay(Object.fromEntries(ALL_DAYS.map(d => [d, profDays.includes(d) ? [...h] : []]))); toast.info('Horários copiados para todos os dias de trabalho.'); }}
+                                    style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.45)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Copiar p/ todos</button>
+                                  <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: [...DEFAULT_HOURS] }))}
+                                    style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.45)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Resetar padrão</button>
+                                  <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: [] }))}
+                                    style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#fca5a5', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Limpar dia</button>
                                 </div>
                               </div>
 
-                              <button onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { businessDays: editedDays, businessHoursByDay: editedHoursByDay, businessHours: editedHoursByDay['seg'] || [], blockedDates }); toast.success('Horários salvos!'); } catch { toast.error('Erro ao salvar.'); } }}
-                                style={{ padding: 13, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                                Salvar Horários
+                              <button type="submit"
+                                disabled={!editingProf && myProfessionals.length >= 6}
+                                style={{ padding: 12, marginTop: 2, background: !editingProf && myProfessionals.length >= 6 ? 'rgba(255,255,255,0.08)' : editingProf ? '#3b82f6' : '#ffffff', color: !editingProf && myProfessionals.length >= 6 ? 'rgba(255,255,255,0.25)' : editingProf ? '#fff' : '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: !editingProf && myProfessionals.length >= 6 ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                {!editingProf && myProfessionals.length >= 6 ? 'Limite de 6 atingido' : editingProf ? 'Salvar alterações' : 'Adicionar colaborador'}
                               </button>
-                            </div>
+                            </form>
 
-                            {/* ── Coluna 2: Férias / Bloqueios ── */}
+                            {/* ── Coluna direita: lista + férias ── */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 4px' }}>Férias & Folgas</p>
-                                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: '0 0 16px' }}>Datas bloqueadas não aparecem para agendamento</p>
 
-                                {/* Date range picker */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                              {/* Lista da equipe */}
+                              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Equipe ({myProfessionals.length})</p>
+                                {myProfessionals.length === 0 && (
+                                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', textAlign: 'center', marginTop: 12 }}>Nenhum colaborador ainda.</p>
+                                )}
+                                {myProfessionals.map(p => {
+                                  const totalH = Object.values(p.businessHoursByDay || {}).reduce((s, arr) => s + arr.length, 0);
+                                  return (
+                                    <div key={p.id}
+                                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: editingProf?.id === p.id ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10, transition: 'all 150ms' }}>
+                                      <img src={p.avatar} style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>
+                                          {p.role} · {p.commissionPercentage}%
+                                          {totalH > 0 && <span style={{ color: 'rgba(255,255,255,0.2)', marginLeft: 4 }}>· {totalH} slots/sem</span>}
+                                        </div>
+                                      </div>
+                                      <button onClick={() => editingProf?.id === p.id ? cancelEditProf() : startEditProf(p)}
+                                        title={editingProf?.id === p.id ? 'Cancelar' : 'Editar'}
+                                        style={{ width: 28, height: 28, borderRadius: 8, background: editingProf?.id === p.id ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: editingProf?.id === p.id ? '#60a5fa' : 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        {editingProf?.id === p.id ? <X size={12} /> : <Pencil size={12} />}
+                                      </button>
+                                      <button onClick={async () => { if (!confirm(`Remover ${p.name} da equipe?`)) return; await onDeleteProfessional(p.id); toast.success(`${p.name} removido.`); }}
+                                        title="Remover"
+                                        style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Férias & Bloqueios */}
+                              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Férias & Folgas</p>
+                                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: '-4px 0 4px' }}>Datas bloqueadas para todos os profissionais</p>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                   <div>
-                                    <label style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>De</label>
+                                    <label style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>De</label>
                                     <input type="date" value={vacStartDate} onChange={e => setVacStartDate(e.target.value)} className="navy-input" />
                                   </div>
                                   <div>
-                                    <label style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>Até (opcional)</label>
+                                    <label style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>Até (opcional)</label>
                                     <input type="date" value={vacEndDate} onChange={e => setVacEndDate(e.target.value)} min={vacStartDate} className="navy-input" />
                                   </div>
                                 </div>
                                 <button type="button" onClick={addVacationRange} disabled={!vacStartDate}
-                                  style={{ width: '100%', padding: '10px 0', background: vacStartDate ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.03)', border: `1px solid ${vacStartDate ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.07)'}`, borderRadius: 8, color: vacStartDate ? '#fcd34d' : 'rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 12, cursor: vacStartDate ? 'pointer' : 'default', fontFamily: 'Outfit, sans-serif' }}>
+                                  style={{ width: '100%', padding: '9px 0', background: vacStartDate ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.03)', border: `1px solid ${vacStartDate ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.07)'}`, borderRadius: 8, color: vacStartDate ? '#fcd34d' : 'rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 12, cursor: vacStartDate ? 'pointer' : 'default', fontFamily: 'Outfit, sans-serif' }}>
                                   Bloquear {vacStartDate && vacEndDate && vacStartDate !== vacEndDate ? 'período' : 'data'}
                                 </button>
-
-                                {/* Upcoming blocked ranges */}
-                                <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                  {ranges.length === 0 ? (
-                                    <div style={{ textAlign: 'center', padding: '20px 0', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>
-                                      Nenhuma data bloqueada
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '1.5px', margin: 0 }}>Próximos bloqueios</p>
-                                      {ranges.map(r => (
-                                        <motion.div key={r.start} layout
-                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10 }}>
-                                          <div>
-                                            <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.75)', fontFamily: 'monospace' }}>
-                                              {r.start === r.end ? fmtDate(r.start) : `${fmtDate(r.start)} → ${fmtDate(r.end)}`}
-                                            </span>
-                                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 8 }}>
-                                              {r.dates.length} dia{r.dates.length > 1 ? 's' : ''}
-                                            </span>
-                                          </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                  {vacRanges.length === 0
+                                    ? <div style={{ textAlign: 'center', padding: '12px 0', color: 'rgba(255,255,255,0.18)', fontSize: 12 }}>Nenhuma data bloqueada</div>
+                                    : vacRanges.map(r => (
+                                        <div key={r.start} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8 }}>
+                                          <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace' }}>
+                                            {r.start === r.end ? fmtDate(r.start) : `${fmtDate(r.start)} → ${fmtDate(r.end)}`}
+                                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginLeft: 6 }}>{r.dates.length}d</span>
+                                          </span>
                                           <button type="button" onClick={() => setBlockedDates(prev => prev.filter(d => !r.dates.includes(d)))}
-                                            style={{ padding: '4px 10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 6, color: '#fca5a5', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                            style={{ padding: '3px 8px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 6, color: '#fca5a5', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                                             Remover
                                           </button>
-                                        </motion.div>
-                                      ))}
-                                    </>
-                                  )}
+                                        </div>
+                                      ))
+                                  }
                                 </div>
+                                <button type="button" onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { blockedDates }); toast.success('Bloqueios salvos!'); } catch { toast.error('Erro ao salvar.'); } }}
+                                  style={{ padding: '9px 0', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.55)', fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                  Salvar bloqueios
+                                </button>
                               </div>
                             </div>
-
                           </div>
                         );
                       })()}
-
-                      {/* Equipe */}
-                      {cfgTab === 'equipe' && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-
-                          {/* Formulário: adicionar ou editar */}
-                          <form
-                            onSubmit={async e => {
-                              e.preventDefault();
-                              if (!profName.trim()) return;
-                              if (!editingProf && myProfessionals.length >= 6) {
-                                toast.error('Limite de 6 colaboradores atingido.');
-                                return;
-                              }
-                              if (editingProf) {
-                                await onUpdateProfessional(editingProf.id, {
-                                  name: profName, role: profRole,
-                                  avatar: profAvatar || editingProf.avatar,
-                                  commissionPercentage: profCommission,
-                                  businessDays: profDays,
-                                });
-                                toast.success(`${profName} atualizado!`);
-                                cancelEditProf();
-                              } else {
-                                onAddProfessional({ tenantId: activeTenant.id, name: profName, role: profRole, avatar: profAvatar || 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80', rating: 5, services: myServices.map(s => s.id), commissionPercentage: profCommission, businessDays: profDays, businessHoursByDay: {} });
-                                toast.success(`${profName} adicionado!`);
-                                setProfName(''); setProfAvatar('');
-                              }
-                            }}
-                            style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${editingProf ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <p style={{ fontSize: 11, fontWeight: 700, color: editingProf ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
-                                {editingProf ? `Editando: ${editingProf.name}` : 'Novo Colaborador'}
-                              </p>
-                              {editingProf && (
-                                <button type="button" onClick={cancelEditProf}
-                                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
-                                  Cancelar
-                                </button>
-                              )}
-                            </div>
-
-                            <input ref={avatarInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e => { if (e.target.files?.[0]) setProfAvatar(await fileToDataURL(e.target.files[0])); }} />
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 48, height: 48, borderRadius: 12, border: '1px solid rgba(255,255,255,0.09)', overflow: 'hidden', background: 'rgba(255,255,255,0.07)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => avatarInputRef.current?.click()}>
-                                {(profAvatar || editingProf?.avatar)
-                                  ? <img src={profAvatar || editingProf?.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                  : <User size={18} style={{ color: 'rgba(255,255,255,0.3)' }} />}
-                              </div>
-                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', cursor: 'pointer' }} onClick={() => avatarInputRef.current?.click()}>
-                                {profAvatar ? 'Trocar foto' : 'Foto do profissional'}
-                              </span>
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                              <input placeholder="Nome" value={profName} onChange={e => setProfName(e.target.value)} required className="navy-input" />
-                              <input placeholder="Cargo" value={profRole} onChange={e => setProfRole(e.target.value)} className="navy-input" />
-                            </div>
-                            <div>
-                              <label className="navy-label">Comissão %</label>
-                              <input type="number" min={0} max={100} value={profCommission} onChange={e => setProfCommission(Number(e.target.value))} className="navy-input" />
-                            </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                              {['seg','ter','qua','qui','sex','sab','dom'].map(d => (
-                                <button key={d} type="button" onClick={() => setProfDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])}
-                                  style={{ padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', background: profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.07)', color: profDays.includes(d) ? '#0F172A' : 'rgba(255,255,255,0.38)', border: `1px solid ${profDays.includes(d) ? '#ffffff' : 'rgba(255,255,255,0.09)'}` }}>
-                                  {d}
-                                </button>
-                              ))}
-                            </div>
-                            <button type="submit"
-                              disabled={!editingProf && myProfessionals.length >= 6}
-                              style={{ padding: 12, background: !editingProf && myProfessionals.length >= 6 ? 'rgba(255,255,255,0.08)' : editingProf ? '#3b82f6' : '#ffffff', color: !editingProf && myProfessionals.length >= 6 ? 'rgba(255,255,255,0.25)' : editingProf ? '#fff' : '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: !editingProf && myProfessionals.length >= 6 ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                              {!editingProf && myProfessionals.length >= 6 ? 'Limite de 6 atingido' : editingProf ? 'Salvar alterações' : 'Adicionar'}
-                            </button>
-                          </form>
-
-                          {/* Lista da equipe */}
-                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 460, overflowY: 'auto' }} className="no-scrollbar">
-                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Equipe ({myProfessionals.length})</p>
-                            {myProfessionals.length === 0 && (
-                              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', textAlign: 'center', marginTop: 20 }}>Nenhum colaborador ainda.</p>
-                            )}
-                            {myProfessionals.map(p => (
-                              <div key={p.id}
-                                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: editingProf?.id === p.id ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10, transition: 'all 150ms' }}>
-                                <img src={p.avatar} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{p.role} · {p.commissionPercentage}%</div>
-                                </div>
-                                <button
-                                  onClick={() => editingProf?.id === p.id ? cancelEditProf() : startEditProf(p)}
-                                  title={editingProf?.id === p.id ? 'Cancelar edição' : 'Editar'}
-                                  style={{ width: 30, height: 30, borderRadius: 8, background: editingProf?.id === p.id ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: editingProf?.id === p.id ? '#60a5fa' : 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                  {editingProf?.id === p.id ? <X size={13} /> : <Pencil size={13} />}
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    if (!confirm(`Remover ${p.name} da equipe?`)) return;
-                                    await onDeleteProfessional(p.id);
-                                    toast.success(`${p.name} removido.`);
-                                  }}
-                                  title="Remover colaborador"
-                                  style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
 
                       {/* Catálogo */}
                       {cfgTab === 'catalogo' && (() => {

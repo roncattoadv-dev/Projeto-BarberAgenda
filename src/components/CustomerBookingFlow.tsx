@@ -122,10 +122,10 @@ export default function CustomerBookingFlow({
   const selectedWeekdayKey = getWeekdayKeyFromDate(selectedDate);
 
   // Use custom operational hours if configured for this day of week, priority to selected professional, fallback to tenant
-  const HOURLY_SLOTS = (selectedProfessional?.businessHoursByDay && selectedProfessional.businessHoursByDay[selectedWeekdayKey])
-    ? selectedProfessional.businessHoursByDay[selectedWeekdayKey]
-    : (activeTenant.businessHoursByDay && activeTenant.businessHoursByDay[selectedWeekdayKey])
-    ? activeTenant.businessHoursByDay[selectedWeekdayKey]
+  const HOURLY_SLOTS = (selectedProfessional?.businessHoursByDay?.[selectedWeekdayKey]?.length ?? 0) > 0
+    ? selectedProfessional!.businessHoursByDay![selectedWeekdayKey]
+    : (activeTenant.businessHoursByDay?.[selectedWeekdayKey]?.length ?? 0) > 0
+    ? activeTenant.businessHoursByDay![selectedWeekdayKey]
     : activeTenant.businessHours && activeTenant.businessHours.length > 0
     ? activeTenant.businessHours
     : [

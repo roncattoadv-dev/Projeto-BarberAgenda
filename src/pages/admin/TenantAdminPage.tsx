@@ -536,6 +536,8 @@ export default function TenantAdminPage() {
           onRescheduleAppointment={async (id, date, time) => {
             await rescheduleAppointment(id, date, time);
             setAppointments(p => p.map(a => a.id === id ? { ...a, date, time } : a));
+            const appt = appointments.find(a => a.id === id);
+            if (appt) notifyAppointmentWhatsApp(appt.tenantId, id).catch(() => {});
           }}
           onAddPayment={async p => {
             const c = await createPayment(p);
@@ -558,11 +560,6 @@ export default function TenantAdminPage() {
           }}
           onUpdateTenantDetails={async (id, details) => {
             await updateTenant(id, details);
-            // Sincroniza horários para todos os profissionais quando os horários do salão mudam
-            if (details.businessHoursByDay && details.businessDays) {
-              await syncProfessionalsHours(id, details.businessDays, details.businessHoursByDay);
-              setProfessionals(prev => prev.map(p => ({ ...p, businessDays: details.businessDays!, businessHoursByDay: details.businessHoursByDay! })));
-            }
             setTenant(t => t ? { ...t, ...details } : t);
           }}
           onSwitchToBookingFlow={slug => {
