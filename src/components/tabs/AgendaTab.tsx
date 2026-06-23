@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Bell, BellOff, RefreshCw, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Bell, BellOff, RefreshCw, Clock, ChevronDown } from 'lucide-react';
 import { Appointment, Service, Professional, Customer } from '../../types';
 import { useToast } from '../../hooks/useToast';
 
@@ -40,7 +40,7 @@ const C = {
   textSm:      '#374151',  // 11:1
   textXs:      '#4b5563',  // 8:1 — ainda passa AA
   textMuted:   '#6b7280',  // 5:1 — para info menos crítica
-  today:       '#0F172A',
+  today:       '#2563EB',
   todayText:   '#ffffff',
 };
 
@@ -123,6 +123,74 @@ function isPastAppt(date: string, time: string): boolean {
   return new Date(y, m - 1, d, h, min) < new Date();
 }
 
+function displayStatus(appt: Appointment): string {
+  if (appt.status !== 'confirmed') return appt.status;
+  return new Date(`${appt.date}T${appt.time}`) <= new Date() ? 'pending' : 'confirmed';
+}
+
+const STATUS_OPTIONS_AGENDA = [
+  { value: 'confirmed', label: 'Confirmados' },
+  { value: 'pending',   label: 'Pendentes'   },
+  { value: 'cancelled', label: 'Cancelados'  },
+  { value: 'attended',  label: 'Concluídos'  },
+];
+
+function MultiSelect({ label, options, selected, onChange }: {
+  label: string;
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const toggle = (value: string) =>
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
+
+  const displayLabel = selected.length === 0
+    ? label
+    : selected.length === 1
+    ? (options.find(o => o.value === selected[0])?.label ?? label)
+    : `${selected.length} selecionados`;
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', fontSize: 11, fontWeight: 600, fontFamily: 'Outfit, sans-serif', background: selected.length > 0 ? '#EFF6FF' : '#FFFFFF', border: `1px solid ${selected.length > 0 ? '#BFDBFE' : '#E2E8F0'}`, borderRadius: 8, color: selected.length > 0 ? '#1D4ED8' : '#374151', cursor: 'pointer', outline: 'none', whiteSpace: 'nowrap' as const }}>
+        {displayLabel}
+        <ChevronDown size={11} style={{ color: '#9CA3AF', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: 180, padding: 6 }}>
+          {selected.length > 0 && (
+            <button type="button" onClick={() => onChange([])}
+              style={{ display: 'block', width: '100%', textAlign: 'left' as const, padding: '6px 10px', fontSize: 11, fontWeight: 700, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', borderRadius: 6, marginBottom: 2 }}>
+              Limpar seleção
+            </button>
+          )}
+          {options.map(o => (
+            <label key={o.value} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', borderRadius: 6, background: selected.includes(o.value) ? '#EFF6FF' : 'transparent' }}>
+              <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)}
+                style={{ width: 14, height: 14, accentColor: '#2563EB', cursor: 'pointer', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, fontWeight: selected.includes(o.value) ? 700 : 500, color: selected.includes(o.value) ? '#1D4ED8' : '#374151', fontFamily: 'Outfit, sans-serif' }}>
+                {o.label}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AgendaTab({ myAppointments, myServices, myProfessionals, myCustomers, onUpdateAppointmentStatus, onAddAppointment, onAddCustomer, onCompleteAppointment, onResendReminder, onRescheduleAppointment, tenantId }: Props) {
   const [view, setView] = useState<ViewMode>(() => {
     const s = localStorage.getItem('bf_agenda_view');
@@ -131,10 +199,8 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
   const [baseDate, setBaseDate] = useState(new Date());
   const [hoveredAppt, setHoveredAppt]   = useState<string | null>(null);
   const [expandedAppt, setExpandedAppt] = useState<string | null>(null);
-  const [selectedProfIds, setSelectedProfIds] = useState<Set<string>>(() => {
-    try { const s = localStorage.getItem('bf_agenda_prof_filter'); return s ? new Set(JSON.parse(s)) : new Set(); }
-    catch { return new Set(); }
-  });
+  const [profFilter,   setProfFilter]   = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [now, setNow] = useState(new Date());
   const [resendingIds, setResendingIds] = useState<Set<string>>(new Set());
   const [remindedIds,  setRemindedIds]  = useState<Set<string>>(new Set());
@@ -247,19 +313,12 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
 
   const today = formatDateKey(new Date());
 
-  const toggleProf = (id: string) => {
-    setSelectedProfIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      localStorage.setItem('bf_agenda_prof_filter', JSON.stringify([...next]));
-      return next;
-    });
-  };
-  const clearProfFilter = () => { setSelectedProfIds(new Set()); localStorage.removeItem('bf_agenda_prof_filter'); };
-
-  const filteredAppointments = useMemo(() =>
-    selectedProfIds.size === 0 ? myAppointments : myAppointments.filter(a => selectedProfIds.has(a.professionalId)),
-    [myAppointments, selectedProfIds]);
+  const filteredAppointments = useMemo(() => {
+    let list = [...myAppointments];
+    if (profFilter.length > 0)   list = list.filter(a => profFilter.includes(a.professionalId));
+    if (statusFilter.length > 0) list = list.filter(a => statusFilter.includes(displayStatus(a)));
+    return list;
+  }, [myAppointments, profFilter, statusFilter]);
 
   useEffect(() => { const id = setInterval(() => setNow(new Date()), 60_000); return () => clearInterval(id); }, []);
 
@@ -320,11 +379,10 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
   const btnBase: React.CSSProperties = {
     fontFamily: 'Outfit, sans-serif', cursor: 'pointer', transition: 'all 150ms',
   };
-  // Toolbar fica sobre fundo navy → cores claras (light-on-dark)
   const iconBtn: React.CSSProperties = {
     ...btnBase, width: 30, height: 30, borderRadius: 8,
-    background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
-    color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: '#FFFFFF', border: '1px solid #E2E8F0',
+    color: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center',
   };
 
   return (
@@ -336,22 +394,22 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button onClick={() => setBaseDate(new Date())}
             style={{ ...btnBase, padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-              background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
-              color: 'rgba(255,255,255,0.7)' }}>
+              background: '#EFF6FF', border: '1px solid #BFDBFE',
+              color: '#1D4ED8' }}>
             Hoje
           </button>
           <button onClick={() => navigate(-1)} style={iconBtn}><ChevronLeft size={14} /></button>
           <button onClick={() => navigate(1)}  style={iconBtn}><ChevronRight size={14} /></button>
-          <span style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,255,255,0.92)', marginLeft: 4 }}>{headerLabel}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginLeft: 4 }}>{headerLabel}</span>
         </div>
 
         {/* View toggle */}
-        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: 8, border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           {([['day','Dia'],['week','Semana'],['month','Mês']] as [ViewMode,string][]).map(([v, label]) => (
             <button key={v} onClick={() => { setView(v); localStorage.setItem('bf_agenda_view', v); }}
               style={{ ...btnBase, padding: '5px 14px', fontSize: 12, fontWeight: 700, border: 'none',
-                background: view === v ? 'rgba(255,255,255,0.16)' : 'transparent',
-                color: view === v ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.4)',
+                background: view === v ? '#EFF6FF' : 'transparent',
+                color: view === v ? '#1D4ED8' : '#9CA3AF',
               }}>
               {label}
             </button>
@@ -359,35 +417,21 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
         </div>
       </div>
 
-      {/* ── Filtros por profissional — também sobre fundo navy ── */}
-      {myProfessionals.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap' }}>
-          <button onClick={clearProfFilter}
-            style={{ ...btnBase, padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-              background: selectedProfIds.size === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)',
-              border: `1px solid ${selectedProfIds.size === 0 ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.12)'}`,
-              color: selectedProfIds.size === 0 ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.5)',
-            }}>
-            Todos
-          </button>
-          {myProfessionals.map((prof, i) => {
-            const c = PROF_COLORS[i % PROF_COLORS.length];
-            const active = selectedProfIds.has(prof.id);
-            return (
-              <button key={prof.id} onClick={() => toggleProf(prof.id)}
-                style={{ ...btnBase, padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                  background: active ? c.bg : 'rgba(255,255,255,0.06)',
-                  border: `1px solid ${active ? c.border : 'rgba(255,255,255,0.12)'}`,
-                  color: active ? c.text : 'rgba(255,255,255,0.5)',
-                  display: 'flex', alignItems: 'center', gap: 5,
-                }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: active ? c.dot : 'rgba(255,255,255,0.35)', flexShrink: 0 }} />
-                {prof.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* ── Filtros por profissional e status ── */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+        <MultiSelect
+          label="Profissional"
+          options={myProfessionals.map(p => ({ value: p.id, label: p.name }))}
+          selected={profFilter}
+          onChange={setProfFilter}
+        />
+        <MultiSelect
+          label="Status"
+          options={STATUS_OPTIONS_AGENDA}
+          selected={statusFilter}
+          onChange={setStatusFilter}
+        />
+      </div>
 
       {/* ── Calendar grid ── */}
       <motion.div
@@ -460,7 +504,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
               const isToday = key === today;
               const count = filteredAppointments.filter(a => a.date === key && a.status !== 'cancelled').length;
               return (
-                <div key={key} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: `1px solid ${C.borderLight}`, background: isToday ? `rgba(3,29,60,0.06)` : 'transparent' }}>
+                <div key={key} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: `1px solid ${C.borderLight}`, background: isToday ? `rgba(37,99,235,0.06)` : 'transparent' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: C.textSm, marginBottom: 4 }}>{DAYS_PT[d.getDay()]}</div>
                   <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: isToday ? C.today : 'transparent', color: isToday ? C.todayText : C.textMd, fontWeight: 800, fontSize: 14 }}>{d.getDate()}</div>
                   {count > 0 && <div style={{ fontSize: 9, color: '#16a34a', fontWeight: 700, marginTop: 2 }}>{count}</div>}
@@ -660,25 +704,25 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
     {/* ── Card de novo agendamento ── */}
     {newSlot && (
       <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: newSlot.py, left: newSlot.px, width: 280, zIndex: 1001, background: '#fff', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', overflow: 'hidden', fontFamily: 'Outfit, sans-serif' }}>
-        <div style={{ background: '#0F172A', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: '0 0 6px', fontSize: 10, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '1px' }}>Novo agendamento</p>
+            <p style={{ margin: '0 0 6px', fontSize: 10, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Novo agendamento</p>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <input
                 type="date"
                 value={slotEditDate}
                 onChange={e => setSlotEditDate(e.target.value)}
-                style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '4px 7px', fontSize: 12, fontWeight: 700, color: '#fff', outline: 'none', fontFamily: 'Outfit, sans-serif', colorScheme: 'dark' }}
+                style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 6, padding: '4px 7px', fontSize: 12, fontWeight: 700, color: '#111827', outline: 'none', fontFamily: 'Outfit, sans-serif' }}
               />
               <input
                 type="time"
                 value={slotEditTime}
                 onChange={e => setSlotEditTime(e.target.value)}
-                style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '4px 7px', fontSize: 12, fontWeight: 700, color: '#fff', outline: 'none', fontFamily: 'Outfit, sans-serif', colorScheme: 'dark', width: 82 }}
+                style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 6, padding: '4px 7px', fontSize: 12, fontWeight: 700, color: '#111827', outline: 'none', fontFamily: 'Outfit, sans-serif', width: 82 }}
               />
             </div>
           </div>
-          <button onClick={closeAll} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.45)', cursor: 'pointer', padding: 2, flexShrink: 0 }}><X size={14} /></button>
+          <button onClick={closeAll} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 2, flexShrink: 0 }}><X size={14} /></button>
         </div>
         <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {/* Cliente */}
@@ -697,7 +741,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                         onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
                         onMouseLeave={e => (e.currentTarget.style.background = '')}>
                         <span style={{ fontWeight: 600 }}>{c.name}</span>
-                        {c.phone && <span style={{ color: '#94a3b8', marginLeft: 6 }}>{c.phone}</span>}
+                        {c.phone && <span style={{ color: '#94A3B8', marginLeft: 6 }}>{c.phone}</span>}
                       </div>
                     ))}
                     <div onClick={() => { setSlotNewCustMode(true); setSlotNewCustName(slotCustQ); setSlotNewCustPhone(''); }}
@@ -733,7 +777,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                       } catch { toast.error('Erro ao criar cliente.'); }
                       finally { setSlotCreating(false); }
                     }}
-                    style={{ flex: 2, padding: '6px', background: (!slotNewCustName.trim() || slotCreating) ? '#94a3b8' : '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, color: '#fff', cursor: (!slotNewCustName.trim() || slotCreating) ? 'not-allowed' : 'pointer' }}>
+                    style={{ flex: 2, padding: '6px', background: (!slotNewCustName.trim() || slotCreating) ? '#F1F5F9' : '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, color: '#fff', cursor: (!slotNewCustName.trim() || slotCreating) ? 'not-allowed' : 'pointer' }}>
                     {slotCreating ? 'Criando…' : 'Criar cliente'}
                   </button>
                 </div>
@@ -761,7 +805,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
           <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
             <button onClick={closeAll} style={{ flex: 1, padding: '8px', background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#64748b', cursor: 'pointer' }}>Cancelar</button>
             <button onClick={handleSlotSubmit} disabled={!slotCustId || !slotSrvId || slotSaving}
-              style={{ flex: 2, padding: '8px', background: (!slotCustId || !slotSrvId || slotSaving) ? '#94a3b8' : '#0F172A', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#fff', cursor: (!slotCustId || !slotSrvId || slotSaving) ? 'not-allowed' : 'pointer' }}>
+              style={{ flex: 2, padding: '8px', background: (!slotCustId || !slotSrvId || slotSaving) ? '#F1F5F9' : '#1D4ED8', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: (!slotCustId || !slotSrvId || slotSaving) ? '#9CA3AF' : '#fff', cursor: (!slotCustId || !slotSrvId || slotSaving) ? 'not-allowed' : 'pointer' }}>
               {slotSaving ? 'Agendando…' : 'Agendar →'}
             </button>
           </div>
@@ -788,18 +832,18 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
       return (
         <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: panelPy, left: panelPx, width: 280, zIndex: 1001, background: '#fff', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.22)', overflow: 'hidden', fontFamily: 'Outfit, sans-serif' }}>
           {/* Header */}
-          <div style={{ background: '#0F172A', padding: '12px 14px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '12px 14px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
               <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sc.bg, color: sc.text, marginBottom: 4 }}>{statusLabel[apptPanel.status] ?? apptPanel.status}</span>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{apptPanel.customerName}</p>
-              <p style={{ margin: '3px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#111827', lineHeight: 1.2 }}>{apptPanel.customerName}</p>
+              <p style={{ margin: '3px 0 0', fontSize: 11, color: '#6B7280' }}>
                 {DAYS_PT[new Date(apptPanel.date + 'T12:00:00').getDay()]}, {apptPanel.date.slice(8)}/{apptPanel.date.slice(5,7)} · {apptPanel.time.slice(0,5)}
                 {srv && ` · ${srv.durationMinutes}min`}
                 {apptPanel.price > 0 && ` · R$${apptPanel.price}`}
               </p>
-              {srv  && <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{srv.name}{prof ? ` · ${prof.name}` : ''}</p>}
+              {srv  && <p style={{ margin: '2px 0 0', fontSize: 11, color: '#9CA3AF' }}>{srv.name}{prof ? ` · ${prof.name}` : ''}</p>}
             </div>
-            <button onClick={closeAll} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 2, flexShrink: 0 }}><X size={14} /></button>
+            <button onClick={closeAll} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 2, flexShrink: 0 }}><X size={14} /></button>
           </div>
 
           <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -833,12 +877,12 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                 <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Reagendar para</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: 10, color: '#94a3b8', marginBottom: 3 }}>Data</label>
+                    <label style={{ display: 'block', fontSize: 10, color: '#64748b', marginBottom: 3 }}>Data</label>
                     <input type="date" value={reschedDate} onChange={e => setReschedDate(e.target.value)}
                       style={{ width: '100%', padding: '7px 8px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }} />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: 10, color: '#94a3b8', marginBottom: 3 }}>Hora</label>
+                    <label style={{ display: 'block', fontSize: 10, color: '#64748b', marginBottom: 3 }}>Hora</label>
                     <input type="time" value={reschedTime} onChange={e => setReschedTime(e.target.value)}
                       style={{ width: '100%', padding: '7px 8px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }} />
                   </div>
@@ -846,7 +890,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => setReschedMode(false)} style={{ flex: 1, padding: '8px', background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#64748b', cursor: 'pointer' }}>Voltar</button>
                   <button onClick={handleReschedule} disabled={rescheduling}
-                    style={{ flex: 2, padding: '8px', background: rescheduling ? '#94a3b8' : '#0F172A', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#fff', cursor: rescheduling ? 'not-allowed' : 'pointer' }}>
+                    style={{ flex: 2, padding: '8px', background: rescheduling ? '#F1F5F9' : '#1D4ED8', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, color: rescheduling ? '#9CA3AF' : '#fff', cursor: rescheduling ? 'not-allowed' : 'pointer' }}>
                     {rescheduling ? 'Salvando…' : 'Confirmar →'}
                   </button>
                 </div>
@@ -855,9 +899,9 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
 
             {/* WhatsApp status */}
             <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <p style={{ margin: 0, fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>WhatsApp</p>
+              <p style={{ margin: 0, fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>WhatsApp</p>
               {!hasPhone ? (
-                <p style={{ margin: 0, fontSize: 11, color: '#94a3b8' }}>Sem telefone cadastrado</p>
+                <p style={{ margin: 0, fontSize: 11, color: '#94A3B8' }}>Sem telefone cadastrado</p>
               ) : (
                 <>
                   {/* Confirmação */}
@@ -867,7 +911,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                       <span style={{ fontSize: 11, fontWeight: 600, color: apptPanel.wppConfirmSent ? '#15803d' : '#64748b' }}>
                         Confirmação
                       </span>
-                      <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 5 }}>
+                      <span style={{ fontSize: 10, color: '#94A3B8', marginLeft: 5 }}>
                         {apptPanel.wppConfirmSent ? 'enviada' : 'não enviada'}
                       </span>
                     </div>
@@ -880,7 +924,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                       <span style={{ fontSize: 11, fontWeight: 600, color: apptPanel.wppReminderSent ? '#15803d' : '#64748b' }}>
                         Lembrete
                       </span>
-                      <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 5 }}>
+                      <span style={{ fontSize: 10, color: '#94A3B8', marginLeft: 5 }}>
                         {apptPanel.wppReminderSent
                           ? 'enviado'
                           : remTime

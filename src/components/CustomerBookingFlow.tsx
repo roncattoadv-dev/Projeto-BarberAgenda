@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { Tenant, Service, Professional, Appointment, Customer } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Tenant, Service, Professional, Appointment, Customer, WaitlistEntry } from '../types';
 import {
   Calendar,
   Users,
@@ -35,6 +35,7 @@ interface CustomerBookingFlowProps {
   onAddCustomer: (customer: Omit<Customer, 'id'>) => void;
   onRegisterReview: (stars: number, comment: string, apptId: string) => void;
   onGetOccupiedSlots?: (professionalId: string, date: string) => Promise<{time: string; duration: number}[]>;
+  onAddWaitlistEntry?: (e: Pick<WaitlistEntry, 'tenantId' | 'customerName' | 'customerPhone' | 'date' | 'professionalId' | 'timePreference'>) => Promise<void>;
 }
 
 export default function CustomerBookingFlow({
@@ -48,6 +49,7 @@ export default function CustomerBookingFlow({
   onAddCustomer,
   onRegisterReview,
   onGetOccupiedSlots,
+  onAddWaitlistEntry,
 }: CustomerBookingFlowProps) {
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [activeTab, setActiveTab] = useState<'booking' | 'history'>('booking');
@@ -71,6 +73,8 @@ export default function CustomerBookingFlow({
   // Completed booking tracker
   const [recentBookedId, setRecentBookedId] = useState<string | null>(null);
   const [bookingCode, setBookingCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Client dynamic filter for History tracking
   const [historySearchPhone, setHistorySearchPhone] = useState('');
@@ -80,6 +84,15 @@ export default function CustomerBookingFlow({
   const [reviewStars, setReviewStars] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewingApptId, setReviewingApptId] = useState<string | null>(null);
+
+  // Lista de espera
+  const [showWlForm,   setShowWlForm]   = useState(false);
+  const [wlName,       setWlName]       = useState('');
+  const [wlPhone,      setWlPhone]      = useState('');
+  const [wlTimePref,   setWlTimePref]   = useState('qualquer');
+  const [wlProfPref,   setWlProfPref]   = useState<string | null>(null);
+  const [wlSaving,     setWlSaving]     = useState(false);
+  const [wlDone,       setWlDone]       = useState(false);
 
   // Occupied slots fetched from DB (authoritative source)
   const [occupiedSlots, setOccupiedSlots] = useState<{time: string; duration: number}[]>([]);
@@ -238,54 +251,83 @@ export default function CustomerBookingFlow({
     return `${dayNum} de ${monthName} de ${yearNum}`;
   };
 
+  const handleWaitlistSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wlName.trim() || !wlPhone.trim() || !onAddWaitlistEntry) return;
+    setWlSaving(true);
+    try {
+      await onAddWaitlistEntry({
+        tenantId: activeTenant.id,
+        customerName: wlName.trim(),
+        customerPhone: wlPhone.trim(),
+        date: selectedDate,
+        professionalId: wlProfPref,
+        timePreference: wlTimePref,
+      });
+      setWlDone(true);
+      setShowWlForm(false);
+    } catch {}
+    setWlSaving(false);
+  };
+
   const handleFormSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!clientName.trim() || !clientPhone.trim()) return;
     if (!selectedService || !selectedProfessional || !selectedTime) return;
 
-    // Check / Add Customer records
-    let matchedCustomer = customers.find(c => c.tenantId === activeTenant.id && c.phone === clientPhone.trim());
+    setSubmitting(true);
+    setSubmitError(null);
 
-    if (!matchedCustomer) {
-      onAddCustomer({
+    try {
+      // Check / Add Customer records
+      let matchedCustomer = customers.find(c => c.tenantId === activeTenant.id && c.phone === clientPhone.trim());
+
+      if (!matchedCustomer) {
+        onAddCustomer({
+          tenantId: activeTenant.id,
+          name: clientName.trim(),
+          email: clientEmail.trim() || `${clientName.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}@gmail.com`,
+          phone: clientPhone.trim()
+        });
+        matchedCustomer = {
+          id: `cust-gen-${Date.now()}`,
+          tenantId: activeTenant.id,
+          name: clientName.trim(),
+          phone: clientPhone.trim(),
+          email: clientEmail.trim() || `${clientName.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}@gmail.com`
+        };
+      }
+
+      // Alphanumeric booking code like '231NW1E5'
+      const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      let randCode = '';
+      for (let i = 0; i < 8; i++) randCode += chars.charAt(Math.floor(Math.random() * chars.length));
+      setBookingCode(randCode);
+
+      const created = await onAddAppointment({
         tenantId: activeTenant.id,
-        name: clientName.trim(),
-        email: clientEmail.trim() || `${clientName.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}@gmail.com`,
-        phone: clientPhone.trim()
+        serviceId: selectedServiceId,
+        professionalId: selectedProfId,
+        customerId: matchedCustomer.id,
+        customerName: matchedCustomer.name,
+        customerPhone: matchedCustomer.phone,
+        customerEmail: clientEmail.trim() || undefined,
+        date: selectedDate,
+        time: selectedTime,
+        durationMinutes: selectedService.durationMinutes,
+        price: selectedService.price,
+        status: 'confirmed'
       });
-      matchedCustomer = {
-        id: `cust-gen-${Date.now()}`,
-        tenantId: activeTenant.id,
-        name: clientName.trim(),
-        phone: clientPhone.trim(),
-        email: clientEmail.trim() || `${clientName.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}@gmail.com`
-      };
+
+      setOccupiedSlots(prev => [...prev, { time: selectedTime, duration: selectedService?.durationMinutes ?? 60 }]);
+      setRecentBookedId(created.id);
+      setStep(5);
+    } catch (err: any) {
+      setSubmitError(err?.message || 'Erro ao confirmar agendamento. Tente novamente.');
+    } finally {
+      setSubmitting(false);
     }
-
-    // Alphanumeric booking code like '231NW1E5'
-    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    let randCode = '';
-    for (let i = 0; i < 8; i++) randCode += chars.charAt(Math.floor(Math.random() * chars.length));
-    setBookingCode(randCode);
-
-    const created = await onAddAppointment({
-      tenantId: activeTenant.id,
-      serviceId: selectedServiceId,
-      professionalId: selectedProfId,
-      customerId: matchedCustomer.id,
-      customerName: matchedCustomer.name,
-      customerPhone: matchedCustomer.phone,
-      customerEmail: clientEmail.trim() || undefined,
-      date: selectedDate,
-      time: selectedTime,
-      durationMinutes: selectedService.durationMinutes,
-      price: selectedService.price,
-      status: 'confirmed'
-    });
-
-    setOccupiedSlots(prev => [...prev, selectedTime]);
-    setRecentBookedId(created.id);
-    setStep(5);
   };
 
   const handleSearchHistory = (e: React.FormEvent) => {
@@ -337,6 +379,10 @@ export default function CustomerBookingFlow({
     return toMin(timeSlot) <= now.getHours() * 60 + now.getMinutes();
   };
 
+  const allSlotsOccupied = step === 3 && HOURLY_SLOTS.length > 0 && HOURLY_SLOTS.every(t => checkSlotOccupied(t) || checkSlotPast(t));
+
+  // Reset waitlist form when date/prof changes
+  useEffect(() => { setShowWlForm(false); setWlDone(false); setWlName(''); setWlPhone(''); setWlTimePref('qualquer'); }, [selectedDate, selectedProfId]);
 
   /* ── dynamic theme from bookingPageConfig ── */
   const pc = activeTenant.bookingPageConfig?.primaryColor ?? '#2563eb';
@@ -505,7 +551,7 @@ export default function CustomerBookingFlow({
                       : false;
                     const dk = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                     const isPast = dk < todayStr;
-                    const isBlocked = (activeTenant.blockedDates ?? []).includes(dk);
+                    const isBlocked = (activeTenant.blockedDates ?? []).includes(dk) || (selectedProfessional?.blockedDates ?? []).includes(dk);
                     const ps = selectedDate.split('-');
                     const isSel = ps.length === 3 && +ps[0] === viewYear && +ps[1]-1 === viewMonth && +ps[2] === day;
                     const cellD: React.CSSProperties = { width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: 13, fontFamily: 'monospace', border: 'none', margin: '0 auto' };
@@ -553,10 +599,13 @@ export default function CustomerBookingFlow({
                     <input type="email" placeholder="seuemail@exemplo.com" value={clientEmail} onChange={e => setClientEmail(e.target.value)}
                       style={{ width: '100%', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }} />
                   </div>
+                  {submitError && (
+                    <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#DC2626' }}>{submitError}</div>
+                  )}
                   <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                     <button type="button" onClick={() => setStep(3)} style={{ color: '#64748b', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>Voltar</button>
-                    <button type="submit" style={{ padding: '10px 24px', background: pc, color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: 'pointer' }}>
-                      Concluir agendamento
+                    <button type="submit" disabled={submitting} style={{ padding: '10px 24px', background: submitting ? '#93C5FD' : pc, color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer' }}>
+                      {submitting ? 'Confirmando…' : 'Concluir agendamento'}
                     </button>
                   </div>
                 </form>
@@ -610,6 +659,68 @@ export default function CustomerBookingFlow({
                 style={{ width: '100%', padding: '12px 0', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 8, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 Continuar <ArrowRight size={16} />
               </button>
+
+              {/* ── Lista de espera (desktop) ── */}
+              {onAddWaitlistEntry && !wlDone && (
+                <div style={{ marginTop: 12 }}>
+                  {allSlotsOccupied ? (
+                    /* Dia lotado — destaque total */
+                    <div style={{ padding: '14px 16px', background: '#FEF9C3', border: '1px solid #FCD34D', borderRadius: 12 }}>
+                      <p style={{ fontSize: 12, color: '#92400E', margin: '0 0 10px', fontWeight: 700 }}>
+                        😔 Nenhum horário disponível neste dia.
+                      </p>
+                      {!showWlForm ? (
+                        <button onClick={() => { setWlProfPref(selectedProfId || null); setShowWlForm(true); }}
+                          style={{ width: '100%', padding: '10px', background: pc, color: '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          Entrar na lista de espera →
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    /* Dia com slots — link discreto */
+                    !showWlForm && (
+                      <button onClick={() => { setWlProfPref(selectedProfId || null); setShowWlForm(true); }}
+                        style={{ width: '100%', padding: '8px', background: 'transparent', color: '#94a3b8', fontWeight: 500, fontSize: 11, border: '1px dashed #cbd5e1', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Horário já está ocupado? Entrar na lista de espera.
+                      </button>
+                    )
+                  )}
+
+                  {showWlForm && (
+                    <div style={{ padding: '14px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12 }}>
+                      <p style={{ fontSize: 12, color: '#475569', margin: '0 0 10px', fontWeight: 600 }}>Lista de espera — te avisamos via WhatsApp se abrir uma vaga.</p>
+                      <form onSubmit={handleWaitlistSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <input required placeholder="Seu nome *" value={wlName} onChange={e => setWlName(e.target.value)}
+                          style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
+                        <input required placeholder="Telefone (WhatsApp) *" value={wlPhone} onChange={e => setWlPhone(e.target.value)}
+                          style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
+                        <select value={wlTimePref} onChange={e => setWlTimePref(e.target.value)}
+                          style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', width: '100%', boxSizing: 'border-box' as const }}>
+                          <option value="qualquer">Qualquer horário disponível</option>
+                          {HOURLY_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button type="button" onClick={() => setShowWlForm(false)}
+                            style={{ flex: 1, padding: '9px', background: '#F1F5F9', color: '#6B7280', fontWeight: 600, fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            Cancelar
+                          </button>
+                          <button type="submit" disabled={wlSaving}
+                            style={{ flex: 2, padding: '9px', background: pc, color: '#fff', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: wlSaving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: wlSaving ? 0.7 : 1 }}>
+                            {wlSaving ? 'Salvando…' : 'Confirmar lista de espera'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              )}
+              {onAddWaitlistEntry && wlDone && (
+                <div style={{ marginTop: 12, padding: '14px 16px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 12, textAlign: 'center' }}>
+                  <p style={{ fontSize: 22, margin: '0 0 6px' }}>✅</p>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: '#166534', margin: '0 0 4px' }}>Você está na lista!</p>
+                  <p style={{ fontSize: 12, color: '#15803D', margin: 0 }}>Avisaremos via WhatsApp se uma vaga aparecer neste dia.</p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -670,7 +781,7 @@ export default function CustomerBookingFlow({
                     const isClosed = selectedProfessional?.businessDays?.length ? !selectedProfessional.businessDays.includes(WEEKDAYS_MAP[dow]) : activeTenant.businessDays?.length ? !activeTenant.businessDays.includes(WEEKDAYS_MAP[dow]) : false;
                     const dk = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                     const isPast = dk < todayStr;
-                    const isBlocked = (activeTenant.blockedDates ?? []).includes(dk);
+                    const isBlocked = (activeTenant.blockedDates ?? []).includes(dk) || (selectedProfessional?.blockedDates ?? []).includes(dk);
                     const ps = selectedDate.split('-');
                     const isSel = ps.length === 3 && +ps[0] === viewYear && +ps[1]-1 === viewMonth && +ps[2] === day;
                     const cellM: React.CSSProperties = { width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: 12, fontFamily: 'monospace', border: 'none', margin: '0 auto' };
@@ -713,6 +824,65 @@ export default function CustomerBookingFlow({
                 <button onClick={() => setStep(4)} disabled={!selectedTime} style={{ width: '100%', padding: '12px 0', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: selectedTime ? 'pointer' : 'not-allowed', opacity: selectedTime ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                   Continuar <ArrowRight size={16} />
                 </button>
+
+                {/* ── Lista de espera (mobile) ── */}
+                {onAddWaitlistEntry && !wlDone && (
+                  <div style={{ marginTop: 12 }}>
+                    {allSlotsOccupied ? (
+                      <div style={{ padding: '14px 16px', background: '#FEF9C3', border: '1px solid #FCD34D', borderRadius: 12 }}>
+                        <p style={{ fontSize: 13, color: '#92400E', margin: '0 0 10px', fontWeight: 700 }}>
+                          😔 Nenhum horário disponível neste dia.
+                        </p>
+                        {!showWlForm && (
+                          <button onClick={() => { setWlProfPref(selectedProfId || null); setShowWlForm(true); }}
+                            style={{ width: '100%', padding: '11px', background: pc, color: '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            Entrar na lista de espera →
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      !showWlForm && (
+                        <button onClick={() => { setWlProfPref(selectedProfId || null); setShowWlForm(true); }}
+                          style={{ width: '100%', padding: '9px', background: 'transparent', color: '#94a3b8', fontWeight: 500, fontSize: 12, border: '1px dashed #cbd5e1', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          Horário já está ocupado? Entrar na lista de espera.
+                        </button>
+                      )
+                    )}
+                    {showWlForm && (
+                      <div style={{ padding: '14px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12 }}>
+                        <p style={{ fontSize: 12, color: '#475569', margin: '0 0 10px', fontWeight: 600 }}>Lista de espera — te avisamos via WhatsApp se abrir uma vaga.</p>
+                        <form onSubmit={handleWaitlistSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                          <input required placeholder="Seu nome *" value={wlName} onChange={e => setWlName(e.target.value)}
+                            style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
+                          <input required placeholder="Telefone (WhatsApp) *" value={wlPhone} onChange={e => setWlPhone(e.target.value)}
+                            style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
+                          <select value={wlTimePref} onChange={e => setWlTimePref(e.target.value)}
+                            style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none', fontFamily: 'inherit', background: '#fff', width: '100%', boxSizing: 'border-box' as const }}>
+                            <option value="qualquer">Qualquer horário disponível</option>
+                            {HOURLY_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="button" onClick={() => setShowWlForm(false)}
+                              style={{ flex: 1, padding: '10px', background: '#F1F5F9', color: '#6B7280', fontWeight: 600, fontSize: 13, border: '1px solid #E2E8F0', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              Cancelar
+                            </button>
+                            <button type="submit" disabled={wlSaving}
+                              style={{ flex: 2, padding: '10px', background: pc, color: '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: wlSaving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: wlSaving ? 0.7 : 1 }}>
+                              {wlSaving ? 'Salvando…' : 'Entrar na lista'}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {onAddWaitlistEntry && wlDone && (
+                  <div style={{ marginTop: 12, padding: '16px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 12, textAlign: 'center' }}>
+                    <p style={{ fontSize: 24, margin: '0 0 6px' }}>✅</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: '#166534', margin: '0 0 4px' }}>Você está na lista!</p>
+                    <p style={{ fontSize: 12, color: '#15803D', margin: 0 }}>Avisaremos via WhatsApp se uma vaga aparecer neste dia.</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -742,9 +912,14 @@ export default function CustomerBookingFlow({
                   <input type="email" placeholder="seuemail@exemplo.com" value={clientEmail} onChange={e => setClientEmail(e.target.value)}
                     style={{ width: '100%', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: '#0f172a', outline: 'none', boxSizing: 'border-box' }} />
                 </div>
+                {submitError && (
+                  <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#DC2626' }}>{submitError}</div>
+                )}
                 <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                   <button type="button" onClick={() => setStep(3)} style={{ color: '#64748b', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>Voltar</button>
-                  <button type="submit" style={{ padding: '10px 24px', background: pc, color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: 'pointer' }}>Concluir agendamento</button>
+                  <button type="submit" disabled={submitting} style={{ padding: '10px 24px', background: submitting ? '#93C5FD' : pc, color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 12, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer' }}>
+                    {submitting ? 'Confirmando…' : 'Concluir agendamento'}
+                  </button>
                 </div>
               </form>
             </div>
@@ -832,14 +1007,23 @@ export default function CustomerBookingFlow({
                   </div>
                 ))}
               </div>
+              {/* Botão primário: Novo agendamento */}
+              <button onClick={() => { setRecentBookedId(null); setSelectedServiceId(''); setSelectedProfId(''); setSelectedTime(''); setStep(1); }}
+                style={{ width: '100%', padding: '13px', background: pc, color: '#fff', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                + Fazer novo agendamento
+              </button>
+
+              {/* Botão secundário: Como chegar */}
               {activeTenant.bookingPageConfig?.mapsUrl && (
                 <a href={activeTenant.bookingPageConfig.mapsUrl} target="_blank" rel="noopener noreferrer"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '10px 0', background: 'none', border: `1px solid ${pcBorder}`, borderRadius: 10, color: pc, fontWeight: 600, fontSize: 13, textDecoration: 'none', marginBottom: 12, boxSizing: 'border-box' }}>
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '12px', background: '#fff', border: `1.5px solid ${pcBorder}`, borderRadius: 12, color: pc, fontWeight: 600, fontSize: 13, textDecoration: 'none', marginBottom: 10, boxSizing: 'border-box' as const }}>
                   <MapPin size={14} /> Como chegar
                 </a>
               )}
+
+              {/* Botão perigo: Cancelar */}
               <button onClick={async () => {
-                if (!recentBookedId || !confirm('Cancelar agendamento?')) return;
+                if (!recentBookedId || !confirm('Tem certeza que deseja cancelar este agendamento?')) return;
                 try {
                   await onUpdateAppointmentStatus(recentBookedId, 'cancelled');
                   alert('Agendamento cancelado.');
@@ -848,12 +1032,8 @@ export default function CustomerBookingFlow({
                   alert('Não foi possível cancelar. Entre em contato com a barbearia.');
                 }
               }}
-                style={{ fontSize: 12, color: '#64748b', background: 'none', border: 'none', borderBottom: '1px solid #e2e8f0', paddingBottom: 2, cursor: 'pointer', marginBottom: 16 }}>
-                Cancelar agendamento
-              </button>
-              <button onClick={() => { setRecentBookedId(null); setSelectedServiceId(''); setSelectedProfId(''); setSelectedTime(''); setStep(1); }}
-                style={{ fontSize: 13, fontWeight: 700, color: pc, background: 'none', border: 'none', borderBottom: `2px solid ${pcBorder}`, paddingBottom: 2, cursor: 'pointer' }}>
-                Novo agendamento
+                style={{ width: '100%', padding: '11px', background: '#FEF2F2', color: '#EF4444', fontWeight: 600, fontSize: 13, border: '1.5px solid #FECACA', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                ✕ Cancelar agendamento
               </button>
             </div>
           )}

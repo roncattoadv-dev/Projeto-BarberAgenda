@@ -10,17 +10,19 @@ import {
   Check, X, RefreshCw, Scissors, CreditCard, Package,
   Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck, Pencil,
   Palette, Phone, MapPin, Instagram, Eye, EyeOff,
-  Mail, Lock, Clock, Shield, Trash2,
+  Mail, Lock, Clock, Shield, Trash2, LogOut,
 } from 'lucide-react';
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../contexts/AuthContext';
 import { UseNotificationsReturn } from '../hooks/useNotifications';
-import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket } from '../lib/db';
+import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket, getWaitlistEntries, markWaitlistNotified } from '../lib/db';
 import { supabase } from '../lib/supabase';
+import { sendWhatsAppServer, buildWaitlistMsg } from '../services/whatsapp';
 import LogoCropModal from './LogoCropModal';
 import TourOverlay, { TourStep } from './TourOverlay';
+import WaitlistModal from './WaitlistModal';
 import AgendaTab       from './tabs/AgendaTab';
 import AgendamentosTab from './tabs/AgendamentosTab';
 import FinanceiroTab   from './tabs/FinanceiroTab';
@@ -57,6 +59,7 @@ interface Props {
   onUpdateTenantDetails: (tenantId: string, details: Partial<Tenant>) => void | Promise<void>;
   onSwitchToBookingFlow: (slug: string) => void;
   onDeleteAccount: () => Promise<void>;
+  onSignOut?: () => void;
   openSubscriptionTab?: boolean;
   onSubscriptionTabOpened?: () => void;
   notifications: UseNotificationsReturn;
@@ -64,7 +67,7 @@ interface Props {
 
 // ── Motion presets ─────────────────────────────────────────────────────────────
 const PAGE_TRANSITION = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: { duration: 0.22, ease: 'easeOut' } };
-const SIDEBAR_W = { open: 220, closed: 64 };
+const SIDEBAR_W = { open: 242, closed: 70 };
 
 // ── Nav items ─────────────────────────────────────────────────────────────────
 const NAV: { id: Tab; label: string; Icon: React.ElementType }[] = [
@@ -90,7 +93,7 @@ export default function ClientAdminPanel({
   onAddService, onUpdateService, onDeleteService,
   onAddProfessional, onUpdateProfessional, onDeleteProfessional, onSetServiceProfessionals, onAddProduct, onUpdateProductStock,
   onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
-  onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount,
+  onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount, onSignOut,
   openSubscriptionTab, onSubscriptionTabOpened,
   notifications,
 }: Props) {
@@ -142,6 +145,7 @@ export default function ClientAdminPanel({
   const [pixCopied,      setPixCopied]      = useState(false);
   const [wppConnState,   setWppConnState]   = useState<string>('checking');
   const [wppConnName,    setWppConnName]    = useState<string | null>(null);
+  const [autoTab,        setAutoTab]        = useState<'whatsapp' | 'email'>('whatsapp');
   const [privacyModal,   setPrivacyModal]   = useState(false);
   const [supportModal,   setSupportModal]   = useState(false);
   const [supportTitle,   setSupportTitle]   = useState('');
@@ -277,19 +281,30 @@ export default function ClientAdminPanel({
   const [apptNewClientPhone, setApptNewClientPhone] = useState('');
 
   // ── Clientes state ────────────────────────────────────────────────────────
-  const [custSearch,    setCustSearch]    = useState('');
-  const [custName,      setCustName]      = useState('');
-  const [custPhone,     setCustPhone]     = useState('');
-  const [custEmail,     setCustEmail]     = useState('');
-  const [editingCust,   setEditingCust]   = useState<Customer | null>(null);
+  const [custSearch,         setCustSearch]         = useState('');
+  const [custName,           setCustName]           = useState('');
+  const [custPhone,          setCustPhone]          = useState('');
+  const [custEmail,          setCustEmail]          = useState('');
+  const [editingCust,        setEditingCust]        = useState<Customer | null>(null);
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [showNewApptModal,   setShowNewApptModal]   = useState(false);
+  const [showWaitlistModal,  setShowWaitlistModal]  = useState(false);
+  const [quickApptCust,      setQuickApptCust]      = useState<Customer | null>(null);
+  const [quickApptSrvId,     setQuickApptSrvId]     = useState('');
+  const [quickApptProfId,    setQuickApptProfId]    = useState('');
+  const [quickApptDate,      setQuickApptDate]      = useState('');
+  const [quickApptTime,      setQuickApptTime]      = useState('');
+  const [quickApptSaving,    setQuickApptSaving]    = useState(false);
 
   const startEditCust = (c: Customer) => {
     setEditingCust(c);
     setCustName(c.name); setCustPhone(c.phone); setCustEmail(c.email || '');
+    setShowNewClientModal(true);
   };
   const cancelEditCust = () => {
     setEditingCust(null);
     setCustName(''); setCustPhone(''); setCustEmail('');
+    setShowNewClientModal(false);
   };
 
   // ── Config state ──────────────────────────────────────────────────────────
@@ -313,6 +328,7 @@ export default function ClientAdminPanel({
   const [newHourInput,     setNewHourInput]     = useState('');
   const [blockedDates,     setBlockedDates]     = useState<string[]>(activeTenant.blockedDates ?? []);
   const [vacStartDate,     setVacStartDate]     = useState('');
+  const [vacProfIds,       setVacProfIds]       = useState<string[]>([]); // [] = todos
 
   // ── Booking page config ────────────────────────────────────────────────────
   const [bookingPrimaryColor,  setBookingPrimaryColor]  = useState(activeTenant.bookingPageConfig?.primaryColor  ?? '#2563EB');
@@ -345,6 +361,7 @@ export default function ClientAdminPanel({
   const [srvProfIds,     setSrvProfIds]     = useState<string[]>([]);
   const [editingSrv,     setEditingSrv]     = useState<Service | null>(null);
   const [srvProfPanel,   setSrvProfPanel]   = useState<Service | null>(null);
+  const [showNewSrvModal, setShowNewSrvModal] = useState(false);
   const hiddenPresetsKey = `wa_hidden_presets_${activeTenant.id}`;
   const [hiddenPresets, setHiddenPresets] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(hiddenPresetsKey) || '[]'); } catch { return []; }
@@ -361,6 +378,7 @@ export default function ClientAdminPanel({
   const [profNewHourInput, setProfNewHourInput] = useState('');
   const [profPickerOpen,   setProfPickerOpen]   = useState(false);
   const [editingProf,      setEditingProf]      = useState<Professional | null>(null);
+  const [showNewProfModal, setShowNewProfModal] = useState(false);
 
   const startEditProf = (p: Professional) => {
     setEditingProf(p);
@@ -375,6 +393,7 @@ export default function ClientAdminPanel({
         : Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d => [d, []]))
     );
     setProfSelectedDay('seg');
+    setShowNewProfModal(true);
   };
   const cancelEditProf = () => {
     setEditingProf(null);
@@ -383,6 +402,21 @@ export default function ClientAdminPanel({
     setProfDays(['seg','ter','qua','qui','sex','sab']);
     setProfHoursByDay(Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d => [d, []])));
     setProfSelectedDay('seg');
+    setShowNewProfModal(false);
+  };
+
+  const handleSaveProf = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profName.trim()) return;
+    if (!editingProf && myProfessionals.length >= 6) { toast.error('Limite de 6 colaboradores atingido.'); return; }
+    if (editingProf) {
+      await onUpdateProfessional(editingProf.id, { name: profName, role: profRole, avatar: profAvatar || editingProf.avatar, commissionPercentage: profCommission, businessDays: profDays, businessHoursByDay: profHoursByDay });
+      toast.success(`${profName} atualizado!`);
+    } else {
+      onAddProfessional({ tenantId: activeTenant.id, name: profName, role: profRole, avatar: profAvatar || 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80', rating: 5, services: myServices.map(s => s.id), commissionPercentage: profCommission, businessDays: profDays, businessHoursByDay: profHoursByDay });
+      toast.success(`${profName} adicionado!`);
+    }
+    cancelEditProf();
   };
 
   const logoInputRef    = useRef<HTMLInputElement>(null);
@@ -422,7 +456,7 @@ export default function ClientAdminPanel({
 
   useEffect(() => { if (cmdOpen) setTimeout(() => cmdRef.current?.focus(), 50); }, [cmdOpen]);
 
-  const NEGOCIO_TABS: CfgTab[] = ['identidade', 'equipe', 'catalogo'];
+  const NEGOCIO_TABS: CfgTab[] = ['identidade', 'equipe', 'catalogo', 'pagina-cliente'];
   const CONFIG_TABS:  CfgTab[] = ['assinatura', 'conta', 'notificacoes'];
   useEffect(() => {
     if (activeTab === 'negocio'       && !NEGOCIO_TABS.includes(cfgTab)) setCfgTab('identidade');
@@ -445,6 +479,107 @@ export default function ClientAdminPanel({
     onAddPayment({ tenantId: activeTenant.id, appointmentId: appt.id, amount: appt.price, method: 'pix', status: 'paid', date: new Date().toISOString().replace('T', ' ').substring(0, 19), description: `Atendimento: ${appt.customerName}` });
     toast.success(`${appt.customerName} concluído — R$ ${appt.price.toFixed(2)} registrado.`);
   };
+
+  const handleCancelAndNotifyWaitlist = useCallback(async (id: string, status: Appointment['status']) => {
+    onUpdateAppointmentStatus(id, status);
+    if (status !== 'cancelled') return;
+    const cancelled = myAppointments.find(a => a.id === id);
+    if (!cancelled) return;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? '';
+      const LINK  = `https://workagenda.org/${activeTenant.slug}/agendamento`;
+      const LS_KEY = `barber_wpp_tpl_${activeTenant.id}`;
+      let savedTpls: Record<string, string> = {};
+      try { const s = localStorage.getItem(LS_KEY); if (s) savedTpls = JSON.parse(s); } catch {}
+
+      // ── 1. Mensagem de cancelamento para o cliente ──────────────────────────
+      if (cancelled.customerPhone) {
+        const srv  = myServices.find(s => s.id === cancelled.serviceId);
+        const prof = myProfessionals.find(p => p.id === cancelled.professionalId);
+        const cancelTpl = savedTpls.cancel || '{cliente}, seu agendamento de {servico} em {data} às {hora} foi cancelado. Para reagendar acesse: {link_agendamento} — {salao}';
+        const cancelMsg = cancelTpl
+          .replace(/\{cliente\}/g,          cancelled.customerName)
+          .replace(/\{nome\}/g,             cancelled.customerName)
+          .replace(/\{servico\}/g,          srv?.name ?? 'Serviço')
+          .replace(/\{profissional\}/g,     prof?.name ?? '')
+          .replace(/\{data\}/g,             cancelled.date)
+          .replace(/\{hora\}/g,             cancelled.time)
+          .replace(/\{salao\}/g,            activeTenant.name)
+          .replace(/\{link_agendamento\}/g, LINK)
+          .replace(/\{link_cancelamento\}/g, LINK)
+          .replace(/\{link\}/g,             LINK);
+        sendWhatsAppServer(activeTenant.id, token, cancelled.customerPhone, cancelMsg).catch(() => {});
+      }
+
+      // ── 2. Lista de espera ─────────────────────────────────────────────────
+      const allEntries = await getWaitlistEntries(activeTenant.id);
+      const pendentes  = allEntries.filter(e => !e.notified);
+
+      console.log('[Waitlist] cancelado:', { date: cancelled.date, time: cancelled.time, profId: cancelled.professionalId });
+      console.log('[Waitlist] entradas pendentes:', pendentes.map(e => ({ nome: e.customerName, date: e.date, time: e.timePreference, profId: e.professionalId })));
+
+      if (pendentes.length === 0) {
+        toast.success('Nenhum cliente na lista de espera para este dia.');
+        return;
+      }
+
+      // Contagem de disparos anteriores por telefone (limite: 5)
+      const notifCount = new Map<string, number>();
+      for (const e of allEntries) {
+        if (e.notified) notifCount.set(e.customerPhone, (notifCount.get(e.customerPhone) ?? 0) + 1);
+      }
+
+      const waitlistTpl = savedTpls.waitlist || '';
+
+      const compatible = pendentes
+        .filter(e =>
+          e.date === cancelled.date &&
+          (e.professionalId === null || e.professionalId === cancelled.professionalId) &&
+          (e.timePreference === 'qualquer' || e.timePreference === cancelled.time) &&
+          (notifCount.get(e.customerPhone) ?? 0) < 5
+        )
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      console.log('[Waitlist] compatíveis para notificar:', compatible.length, compatible.map(e => e.customerName));
+
+      if (compatible.length === 0) {
+        const sameDateCount = pendentes.filter(e => e.date === cancelled.date).length;
+        toast.success(sameDateCount > 0
+          ? `${sameDateCount} cliente(s) aguardam neste dia mas sem horário/profissional compatível.`
+          : `Nenhum cliente na lista de espera para ${cancelled.date}.`);
+        return;
+      }
+
+      toast.success(`⏳ Avisando ${compatible.length} cliente(s) da lista de espera…`);
+
+      compatible.forEach((entry, idx) => {
+        setTimeout(async () => {
+          const msg = waitlistTpl
+            ? waitlistTpl
+                .replace(/\{cliente\}/g,          entry.customerName)
+                .replace(/\{nome\}/g,             entry.customerName)
+                .replace(/\{salao\}/g,            activeTenant.name)
+                .replace(/\{data\}/g,             entry.date)
+                .replace(/\{link_agendamento\}/g, LINK)
+                .replace(/\{link\}/g,             LINK)
+            : buildWaitlistMsg({ customerName: entry.customerName, tenantName: activeTenant.name, tenantSlug: activeTenant.slug, date: entry.date, timePreference: entry.timePreference });
+
+          const result = await sendWhatsAppServer(activeTenant.id, token, entry.customerPhone, msg);
+          if (result === 'sent') {
+            await markWaitlistNotified(entry.id).catch(() => {});
+            toast.success(`✅ ${entry.customerName} notificado via WhatsApp`);
+          } else {
+            toast.error(`WhatsApp não conectado — ${entry.customerName} não foi avisado`);
+          }
+        }, idx * 3000); // 0s, 3s, 6s, 9s...
+      });
+    } catch (err) {
+      console.error('[Waitlist] erro ao notificar:', err);
+      toast.error('Erro ao processar lista de espera');
+    }
+  }, [myAppointments, myServices, myProfessionals, activeTenant, onUpdateAppointmentStatus]);
 
   const handleManualAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -479,8 +614,29 @@ export default function ClientAdminPanel({
     } else {
       await onAddCustomer({ tenantId: activeTenant.id, name: custName, email: custEmail || `${custName.replace(/\s/g, '')}@barber.com`, phone: custPhone });
       setCustName(''); setCustPhone(''); setCustEmail('');
+      setShowNewClientModal(false);
       toast.success('Cliente cadastrado!');
     }
+  };
+
+  const handleQuickAppt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickApptCust || !quickApptSrvId || !quickApptDate || !quickApptTime) return;
+    const srv = myServices.find(s => s.id === quickApptSrvId);
+    if (!srv) return;
+    setQuickApptSaving(true);
+    try {
+      await onAddAppointment({
+        tenantId: activeTenant.id, serviceId: quickApptSrvId, professionalId: quickApptProfId,
+        customerId: quickApptCust.id, customerName: quickApptCust.name, customerPhone: quickApptCust.phone,
+        date: quickApptDate, time: quickApptTime, durationMinutes: srv.durationMinutes,
+        price: srv.price, status: 'confirmed', notes: '',
+      });
+      toast.success('Agendamento criado!');
+      setQuickApptCust(null);
+      setQuickApptSrvId(''); setQuickApptProfId(''); setQuickApptDate(''); setQuickApptTime('');
+    } catch { toast.error('Erro ao agendar.'); }
+    finally { setQuickApptSaving(false); }
   };
 
   const handleCropConfirm = async (blob: Blob) => {
@@ -499,7 +655,7 @@ export default function ClientAdminPanel({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ backgroundColor: '#0F172A', flex: 1, minHeight: 0, overflow: 'hidden', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ backgroundColor: '#F8FAFC', flex: 1, minHeight: 0, overflow: 'hidden', fontFamily: 'Outfit, sans-serif', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Crop modal ── */}
       {cropSrc && <LogoCropModal imageSrc={cropSrc} onConfirm={handleCropConfirm} onCancel={() => setCropSrc(null)} />}
@@ -513,38 +669,38 @@ export default function ClientAdminPanel({
             <motion.div initial={{ opacity: 0, y: -16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -12, scale: 0.97 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
               onClick={e => e.stopPropagation()}
-              style={{ width: '100%', maxWidth: 520, background: '#1E293B', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', gap: 10 }}>
-                <Search size={16} style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
+              style={{ width: '100%', maxWidth: 520, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid #F1F5F9', gap: 10 }}>
+                <Search size={16} style={{ color: '#9CA3AF', flexShrink: 0 }} />
                 <input ref={cmdRef} value={cmdQuery} onChange={e => setCmdQuery(e.target.value)}
                   placeholder="Buscar cliente…"
-                  style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'rgba(255,255,255,0.88)', fontSize: 15, fontFamily: 'Outfit, sans-serif' }} />
-                <kbd style={{ fontSize: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: '2px 6px', color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>ESC</kbd>
+                  style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#111827', fontSize: 15, fontFamily: 'Outfit, sans-serif' }} />
+                <kbd style={{ fontSize: 10, background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 4, padding: '2px 6px', color: '#9CA3AF', fontFamily: 'monospace' }}>ESC</kbd>
               </div>
               {cmdResults.length > 0 && (
                 <div style={{ maxHeight: 320, overflowY: 'auto' }} className="no-scrollbar">
                   {cmdResults.map(c => (
                     <div key={c.id} onClick={() => { setActiveTab('clientes'); setCmdOpen(false); setCmdQuery(''); }}
-                      style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)', transition: 'background 120ms' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                      style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderBottom: '1px solid #F9FAFB', transition: 'background 120ms' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#F8FAFC')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                      <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'rgba(255,255,255,0.65)', fontSize: 14 }}>{c.name[0]}</div>
+                      <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#374151', fontSize: 14 }}>{c.name[0]}</div>
                       <div>
-                        <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 14 }}>{c.name}</div>
-                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{c.phone}</div>
+                        <div style={{ fontWeight: 700, color: '#111827', fontSize: 14 }}>{c.name}</div>
+                        <div style={{ fontSize: 11, color: '#6B7280' }}>{c.phone}</div>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
               {cmdQuery && cmdResults.length === 0 && (
-                <div style={{ padding: '24px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>Nenhum cliente encontrado</div>
+                <div style={{ padding: '24px 16px', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Nenhum cliente encontrado</div>
               )}
               {!cmdQuery && (
                 <div style={{ padding: '12px 16px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {[['📅 Agenda', 'agenda'], ['📋 Agendamentos', 'agendamentos'], ['👥 Clientes', 'clientes']].map(([label, tab]) => (
                     <button key={tab} onClick={() => { setActiveTab(tab as Tab); setCmdOpen(false); }}
-                      style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.65)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                      style={{ padding: '6px 12px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                       {label}
                     </button>
                   ))}
@@ -555,47 +711,45 @@ export default function ClientAdminPanel({
         )}
       </AnimatePresence>
 
-      {/* ── Topbar ── */}
-      <header style={{ height: 40, background: '#1E293B', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 8, flexShrink: 0 }}>
-        <button onClick={() => setCollapsed(c => !c)}
-          style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Menu size={13} />
-        </button>
-        <div style={{ flex: 1 }} />
-        {pendingCount > 0 && (
-          <button onClick={() => setActiveTab('agendamentos')}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 20, color: '#fcd34d', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b' }} />
-            {pendingCount} pendente{pendingCount > 1 ? 's' : ''}
-          </button>
-        )}
-        <button onClick={() => onSwitchToBookingFlow(activeTenant.slug)}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 7, color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-          Link público <ExternalLink size={10} />
-        </button>
-        <button onClick={handleCopyLink} title="Copiar link de agendamento"
-          style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: linkCopied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${linkCopied ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 7, color: linkCopied ? '#4ade80' : 'rgba(255,255,255,0.5)', cursor: 'pointer', transition: 'all 200ms' }}>
-          {linkCopied ? <CheckCheck size={12} /> : <Copy size={12} />}
-        </button>
-      </header>
-
-      {/* ── Body ── */}
+      {/* ── Body (sem topbar) ── */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
 
         {/* ── Sidebar ── */}
         <motion.aside
           animate={{ width: collapsed ? SIDEBAR_W.closed : SIDEBAR_W.open }}
           transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-          style={{ background: '#1E293B', borderRight: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, alignSelf: 'stretch' }}
+          style={{ background: '#F8FAFC', borderRight: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, alignSelf: 'stretch' }}
         >
-          <nav style={{ flex: 1, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* ── Estabelecimento (topo) ── */}
+          <div style={{ padding: collapsed ? '20px 0' : '20px 16px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, justifyContent: collapsed ? 'center' : 'flex-start' }}>
+            {(activeTenant.logo?.startsWith('http') || activeTenant.logo?.startsWith('data:')) ? (
+              <div style={{ width: 44, height: 44, borderRadius: 12, overflow: 'hidden', flexShrink: 0, cursor: 'pointer' }} onClick={() => setCollapsed(c => !c)}>
+                <img src={activeTenant.logo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              </div>
+            ) : (
+              <div onClick={() => setCollapsed(c => !c)} style={{ width: 44, height: 44, borderRadius: 12, background: '#E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}>
+                <Scissors size={18} style={{ color: '#64748B' }} />
+              </div>
+            )}
+            <AnimatePresence>
+              {!collapsed && (
+                <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.18 }}
+                  style={{ overflow: 'hidden', whiteSpace: 'nowrap', fontSize: 14, fontWeight: 700, color: '#111827', fontFamily: 'Outfit, sans-serif' }}>
+                  {activeTenant.name}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── Nav ── */}
+          <nav style={{ flex: 1, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
             {NAV.map(({ id, label, Icon }) => {
               const active = activeTab === id;
               const badge = id === 'agendamentos' ? pendingCount : id === 'agenda' ? todayAppts.length : 0;
               return (
                 <motion.button key={id} id={`tour-nav-${id}`} onClick={() => setActiveTab(id)}
                   whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '10px 0' : '10px 12px', justifyContent: collapsed ? 'center' : 'flex-start', borderRadius: 10, cursor: 'pointer', border: active ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent', background: active ? 'rgba(255,255,255,0.08)' : 'transparent', color: active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.42)', fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: active ? 700 : 500, width: '100%', position: 'relative', transition: 'background 150ms, color 150ms' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '10px 0' : '10px 12px', justifyContent: collapsed ? 'center' : 'flex-start', borderRadius: 10, cursor: 'pointer', border: active ? '1px solid #BFDBFE' : '1px solid transparent', background: active ? '#EFF6FF' : 'transparent', color: active ? '#1D4ED8' : '#6B7280', fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: active ? 700 : 500, width: '100%', position: 'relative', transition: 'background 150ms, color 150ms' }}>
                   <Icon size={16} strokeWidth={active ? 2.5 : 2} style={{ flexShrink: 0 }} />
                   <AnimatePresence>
                     {!collapsed && (
@@ -605,7 +759,7 @@ export default function ClientAdminPanel({
                     )}
                   </AnimatePresence>
                   {badge > 0 && !collapsed && (
-                    <span style={{ fontSize: 10, fontWeight: 700, background: active ? 'rgba(255,255,255,0.15)' : 'rgba(245,158,11,0.2)', color: active ? 'rgba(255,255,255,0.9)' : '#fcd34d', padding: '1px 7px', borderRadius: 20, fontFamily: 'monospace' }}>{badge}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, background: active ? '#BFDBFE' : '#FEF3C7', color: active ? '#1D4ED8' : '#D97706', padding: '1px 7px', borderRadius: 20, fontFamily: 'monospace' }}>{badge}</span>
                   )}
                   {badge > 0 && collapsed && (
                     <span style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: '50%', background: '#f59e0b' }} />
@@ -615,46 +769,81 @@ export default function ClientAdminPanel({
             })}
           </nav>
 
-          {/* Sidebar footer */}
-          {!collapsed && (
-            <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
-              <button onClick={() => { setSupportSent(false); setSupportTitle(''); setSupportMsg(''); setSupportModal(true); }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'Outfit, sans-serif', padding: '2px 0', transition: 'color 150ms' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}>
-                Suporte
+          {/* ── Sidebar footer ── */}
+          <div style={{ borderTop: '1px solid #E2E8F0', padding: '8px 8px', display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+            {/* Link público */}
+            <button onClick={() => onSwitchToBookingFlow(activeTenant.slug)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '9px 0' : '9px 12px', justifyContent: collapsed ? 'center' : 'flex-start', borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontFamily: 'Outfit, sans-serif', fontSize: 12, fontWeight: 500, width: '100%', transition: 'color 150ms' }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#374151')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#9CA3AF')}>
+              <ExternalLink size={14} style={{ flexShrink: 0 }} />
+              <AnimatePresence>
+                {!collapsed && (
+                  <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    Link público
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+
+            {/* Sair */}
+            {onSignOut && (
+              <button onClick={onSignOut}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '9px 0' : '9px 12px', justifyContent: collapsed ? 'center' : 'flex-start', borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontFamily: 'Outfit, sans-serif', fontSize: 12, fontWeight: 500, width: '100%', transition: 'color 150ms' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#EF4444')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#9CA3AF')}>
+                <LogOut size={14} style={{ flexShrink: 0 }} />
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      Sair
+                    </motion.span>
+                  )}
+                </AnimatePresence>
               </button>
-              <button onClick={() => setPrivacyModal(true)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'Outfit, sans-serif', padding: '2px 0', transition: 'color 150ms' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}>
-                Política de Privacidade
-              </button>
-              <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.18)', fontFamily: 'Outfit, sans-serif', letterSpacing: '0.5px' }}>
-                © WorkAgenda {new Date().getFullYear()}
-              </p>
-            </div>
-          )}
+            )}
+
+            {/* Suporte + privacidade + copyright */}
+            {!collapsed && (
+              <div style={{ paddingTop: 6, borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <button onClick={() => { setSupportSent(false); setSupportTitle(''); setSupportMsg(''); setSupportModal(true); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: '#9CA3AF', fontFamily: 'Outfit, sans-serif', padding: '2px 12px', textAlign: 'left', transition: 'color 150ms' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#374151')}
+                  onMouseLeave={e => (e.currentTarget.style.color = '#9CA3AF')}>
+                  Suporte
+                </button>
+                <button onClick={() => setPrivacyModal(true)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: '#9CA3AF', fontFamily: 'Outfit, sans-serif', padding: '2px 12px', textAlign: 'left', transition: 'color 150ms' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#374151')}
+                  onMouseLeave={e => (e.currentTarget.style.color = '#9CA3AF')}>
+                  Política de Privacidade
+                </button>
+                <p style={{ margin: 0, fontSize: 10, color: '#D1D5DB', fontFamily: 'Outfit, sans-serif', letterSpacing: '0.5px', padding: '0 12px' }}>
+                  © WorkAgenda {new Date().getFullYear()}
+                </p>
+              </div>
+            )}
+          </div>
         </motion.aside>
 
         {/* ── Main content ── */}
         <main style={{ flex: 1, padding: activeTab === 'agenda' ? '0' : '24px', overflow: 'hidden', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
           <AnimatePresence mode="wait">
-            <motion.div key={activeTab} {...PAGE_TRANSITION} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: activeTab === 'agenda' ? 'hidden' : 'auto', overscrollBehavior: 'contain' }}>
+            <motion.div key={activeTab} {...PAGE_TRANSITION} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: (activeTab === 'agenda' || activeTab === 'agendamentos') ? 'hidden' : 'auto', overscrollBehavior: 'contain' }}>
 
               {/* Page header */}
-              {activeTab !== 'agenda' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0 }}>
+              {activeTab !== 'agenda' && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0, paddingBottom: 16, borderBottom: '1px solid #E2E8F0' }}>
                 <div>
-                  <h2 style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0, letterSpacing: '-0.3px' }}>{PAGE_TITLES[activeTab]}</h2>
-                  {activeTab === 'agenda' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{todayAppts.length} atendimentos hoje</p>}
-                  {activeTab === 'agendamentos' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{myAppointments.filter(a => a.status !== 'cancelled').length} no total · {pendingCount} pendentes</p>}
-                  {activeTab === 'clientes' && <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', marginTop: 3 }}>{myCustomers.length} clientes cadastrados</p>}
+                  <h2 style={{ fontSize: 20, fontWeight: 800, color: '#111827', margin: 0, letterSpacing: '-0.3px' }}>{PAGE_TITLES[activeTab]}</h2>
+                  {activeTab === 'agenda' && <p style={{ fontSize: 13, color: '#6B7280', marginTop: 3 }}>{todayAppts.length} atendimentos hoje</p>}
+                  {activeTab === 'agendamentos' && <p style={{ fontSize: 13, color: '#6B7280', marginTop: 3 }}>{myAppointments.filter(a => a.status !== 'cancelled').length} no total · {pendingCount} pendentes</p>}
+                  {activeTab === 'clientes' && <p style={{ fontSize: 13, color: '#6B7280', marginTop: 3 }}>{myCustomers.length} clientes cadastrados</p>}
                   {activeTab === 'automacoes' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: wppConnState === 'open' ? '#4ade80' : wppConnState === 'connecting' ? '#fbbf24' : '#ef4444', flexShrink: 0, ...(wppConnState === 'open' ? { animation: 'pulse 2s infinite' } : {}) }} />
-                      <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: wppConnState === 'open' ? '#22C55E' : wppConnState === 'connecting' ? '#F59E0B' : '#EF4444', flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, color: '#6B7280' }}>
                         {wppConnState === 'open'
-                          ? <>WhatsApp conectado{wppConnName ? <> · <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>{wppConnName}</span></> : null}</>
+                          ? <>WhatsApp conectado{wppConnName ? <> · <span style={{ color: '#374151', fontWeight: 600 }}>{wppConnName}</span></> : null}</>
                           : wppConnState === 'connecting' ? 'Aguardando conexão…'
                           : wppConnState === 'checking'   ? 'Verificando…'
                           : 'WhatsApp desconectado'}
@@ -663,16 +852,24 @@ export default function ClientAdminPanel({
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button onClick={() => setCmdOpen(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9, color: 'rgba(255,255,255,0.38)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                    <Search size={13} />
-                    <span>Buscar</span>
-                    <kbd style={{ fontSize: 10, background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '1px 5px', color: 'rgba(255,255,255,0.22)', fontFamily: 'monospace' }}>⌘K</kbd>
-                  </button>
+                  {activeTab === 'agendamentos' && (
+                    <>
+                      <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                        onClick={() => setShowWaitlistModal(true)}
+                        style={{ padding: '9px 14px', background: '#FFFFFF', color: '#374151', fontWeight: 700, fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                        <Clock size={13} /> Lista de Espera
+                      </motion.button>
+                      <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                        onClick={() => { setApptCustId(''); setApptSrvId(''); setApptProfId(''); setApptDate(new Date().toISOString().split('T')[0]); setApptTime(''); setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setShowNewApptModal(true); }}
+                        style={{ padding: '9px 18px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
+                        <Plus size={13} /> Novo Agendamento
+                      </motion.button>
+                    </>
+                  )}
                   {activeTab === 'agenda' && (
                     <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                       onClick={() => setShowApptForm(o => !o)}
-                      style={{ padding: '9px 18px', background: showApptForm ? '#ffffff' : 'rgba(255,255,255,0.07)', color: showApptForm ? '#0F172A' : 'rgba(255,255,255,0.75)', fontWeight: 700, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
+                      style={{ padding: '9px 18px', background: showApptForm ? '#1D4ED8' : '#FFFFFF', color: showApptForm ? '#FFFFFF' : '#374151', fontWeight: 700, fontSize: 12, border: `1px solid ${showApptForm ? '#1D4ED8' : '#E2E8F0'}`, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
                       <Plus size={13} /> {showApptForm ? 'Fechar' : 'Agendar'}
                     </motion.button>
                   )}
@@ -686,15 +883,15 @@ export default function ClientAdminPanel({
                   <AnimatePresence>
                     {showApptForm && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22 }}
-                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 0, padding: '16px 20px', overflow: 'hidden', flexShrink: 0 }}>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 14px' }}>Novo Agendamento</p>
+                        style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 0, padding: '16px 20px', overflow: 'hidden', flexShrink: 0 }}>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 14px' }}>Novo Agendamento</p>
                         <form onSubmit={handleManualAppointment}>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '1.5px' }}>Cliente</span>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1.5px' }}>Cliente</span>
                                 <button type="button" onClick={() => { setApptNewClient(v => !v); setApptCustId(''); setApptNewClientName(''); setApptNewClientPhone(''); }}
-                                  style={{ fontSize: 10, fontWeight: 700, color: apptNewClient ? '#fcd34d' : 'rgba(255,255,255,0.45)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                                  style={{ fontSize: 10, fontWeight: 700, color: apptNewClient ? '#2563EB' : '#6B7280', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0 }}>
                                   {apptNewClient ? '← Existente' : '+ Novo'}
                                 </button>
                               </div>
@@ -704,7 +901,7 @@ export default function ClientAdminPanel({
                                     <input placeholder="Nome *" value={apptNewClientName} onChange={e => setApptNewClientName(e.target.value)} className="navy-input" style={{ fontSize: 12 }} />
                                     <div style={{ position: 'relative' }}>
                                       <input placeholder="Telefone (opcional)" value={apptNewClientPhone} onChange={e => setApptNewClientPhone(e.target.value)} className="navy-input" style={{ fontSize: 12, width: '100%', boxSizing: 'border-box' as const }} />
-                                      {!apptNewClientPhone && <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: 'rgba(255,255,255,0.3)', pointerEvents: 'none' as const, whiteSpace: 'nowrap' }}>sem tel = sem msg</span>}
+                                      {!apptNewClientPhone && <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#9CA3AF', pointerEvents: 'none' as const, whiteSpace: 'nowrap' }}>sem tel = sem msg</span>}
                                     </div>
                                   </div>
                               }
@@ -716,7 +913,7 @@ export default function ClientAdminPanel({
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <textarea placeholder="Notas (opcional)" value={apptNotes} onChange={e => setApptNotes(e.target.value)} className="navy-input" style={{ flex: 1, height: 52, resize: 'none' }} />
-                            <button type="submit" style={{ padding: '0 24px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Gravar</button>
+                            <button type="submit" style={{ padding: '0 24px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Gravar</button>
                           </div>
                         </form>
                       </motion.div>
@@ -730,7 +927,7 @@ export default function ClientAdminPanel({
                       myServices={myServices}
                       myProfessionals={myProfessionals}
                       myCustomers={myCustomers}
-                      onUpdateAppointmentStatus={onUpdateAppointmentStatus}
+                      onUpdateAppointmentStatus={handleCancelAndNotifyWaitlist}
                       onAddAppointment={onAddAppointment}
                       onAddCustomer={onAddCustomer}
                       onCompleteAppointment={handleCompleteAppointment}
@@ -744,14 +941,16 @@ export default function ClientAdminPanel({
 
               {/* ─────────── AGENDAMENTOS ─────────── */}
               {activeTab === 'agendamentos' && (
-                <AgendamentosTab
-                  activeTenant={activeTenant}
-                  myAppointments={myAppointments}
-                  myServices={myServices}
-                  myProfessionals={myProfessionals}
-                  onUpdateAppointmentStatus={onUpdateAppointmentStatus}
-                  onCompleteAppointment={handleCompleteAppointment}
-                />
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <AgendamentosTab
+                    activeTenant={activeTenant}
+                    myAppointments={myAppointments}
+                    myServices={myServices}
+                    myProfessionals={myProfessionals}
+                    onUpdateAppointmentStatus={handleCancelAndNotifyWaitlist}
+                    onCompleteAppointment={handleCompleteAppointment}
+                  />
+                </div>
               )}
 
               {/* ─────────── FINANCEIRO ─────────── */}
@@ -768,108 +967,122 @@ export default function ClientAdminPanel({
 
               {/* ─────────── CLIENTES ─────────── */}
               {activeTab === 'clientes' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 20 }}>
-
-                  {/* Formulário: adicionar ou editar */}
-                  <div style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${editingCust ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 16, padding: 20 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: editingCust ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
-                        {editingCust ? `Editando: ${editingCust.name.split(' ')[0]}` : 'Novo Cliente'}
-                      </p>
-                      {editingCust && (
-                        <button onClick={cancelEditCust} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
-                          Cancelar
-                        </button>
-                      )}
-                    </div>
-                    <form onSubmit={handleAddCustomer} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <input placeholder="Nome completo" value={custName} onChange={e => setCustName(e.target.value)} required className="navy-input" />
-                      <input placeholder="(DDD) Telefone" value={custPhone} onChange={e => setCustPhone(e.target.value)} required className="navy-input" />
-                      <input placeholder="Email (opcional)" value={custEmail} onChange={e => setCustEmail(e.target.value)} className="navy-input" />
-                      <button type="submit" style={{ padding: 12, background: editingCust ? '#3b82f6' : '#ffffff', color: editingCust ? '#fff' : '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                        {editingCust ? 'Salvar alterações' : 'Adicionar'}
-                      </button>
-                    </form>
-                  </div>
-
-                  {/* Lista de clientes */}
-                  <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20 }}>
-                    <div style={{ position: 'relative', marginBottom: 14 }}>
-                      <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                  {/* Header: busca + botão novo */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }} />
                       <input placeholder="Buscar cliente…" value={custSearch} onChange={e => setCustSearch(e.target.value)} className="navy-input" style={{ paddingLeft: 34 }} />
                     </div>
-                    <div className="no-scrollbar" style={{ maxHeight: 480, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {myCustomers.filter(c => !custSearch || c.name.toLowerCase().includes(custSearch.toLowerCase()) || c.phone.includes(custSearch)).map(c => {
-                        const totalSpent = myPayments.filter(p => myAppointments.find(a => a.id === p.appointmentId && a.customerId === c.id)).reduce((s, p) => s + p.amount, 0);
-                        const visits = myAppointments.filter(a => a.customerId === c.id && a.status === 'attended').length;
-                        const isEditing = editingCust?.id === c.id;
-                        return (
-                          <motion.div key={c.id} whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
-                            style={{ padding: '12px 14px', background: isEditing ? 'rgba(59,130,246,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.35)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, transition: 'all 150ms' }}>
-                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: isEditing ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: isEditing ? '#60a5fa' : 'rgba(255,255,255,0.65)', fontSize: 14, flexShrink: 0 }}>
-                              {c.name[0]}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
-                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{c.phone} · {visits} visita{visits !== 1 ? 's' : ''}</div>
-                            </div>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#4ade80', fontSize: 13, flexShrink: 0 }}>R$ {totalSpent.toFixed(2)}</span>
-                            <button
-                              onClick={() => isEditing ? cancelEditCust() : startEditCust(c)}
-                              title={isEditing ? 'Cancelar edição' : 'Editar cliente'}
-                              style={{ width: 28, height: 28, borderRadius: 7, background: isEditing ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.05)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: isEditing ? '#60a5fa' : 'rgba(255,255,255,0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                              {isEditing ? <X size={12} /> : <Pencil size={12} />}
-                            </button>
-                            <button
-                              onClick={() => { if (isEditing) cancelEditCust(); setDeleteCustomerPending({ id: c.id, name: c.name }); }}
-                              title="Apagar cliente"
-                              style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                              <X size={12} />
-                            </button>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
+                    <button
+                      onClick={() => { setCustName(''); setCustPhone(''); setCustEmail(''); setEditingCust(null); setShowNewClientModal(true); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 9, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', flexShrink: 0 }}>
+                      <Plus size={13} /> Novo
+                    </button>
+                  </div>
+
+                  {/* Lista */}
+                  <div className="no-scrollbar" style={{ maxHeight: 560, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {myCustomers.filter(c => !custSearch || c.name.toLowerCase().includes(custSearch.toLowerCase()) || c.phone.includes(custSearch)).map(c => {
+                      const totalSpent = myPayments.filter(p => myAppointments.find(a => a.id === p.appointmentId && a.customerId === c.id)).reduce((s, p) => s + p.amount, 0);
+                      const visits = myAppointments.filter(a => a.customerId === c.id && a.status === 'attended').length;
+                      return (
+                        <motion.div key={c.id} whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
+                          style={{ padding: '10px 14px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, transition: 'all 150ms' }}>
+                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#374151', fontSize: 14, flexShrink: 0 }}>
+                            {c.name[0]}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, color: '#111827', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                            <div style={{ fontSize: 11, color: '#6B7280' }}>{c.phone} · {visits} visita{visits !== 1 ? 's' : ''}</div>
+                          </div>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#059669', fontSize: 13, flexShrink: 0 }}>R$ {totalSpent.toFixed(2)}</span>
+                          <button
+                            onClick={() => { setQuickApptCust(c); setQuickApptSrvId(''); setQuickApptProfId(''); setQuickApptDate(new Date().toISOString().slice(0,10)); setQuickApptTime(''); }}
+                            title="Novo agendamento"
+                            style={{ width: 28, height: 28, borderRadius: 7, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Calendar size={12} />
+                          </button>
+                          <button
+                            onClick={() => startEditCust(c)}
+                            title="Editar cliente"
+                            style={{ width: 28, height: 28, borderRadius: 7, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            onClick={() => setDeleteCustomerPending({ id: c.id, name: c.name })}
+                            title="Apagar cliente"
+                            style={{ width: 28, height: 28, borderRadius: 7, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Trash2 size={12} />
+                          </button>
+                        </motion.div>
+                      );
+                    })}
+                    {myCustomers.filter(c => !custSearch || c.name.toLowerCase().includes(custSearch.toLowerCase()) || c.phone.includes(custSearch)).length === 0 && (
+                      <p style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 13, padding: '32px 0', margin: 0 }}>Nenhum cliente encontrado.</p>
+                    )}
                   </div>
                 </div>
               )}
 
               {/* ─────────── AUTOMAÇÕES ─────────── */}
               {activeTab === 'automacoes' && (
-                <WhatsAppTab activeTenant={activeTenant}
-                  onStatusChange={(state, name) => { setWppConnState(state); setWppConnName(name); }} />
-              )}
-
-              {/* ─────────── MEU NEGÓCIO + CONFIGURAÇÕES (sub-nav compartilhado) ─────────── */}
-              {(activeTab === 'negocio' || activeTab === 'configuracoes') && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  {/* Sub-nav — tabs dinâmicos conforme o menu ativo */}
-                  <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: 0, overflowX: 'auto' }} className="no-scrollbar">
-                    {(activeTab === 'negocio'
-                      ? [['identidade','Identidade'], ['equipe','Equipe & Horários'], ['catalogo','Catálogo'], ['pagina-cliente','Página do Cliente']] as [CfgTab, string][]
-                      : [['assinatura','Assinatura'], ['conta','Conta'], ['notificacoes','Notificações']] as [CfgTab, string][]
-                    ).map(([id, label]) => (
-                      <button key={id} id={`tour-cfgtab-${id}`} onClick={() => setCfgTab(id)}
-                        style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: cfgTab === id ? '2px solid #ffffff' : '2px solid transparent', color: cfgTab === id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', marginBottom: -1, whiteSpace: 'nowrap', transition: 'color 150ms' }}>
+                <div style={{ display: 'flex', flexDirection: 'row', flex: 1, minHeight: 0, overflow: 'hidden', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                  {/* Sidebar vertical */}
+                  <nav style={{ width: 210, borderRight: '1px solid #E2E8F0', padding: '16px 10px', display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
+                    {([
+                      ['whatsapp', 'WhatsApp'],
+                      ['email',    'E-mail'],
+                    ] as ['whatsapp' | 'email', string][]).map(([id, label]) => (
+                      <button key={id} onClick={() => setAutoTab(id)}
+                        style={{ padding: '9px 14px', fontSize: 13, fontWeight: autoTab === id ? 700 : 500, background: autoTab === id ? '#EFF6FF' : 'transparent', border: `1px solid ${autoTab === id ? '#BFDBFE' : 'transparent'}`, borderRadius: 9, color: autoTab === id ? '#1D4ED8' : '#6B7280', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', textAlign: 'left' as const, transition: 'all 150ms', whiteSpace: 'nowrap' as const }}>
                         {label}
                       </button>
                     ))}
+                  </nav>
+                  {/* Conteúdo */}
+                  <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: 24 }} className="no-scrollbar">
+                    <WhatsAppTab
+                      activeTenant={activeTenant}
+                      section={autoTab}
+                      onStatusChange={(state, name) => { setWppConnState(state); setWppConnName(name); }} />
                   </div>
+                </div>
+              )}
+
+              {/* ─────────── MEU NEGÓCIO + CONFIGURAÇÕES ─────────── */}
+              {(activeTab === 'negocio' || activeTab === 'configuracoes') && (
+                <div style={{ display: 'flex', flexDirection: 'row', flex: 1, minHeight: 0, overflow: 'hidden', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+
+                  {/* Sub-nav — sidebar vertical */}
+                  <nav style={{ width: 210, borderRight: '1px solid #E2E8F0', padding: '16px 10px', display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
+                    {((activeTab === 'negocio'
+                      ? [['identidade','Identidade'], ['equipe','Equipe & Horários'], ['catalogo','Catálogo'], ['pagina-cliente','Página do Cliente']]
+                      : [['assinatura','Assinatura'], ['notificacoes','Notificações'], ['conta','Conta']]
+                    ) as [CfgTab, string][]).map(([id, label]) => (
+                      <button key={id} id={`tour-cfgtab-${id}`} onClick={() => setCfgTab(id as CfgTab)}
+                        style={{ padding: '9px 14px', fontSize: 13, fontWeight: cfgTab === id ? 700 : 500, background: cfgTab === id ? '#EFF6FF' : 'transparent', border: `1px solid ${cfgTab === id ? '#BFDBFE' : 'transparent'}`, borderRadius: 9, color: cfgTab === id ? '#1D4ED8' : '#6B7280', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', textAlign: 'left' as const, transition: 'all 150ms', whiteSpace: 'nowrap' as const }}>
+                        {label}
+                      </button>
+                    ))}
+                  </nav>
 
                   <AnimatePresence mode="wait">
-                    <motion.div key={cfgTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+                    <motion.div key={cfgTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+                      style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: 24 }}
+                      className="no-scrollbar">
 
                       {/* Identidade */}
                       {cfgTab === 'identidade' && (
                         <form onSubmit={async e => { e.preventDefault(); try { await onUpdateTenantDetails(activeTenant.id, { name: tenantName, logo: tenantLogo, phone: tenantPhone, address: tenantAddress, instagram: tenantInstagram, businessDays: editedDays, businessHoursByDay: editedHoursByDay, businessHours: editedHoursByDay['seg'] || [] }); toast.success('Salvo!'); } catch { toast.error('Erro ao salvar.'); } }}
-                          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 520 }}>
+                          style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 520 }}>
                           <input ref={logoInputRef as any} type="file" className="hidden" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onloadend = () => setCropSrc(r.result as string); r.readAsDataURL(f); e.target.value = ''; }} />
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             <button type="button" onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo}
-                              style={{ width: 56, height: 56, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, cursor: 'pointer', flexShrink: 0, opacity: uploadingLogo ? 0.6 : 1 }}>
-                              {uploadingLogo ? <RefreshCw size={20} style={{ color: 'rgba(255,255,255,0.4)', animation: 'spin 1s linear infinite' }} /> : (tenantLogo?.startsWith('http') || tenantLogo?.startsWith('data:')) ? <div style={{ width: 42, height: 42, borderRadius: 10, overflow: 'hidden' }}><img src={tenantLogo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></div> : <Scissors size={20} style={{ color: 'rgba(255,255,255,0.4)' }} />}
+                              style={{ width: 56, height: 56, background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, cursor: 'pointer', flexShrink: 0, opacity: uploadingLogo ? 0.6 : 1 }}>
+                              {uploadingLogo ? <RefreshCw size={20} style={{ color: '#9CA3AF', animation: 'spin 1s linear infinite' }} /> : (tenantLogo?.startsWith('http') || tenantLogo?.startsWith('data:')) ? <div style={{ width: 42, height: 42, borderRadius: 10, overflow: 'hidden' }}><img src={tenantLogo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></div> : <Scissors size={20} style={{ color: '#9CA3AF' }} />}
                             </button>
-                            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>Clique para enviar a logo do salão</span>
+                            <span style={{ fontSize: 12, color: '#6B7280' }}>Clique para enviar a logo do salão</span>
                           </div>
                           <input value={tenantName} onChange={e => setTenantName(e.target.value)} placeholder="Nome do salão" className="navy-input" />
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -877,7 +1090,7 @@ export default function ClientAdminPanel({
                             <input value={tenantInstagram} onChange={e => setTenantInstagram(e.target.value)} placeholder="@instagram" className="navy-input" />
                           </div>
                           <input value={tenantAddress} onChange={e => setTenantAddress(e.target.value)} placeholder="Endereço" className="navy-input" />
-                          <button type="submit" style={{ padding: 13, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar Alterações</button>
+                          <button type="submit" style={{ padding: 13, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar Alterações</button>
                         </form>
                       )}
 
@@ -886,7 +1099,7 @@ export default function ClientAdminPanel({
                         const profCurHours = profHoursByDay[profSelectedDay] || [];
                         const profDayOpen  = profDays.includes(profSelectedDay);
 
-                        const addVacationRange = () => {
+                        const addVacationRange = async () => {
                           if (!vacStartDate) return;
                           const end  = vacEndDate || vacStartDate;
                           const dates: string[] = [];
@@ -896,8 +1109,19 @@ export default function ClientAdminPanel({
                             dates.push(cur.toISOString().split('T')[0]);
                             cur.setDate(cur.getDate() + 1);
                           }
-                          setBlockedDates(prev => Array.from(new Set([...prev, ...dates])).sort());
-                          setVacStartDate(''); setVacEndDate('');
+                          if (vacProfIds.length === 0) {
+                            // bloqueia para todos (tenant)
+                            setBlockedDates(prev => Array.from(new Set([...prev, ...dates])).sort());
+                          } else {
+                            // bloqueia só para os profissionais selecionados
+                            for (const pid of vacProfIds) {
+                              const prof = myProfessionals.find(p => p.id === pid);
+                              if (!prof) continue;
+                              const newDates = Array.from(new Set([...(prof.blockedDates ?? []), ...dates])).sort();
+                              await onUpdateProfessional(pid, { blockedDates: newDates });
+                            }
+                          }
+                          setVacStartDate(''); setVacEndDate(''); setVacProfIds([]);
                         };
 
                         const groupRanges = (dates: string[]) => {
@@ -920,44 +1144,20 @@ export default function ClientAdminPanel({
                         const vacRanges = groupRanges(upcomingBlocked);
 
                         return (
-                          <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 20, alignItems: 'start' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-                            {/* ── Coluna esquerda: formulário completo ── */}
-                            <form
-                              onSubmit={async e => {
-                                e.preventDefault();
-                                if (!profName.trim()) return;
-                                if (!editingProf && myProfessionals.length >= 6) {
-                                  toast.error('Limite de 6 colaboradores atingido.');
-                                  return;
-                                }
-                                if (editingProf) {
-                                  await onUpdateProfessional(editingProf.id, {
-                                    name: profName, role: profRole,
-                                    avatar: profAvatar || editingProf.avatar,
-                                    commissionPercentage: profCommission,
-                                    businessDays: profDays,
-                                    businessHoursByDay: profHoursByDay,
-                                  });
-                                  toast.success(`${profName} atualizado!`);
-                                  cancelEditProf();
-                                } else {
-                                  onAddProfessional({ tenantId: activeTenant.id, name: profName, role: profRole, avatar: profAvatar || 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80', rating: 5, services: myServices.map(s => s.id), commissionPercentage: profCommission, businessDays: profDays, businessHoursByDay: profHoursByDay });
-                                  toast.success(`${profName} adicionado!`);
-                                  setProfName(''); setProfAvatar('');
-                                  cancelEditProf();
-                                }
-                              }}
-                              style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${editingProf ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            {/* ── placeholder removido — form foi para o modal ── */}
+                            {false && <form onSubmit={e => e.preventDefault()}
+                              style={{ background: '#FFFFFF', border: `1px solid ${editingProf ? '#BFDBFE' : '#E2E8F0'}`, borderRadius: 16, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
                               {/* Header */}
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: editingProf ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: editingProf ? '#374151' : '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
                                   {editingProf ? `Editando: ${editingProf.name}` : 'Novo Colaborador'}
                                 </p>
                                 {editingProf && (
                                   <button type="button" onClick={cancelEditProf}
-                                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                                    style={{ background: 'none', border: 'none', color: '#6B7280', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
                                     Cancelar
                                   </button>
                                 )}
@@ -966,10 +1166,10 @@ export default function ClientAdminPanel({
                               {/* Foto + nome + cargo */}
                               <input ref={avatarInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e => { if (e.target.files?.[0]) setProfAvatar(await fileToDataURL(e.target.files[0])); }} />
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 48, height: 48, borderRadius: 12, border: '1px solid rgba(255,255,255,0.09)', overflow: 'hidden', background: 'rgba(255,255,255,0.07)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} onClick={() => avatarInputRef.current?.click()}>
+                                <div style={{ width: 48, height: 48, borderRadius: 12, border: '1px solid #E2E8F0', overflow: 'hidden', background: '#F1F5F9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} onClick={() => avatarInputRef.current?.click()}>
                                   {(profAvatar || editingProf?.avatar)
                                     ? <img src={profAvatar || editingProf?.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                    : <User size={18} style={{ color: 'rgba(255,255,255,0.3)' }} />}
+                                    : <User size={18} style={{ color: '#9CA3AF' }} />}
                                 </div>
                                 <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                   <input placeholder="Nome" value={profName} onChange={e => setProfName(e.target.value)} required className="navy-input" />
@@ -983,8 +1183,8 @@ export default function ClientAdminPanel({
                               </div>
 
                               {/* Divisor */}
-                              <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 14 }}>
-                                <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 10px' }}>Horários de Atendimento</p>
+                              <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 14 }}>
+                                <p style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 10px' }}>Horários de Atendimento</p>
 
                                 {/* Seletor de dia */}
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
@@ -993,7 +1193,7 @@ export default function ClientAdminPanel({
                                     const open   = profDays.includes(d);
                                     return (
                                       <button key={d} type="button" onClick={() => setProfSelectedDay(d)}
-                                        style={{ padding: '4px 10px', borderRadius: 7, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: active ? '#ffffff' : 'rgba(255,255,255,0.05)', color: active ? '#0F172A' : open ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.2)', border: `1px solid ${active ? '#ffffff' : 'rgba(255,255,255,0.08)'}`, opacity: open ? 1 : 0.45 }}>
+                                        style={{ padding: '4px 10px', borderRadius: 7, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: active ? '#1D4ED8' : '#F8FAFC', color: active ? '#FFFFFF' : open ? '#374151' : '#9CA3AF', border: `1px solid ${active ? '#1D4ED8' : '#E2E8F0'}`, opacity: open ? 1 : 0.55 }}>
                                         {d}
                                       </button>
                                     );
@@ -1001,12 +1201,12 @@ export default function ClientAdminPanel({
                                 </div>
 
                                 {/* Toggle aberto/fechado */}
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, padding: '7px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)' }}>
-                                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', textTransform: 'capitalize' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, padding: '7px 12px', background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                                  <span style={{ fontSize: 12, color: '#374151', textTransform: 'capitalize' }}>
                                     {profSelectedDay} — {profDayOpen ? `${profCurHours.length} horários` : 'Folga'}
                                   </span>
                                   <button type="button" onClick={() => setProfDays(prev => prev.includes(profSelectedDay) ? prev.filter(d => d !== profSelectedDay) : [...prev, profSelectedDay])}
-                                    style={{ padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: profDayOpen ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.1)', color: profDayOpen ? '#86efac' : '#fca5a5', border: `1px solid ${profDayOpen ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.25)'}` }}>
+                                    style={{ padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: profDayOpen ? '#DCFCE7' : '#FEE2E2', color: profDayOpen ? '#166534' : '#DC2626', border: `1px solid ${profDayOpen ? '#86EFAC' : '#FCA5A5'}` }}>
                                     {profDayOpen ? 'Trabalha' : 'Folga'}
                                   </button>
                                 </div>
@@ -1015,9 +1215,9 @@ export default function ClientAdminPanel({
                                 {profCurHours.length > 0 && (
                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
                                     {profCurHours.map(h => (
-                                      <span key={h} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 9px', borderRadius: 7, fontSize: 11, fontFamily: 'monospace', fontWeight: 700, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.85)' }}>
+                                      <span key={h} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 9px', borderRadius: 7, fontSize: 11, fontFamily: 'monospace', fontWeight: 700, background: '#F1F5F9', border: '1px solid #E2E8F0', color: '#374151' }}>
                                         {h}
-                                        <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: (prev[profSelectedDay] || []).filter(x => x !== h) }))} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 0 0 2px' }}>×</button>
+                                        <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: (prev[profSelectedDay] || []).filter(x => x !== h) }))} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 0 0 2px' }}>×</button>
                                       </span>
                                     ))}
                                   </div>
@@ -1027,13 +1227,13 @@ export default function ClientAdminPanel({
                                 <div style={{ position: 'relative' }}>
                                   <button type="button"
                                     onClick={() => { setProfNewHourInput(''); setProfPickerOpen(o => !o); }}
-                                    style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, color: '#0F172A', background: '#ffffff', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                    style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, color: '#FFFFFF', background: '#1D4ED8', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                                     + Adicionar Horário
                                   </button>
 
                                   {profPickerOpen && (
-                                    <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 60, background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 14, padding: 16, boxShadow: '0 12px 32px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 210 }}>
-                                      <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
+                                    <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 60, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 14, padding: 16, boxShadow: '0 12px 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 210 }}>
+                                      <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1.5px' }}>
                                         Novo horário — {profSelectedDay}
                                       </p>
                                       <input
@@ -1053,12 +1253,12 @@ export default function ClientAdminPanel({
                                             setProfPickerOpen(false);
                                             setProfNewHourInput('');
                                           }}
-                                          style={{ flex: 1, padding: '9px 0', background: '#ffffff', color: '#0F172A', fontWeight: 800, fontSize: 13, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                          style={{ flex: 1, padding: '9px 0', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 800, fontSize: 13, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                                           OK
                                         </button>
                                         <button type="button"
                                           onClick={() => { setProfPickerOpen(false); setProfNewHourInput(''); }}
-                                          style={{ padding: '9px 14px', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)', fontWeight: 600, fontSize: 12, border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                          style={{ padding: '9px 14px', background: '#F1F5F9', color: '#6B7280', fontWeight: 600, fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                                           Cancelar
                                         </button>
                                       </div>
@@ -1068,51 +1268,56 @@ export default function ClientAdminPanel({
 
                                 <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                                   <button type="button" onClick={() => { const h = profHoursByDay[profSelectedDay] || []; setProfHoursByDay(Object.fromEntries(ALL_DAYS.map(d => [d, profDays.includes(d) ? [...h] : []]))); toast.info('Horários copiados para todos os dias de trabalho.'); }}
-                                    style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.45)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Copiar p/ todos</button>
+                                    style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#6B7280', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Copiar p/ todos</button>
                                   <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: [...DEFAULT_HOURS] }))}
-                                    style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.45)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Resetar padrão</button>
+                                    style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#6B7280', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Resetar padrão</button>
                                   <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: [] }))}
-                                    style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#fca5a5', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Limpar dia</button>
+                                    style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#DC2626', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Limpar dia</button>
                                 </div>
                               </div>
 
                               <button type="submit"
                                 disabled={!editingProf && myProfessionals.length >= 6}
-                                style={{ padding: 12, marginTop: 2, background: !editingProf && myProfessionals.length >= 6 ? 'rgba(255,255,255,0.08)' : editingProf ? '#3b82f6' : '#ffffff', color: !editingProf && myProfessionals.length >= 6 ? 'rgba(255,255,255,0.25)' : editingProf ? '#fff' : '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: !editingProf && myProfessionals.length >= 6 ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                style={{ padding: 12, marginTop: 2, background: !editingProf && myProfessionals.length >= 6 ? '#F1F5F9' : '#1D4ED8', color: !editingProf && myProfessionals.length >= 6 ? '#9CA3AF' : '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: !editingProf && myProfessionals.length >= 6 ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                                 {!editingProf && myProfessionals.length >= 6 ? 'Limite de 6 atingido' : editingProf ? 'Salvar alterações' : 'Adicionar colaborador'}
                               </button>
-                            </form>
-
-                            {/* ── Coluna direita: lista + férias ── */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            </form>}
 
                               {/* Lista da equipe */}
-                              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Equipe ({myProfessionals.length})</p>
+                              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1.5px', margin: 0 }}>Equipe ({myProfessionals.length})</p>
+                                  <button type="button"
+                                    onClick={() => { setEditingProf(null); setProfName(''); setProfRole('Barbeiro'); setProfAvatar(''); setProfCommission(40); setProfDays(['seg','ter','qua','qui','sex','sab']); setProfHoursByDay(Object.fromEntries(['seg','ter','qua','qui','sex','sab','dom'].map(d=>[d,[]]))); setShowNewProfModal(true); }}
+                                    disabled={myProfessionals.length >= 6}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: myProfessionals.length >= 6 ? '#F1F5F9' : '#1D4ED8', color: myProfessionals.length >= 6 ? '#9CA3AF' : '#fff', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 9, cursor: myProfessionals.length >= 6 ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', flexShrink: 0 }}>
+                                    <Plus size={13} /> Novo Membro
+                                  </button>
+                                </div>
                                 {myProfessionals.length === 0 && (
-                                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', textAlign: 'center', marginTop: 12 }}>Nenhum colaborador ainda.</p>
+                                  <p style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', marginTop: 12 }}>Nenhum colaborador ainda.</p>
                                 )}
                                 {myProfessionals.map(p => {
                                   const totalH = Object.values(p.businessHoursByDay || {}).reduce((s, arr) => s + arr.length, 0);
                                   return (
                                     <div key={p.id}
-                                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: editingProf?.id === p.id ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10, transition: 'all 150ms' }}>
+                                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: editingProf?.id === p.id ? '#EFF6FF' : '#FFFFFF', border: `1px solid ${editingProf?.id === p.id ? '#BFDBFE' : '#E2E8F0'}`, borderRadius: 10, transition: 'all 150ms' }}>
                                       <img src={p.avatar} style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                                       <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>
+                                        <div style={{ fontWeight: 700, color: '#111827', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                        <div style={{ fontSize: 10, color: '#6B7280' }}>
                                           {p.role} · {p.commissionPercentage}%
-                                          {totalH > 0 && <span style={{ color: 'rgba(255,255,255,0.2)', marginLeft: 4 }}>· {totalH} slots/sem</span>}
+                                          {totalH > 0 && <span style={{ color: '#9CA3AF', marginLeft: 4 }}>· {totalH} slots/sem</span>}
                                         </div>
                                       </div>
-                                      <button onClick={() => editingProf?.id === p.id ? cancelEditProf() : startEditProf(p)}
-                                        title={editingProf?.id === p.id ? 'Cancelar' : 'Editar'}
-                                        style={{ width: 28, height: 28, borderRadius: 8, background: editingProf?.id === p.id ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${editingProf?.id === p.id ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.09)'}`, color: editingProf?.id === p.id ? '#60a5fa' : 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                        {editingProf?.id === p.id ? <X size={12} /> : <Pencil size={12} />}
+                                      <button onClick={() => startEditProf(p)}
+                                        title="Editar"
+                                        style={{ width: 28, height: 28, borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <Pencil size={12} />
                                       </button>
                                       <button onClick={async () => { if (!confirm(`Remover ${p.name} da equipe?`)) return; await onDeleteProfessional(p.id); toast.success(`${p.name} removido.`); }}
                                         title="Remover"
-                                        style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        style={{ width: 28, height: 28, borderRadius: 8, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                         <Trash2 size={12} />
                                       </button>
                                     </div>
@@ -1121,46 +1326,112 @@ export default function ClientAdminPanel({
                               </div>
 
                               {/* Férias & Bloqueios */}
-                              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Férias & Folgas</p>
-                                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: '-4px 0 4px' }}>Datas bloqueadas para todos os profissionais</p>
+                              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1.5px', margin: 0 }}>Férias & Folgas</p>
+
+                                {/* Período */}
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                   <div>
-                                    <label style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>De</label>
+                                    <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>De</label>
                                     <input type="date" value={vacStartDate} onChange={e => setVacStartDate(e.target.value)} className="navy-input" />
                                   </div>
                                   <div>
-                                    <label style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>Até (opcional)</label>
+                                    <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: 4 }}>Até (opcional)</label>
                                     <input type="date" value={vacEndDate} onChange={e => setVacEndDate(e.target.value)} min={vacStartDate} className="navy-input" />
                                   </div>
                                 </div>
-                                <button type="button" onClick={addVacationRange} disabled={!vacStartDate}
-                                  style={{ width: '100%', padding: '9px 0', background: vacStartDate ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.03)', border: `1px solid ${vacStartDate ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.07)'}`, borderRadius: 8, color: vacStartDate ? '#fcd34d' : 'rgba(255,255,255,0.2)', fontWeight: 700, fontSize: 12, cursor: vacStartDate ? 'pointer' : 'default', fontFamily: 'Outfit, sans-serif' }}>
-                                  Bloquear {vacStartDate && vacEndDate && vacStartDate !== vacEndDate ? 'período' : 'data'}
-                                </button>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                  {vacRanges.length === 0
-                                    ? <div style={{ textAlign: 'center', padding: '12px 0', color: 'rgba(255,255,255,0.18)', fontSize: 12 }}>Nenhuma data bloqueada</div>
-                                    : vacRanges.map(r => (
-                                        <div key={r.start} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8 }}>
-                                          <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace' }}>
-                                            {r.start === r.end ? fmtDate(r.start) : `${fmtDate(r.start)} → ${fmtDate(r.end)}`}
-                                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginLeft: 6 }}>{r.dates.length}d</span>
-                                          </span>
-                                          <button type="button" onClick={() => setBlockedDates(prev => prev.filter(d => !r.dates.includes(d)))}
-                                            style={{ padding: '3px 8px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 6, color: '#fca5a5', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                                            Remover
-                                          </button>
-                                        </div>
-                                      ))
-                                  }
+
+                                {/* Quem vai de férias */}
+                                <div>
+                                  <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: 6 }}>Profissionais</label>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                                    <button type="button"
+                                      onClick={() => setVacProfIds([])}
+                                      style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: vacProfIds.length === 0 ? '#1D4ED8' : '#F8FAFC', color: vacProfIds.length === 0 ? '#FFFFFF' : '#6B7280', border: `1px solid ${vacProfIds.length === 0 ? '#1D4ED8' : '#E2E8F0'}` }}>
+                                      Todos
+                                    </button>
+                                    {myProfessionals.map(p => {
+                                      const sel = vacProfIds.includes(p.id);
+                                      return (
+                                        <button key={p.id} type="button"
+                                          onClick={() => setVacProfIds(prev => sel ? prev.filter(id => id !== p.id) : [...prev, p.id])}
+                                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: sel ? '#FEF3C7' : '#F8FAFC', color: sel ? '#92400E' : '#6B7280', border: `1px solid ${sel ? '#FCD34D' : '#E2E8F0'}` }}>
+                                          <img src={p.avatar} style={{ width: 14, height: 14, borderRadius: '50%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                          {p.name}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
-                                <button type="button" onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { blockedDates }); toast.success('Bloqueios salvos!'); } catch { toast.error('Erro ao salvar.'); } }}
-                                  style={{ padding: '9px 0', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.55)', fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                                  Salvar bloqueios
+
+                                <button type="button" onClick={addVacationRange} disabled={!vacStartDate}
+                                  style={{ width: '100%', padding: '9px 0', background: vacStartDate ? '#FEF3C7' : '#F9FAFB', border: `1px solid ${vacStartDate ? '#FCD34D' : '#E2E8F0'}`, borderRadius: 8, color: vacStartDate ? '#92400E' : '#9CA3AF', fontWeight: 700, fontSize: 12, cursor: vacStartDate ? 'pointer' : 'default', fontFamily: 'Outfit, sans-serif' }}>
+                                  Bloquear {vacStartDate && vacEndDate && vacStartDate !== vacEndDate ? 'período' : 'data'}{vacProfIds.length > 0 ? ` para ${vacProfIds.length} profissional${vacProfIds.length > 1 ? 'is' : ''}` : ' para todos'}
                                 </button>
+
+                                {/* Bloqueios globais (tenant) */}
+                                {vacRanges.length > 0 && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    <p style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>Bloqueios gerais</p>
+                                    {vacRanges.map(r => (
+                                      <div key={r.start} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8 }}>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', fontFamily: 'monospace' }}>
+                                          {r.start === r.end ? fmtDate(r.start) : `${fmtDate(r.start)} → ${fmtDate(r.end)}`}
+                                          <span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 5 }}>{r.dates.length}d · todos</span>
+                                        </span>
+                                        <button type="button" onClick={() => setBlockedDates(prev => prev.filter(d => !r.dates.includes(d)))}
+                                          style={{ padding: '2px 7px', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 5, color: '#DC2626', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                          Remover
+                                        </button>
+                                      </div>
+                                    ))}
+                                    <button type="button" onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { blockedDates }); toast.success('Bloqueios gerais salvos!'); } catch { toast.error('Erro ao salvar.'); } }}
+                                      style={{ padding: '7px 0', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 7, color: '#6B7280', fontWeight: 700, fontSize: 11, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                      Salvar bloqueios gerais
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Bloqueios por profissional */}
+                                {myProfessionals.some(p => (p.blockedDates ?? []).length > 0) && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    <p style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>Bloqueios individuais</p>
+                                    {myProfessionals.filter(p => (p.blockedDates ?? []).length > 0).map(p => {
+                                      const profRanges = groupRanges((p.blockedDates ?? []).filter(d => d >= new Date().toISOString().split('T')[0]));
+                                      if (!profRanges.length) return null;
+                                      return (
+                                        <div key={p.id} style={{ padding: '8px 10px', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8 }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                                            <img src={p.avatar} style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>{p.name}</span>
+                                          </div>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                            {profRanges.map(r => (
+                                              <div key={r.start} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#92400E' }}>
+                                                  {r.start === r.end ? fmtDate(r.start) : `${fmtDate(r.start)} → ${fmtDate(r.end)}`}
+                                                  <span style={{ color: '#9CA3AF', marginLeft: 4 }}>{r.dates.length}d</span>
+                                                </span>
+                                                <button type="button" onClick={async () => {
+                                                  const newDates = (p.blockedDates ?? []).filter(d => !r.dates.includes(d));
+                                                  await onUpdateProfessional(p.id, { blockedDates: newDates });
+                                                  toast.success('Bloqueio removido.');
+                                                }} style={{ padding: '2px 6px', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 5, color: '#DC2626', fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                                  Remover
+                                                </button>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {vacRanges.length === 0 && !myProfessionals.some(p => (p.blockedDates ?? []).length > 0) && (
+                                  <div style={{ textAlign: 'center', padding: '10px 0', color: '#9CA3AF', fontSize: 12 }}>Nenhuma data bloqueada</div>
+                                )}
                               </div>
-                            </div>
                           </div>
                         );
                       })()}
@@ -1179,16 +1450,16 @@ export default function ClientAdminPanel({
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
                             {/* ── Serviços padrão ── */}
-                            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20 }}>
+                            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                                 <div>
-                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Serviços Padrão</p>
-                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: '3px 0 0' }}>Defina o preço e clique para adicionar</p>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1.5px', margin: 0 }}>Serviços Padrão</p>
+                                  <p style={{ fontSize: 11, color: '#6B7280', margin: '3px 0 0' }}>Defina o preço e clique para adicionar</p>
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                 {hiddenPresets.length > 0 && (
                                   <button type="button" onClick={() => { setHiddenPresets([]); localStorage.removeItem(hiddenPresetsKey); }}
-                                    style={{ padding: '7px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
+                                    style={{ padding: '7px 14px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, color: '#6B7280', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
                                     Restaurar ocultos ({hiddenPresets.length})
                                   </button>
                                 )}
@@ -1201,7 +1472,7 @@ export default function ClientAdminPanel({
                                       );
                                       toast.success('Todos os serviços padrão adicionados!');
                                     }}
-                                    style={{ padding: '7px 14px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
+                                    style={{ padding: '7px 14px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, color: '#374151', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
                                     + Adicionar todos
                                   </button>
                                 )}
@@ -1213,15 +1484,15 @@ export default function ClientAdminPanel({
                                   const added = isAdded(preset.name);
                                   return (
                                     <motion.div key={preset.name} layout
-                                      style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${added ? 'rgba(34,197,94,0.25)' : 'rgba(255,255,255,0.08)'}`, background: added ? 'rgba(34,197,94,0.06)' : 'rgba(255,255,255,0.03)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                      style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${added ? '#86EFAC' : '#E2E8F0'}`, background: added ? '#F0FDF4' : '#FFFFFF', display: 'flex', flexDirection: 'column', gap: 8 }}>
                                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                                         <div>
-                                          <div style={{ fontWeight: 700, fontSize: 13, color: added ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.88)', lineHeight: 1.3 }}>{preset.name}</div>
-                                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{preset.category} · {preset.durationMinutes} min</div>
+                                          <div style={{ fontWeight: 700, fontSize: 13, color: added ? '#6B7280' : '#111827', lineHeight: 1.3 }}>{preset.name}</div>
+                                          <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>{preset.category} · {preset.durationMinutes} min</div>
                                         </div>
                                         {added && (
                                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#86efac', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.2)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>✓ Adicionado</span>
+                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', background: '#DCFCE7', border: '1px solid #86EFAC', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>✓ Adicionado</span>
                                             <button type="button"
                                               onClick={async () => {
                                                 const srv = myServices.find(s => s.name === preset.name);
@@ -1231,7 +1502,7 @@ export default function ClientAdminPanel({
                                                 toast.success(`"${preset.name}" removido.`);
                                               }}
                                               title="Remover do catálogo"
-                                              style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                              style={{ width: 22, height: 22, borderRadius: 6, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                               <X size={11} />
                                             </button>
                                           </div>
@@ -1240,7 +1511,7 @@ export default function ClientAdminPanel({
                                       {!added && (
                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                           <div style={{ position: 'relative', flex: 1 }}>
-                                            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace', pointerEvents: 'none' }}>R$</span>
+                                            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#9CA3AF', fontFamily: 'monospace', pointerEvents: 'none' }}>R$</span>
                                             <input
                                               type="number"
                                               min={0}
@@ -1255,13 +1526,13 @@ export default function ClientAdminPanel({
                                             type="button"
                                             whileTap={{ scale: 0.95 }}
                                             onClick={() => addPreset(preset)}
-                                            style={{ padding: '8px 12px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
+                                            style={{ padding: '8px 12px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' }}>
                                             + Add
                                           </motion.button>
                                           <button type="button"
                                             onClick={() => setHiddenPresets(h => { const next = [...h, preset.name]; localStorage.setItem(hiddenPresetsKey, JSON.stringify(next)); return next; })}
                                             title="Remover da lista"
-                                            style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            style={{ width: 32, height: 32, borderRadius: 8, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                             <X size={12} />
                                           </button>
                                         </div>
@@ -1272,163 +1543,44 @@ export default function ClientAdminPanel({
                               </div>
                             </div>
 
-                            {/* ── Serviço personalizado / Profissionais + lista ── */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-
-                              {/* Coluna esquerda: form de novo serviço OU painel de profissionais */}
-                              {srvProfPanel ? (
-                                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                                    <div>
-                                      <p style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Profissionais</p>
-                                      <p style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: '4px 0 2px' }}>{srvProfPanel.name}</p>
-                                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Marque quem realiza este serviço</p>
-                                    </div>
-                                    <button onClick={() => setSrvProfPanel(null)}
-                                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 4, flexShrink: 0 }}>
-                                      <X size={16} />
-                                    </button>
-                                  </div>
-                                  {myProfessionals.length === 0 ? (
-                                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Nenhum colaborador cadastrado. Adicione na aba Equipe.</p>
-                                  ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                      {myProfessionals.map(p => {
-                                        const checked = p.services.includes(srvProfPanel.id);
-                                        return (
-                                          <button key={p.id} type="button" onClick={async () => {
-                                            const newIds = checked
-                                              ? myProfessionals.filter(x => x.services.includes(srvProfPanel.id) && x.id !== p.id).map(x => x.id)
-                                              : myProfessionals.filter(x => x.services.includes(srvProfPanel.id)).map(x => x.id).concat(p.id);
-                                            await onSetServiceProfessionals(srvProfPanel.id, newIds);
-                                          }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, background: checked ? 'rgba(96,165,250,0.12)' : 'rgba(255,255,255,0.04)', border: `1px solid ${checked ? 'rgba(96,165,250,0.35)' : 'rgba(255,255,255,0.08)'}`, cursor: 'pointer', transition: 'all 150ms', fontFamily: 'Outfit, sans-serif', textAlign: 'left' }}>
-                                            <img src={p.avatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                              <div style={{ fontSize: 13, fontWeight: 700, color: checked ? '#93c5fd' : 'rgba(255,255,255,0.8)' }}>{p.name}</div>
-                                              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{p.role}</div>
-                                            </div>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: checked ? '#93c5fd' : 'rgba(255,255,255,0.2)', flexShrink: 0 }}>
-                                              {checked ? '✓ Ativo' : '+ Add'}
-                                            </div>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : editingSrv ? (
-                                <form onSubmit={async e => {
-                                    e.preventDefault();
-                                    if (!editingSrv) return;
-                                    await onUpdateService(editingSrv.id, { name: editingSrv.name, price: editingSrv.price, durationMinutes: editingSrv.durationMinutes, category: editingSrv.category });
-                                    toast.success('Serviço atualizado!');
-                                    setEditingSrv(null);
-                                  }}
-                                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.65)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
-                                      Editando: {editingSrv.name}
-                                    </p>
-                                    <button type="button" onClick={() => setEditingSrv(null)}
-                                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, fontFamily: 'Outfit, sans-serif', padding: 0 }}>
-                                      Cancelar
-                                    </button>
-                                  </div>
-                                  <input placeholder="Nome do serviço" value={editingSrv.name} onChange={e => setEditingSrv(v => v && ({ ...v, name: e.target.value }))} required className="navy-input" />
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                                    <div><label className="navy-label">Preço R$</label><input type="number" min={0} value={editingSrv.price} onChange={e => setEditingSrv(v => v && ({ ...v, price: Number(e.target.value) }))} className="navy-input" /></div>
-                                    <div><label className="navy-label">Duração min</label><input type="number" min={5} value={editingSrv.durationMinutes} onChange={e => setEditingSrv(v => v && ({ ...v, durationMinutes: Number(e.target.value) }))} className="navy-input" /></div>
-                                    <div><label className="navy-label">Categoria</label>
-                                      <select value={editingSrv.category} onChange={e => setEditingSrv(v => v && ({ ...v, category: e.target.value as Service['category'] }))} className="navy-select">
-                                        <option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option>
-                                      </select>
-                                    </div>
-                                  </div>
-                                  <button type="submit" style={{ padding: 12, background: '#3b82f6', color: '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar alterações</button>
-                                </form>
-                              ) : (
-                                <form onSubmit={async e => {
-                                    e.preventDefault();
-                                    if (!srvName.trim()) return;
-                                    const created = await onAddService({ tenantId: activeTenant.id, name: srvName, price: srvPrice, durationMinutes: srvDuration, category: srvCategory });
-                                    if (created && srvProfIds.length) await onSetServiceProfessionals(created.id, srvProfIds);
-                                    toast.success(`"${srvName}" cadastrado!`);
-                                    setSrvName('');
-                                    setSrvProfIds([]);
-                                    if (created) setSrvProfPanel(created);
-                                  }}
-                                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Serviço Personalizado</p>
-                                  <input placeholder="Nome do serviço" value={srvName} onChange={e => setSrvName(e.target.value)} required className="navy-input" />
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                                    <div><label className="navy-label">Preço R$</label><input type="number" min={0} value={srvPrice} onChange={e => setSrvPrice(Number(e.target.value))} className="navy-input" /></div>
-                                    <div><label className="navy-label">Duração min</label><input type="number" min={5} value={srvDuration} onChange={e => setSrvDuration(Number(e.target.value))} className="navy-input" /></div>
-                                    <div><label className="navy-label">Categoria</label>
-                                      <select value={srvCategory} onChange={e => setSrvCategory(e.target.value as any)} className="navy-select">
-                                        <option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option>
-                                      </select>
-                                    </div>
-                                  </div>
-                                  {myProfessionals.length > 0 && (
-                                    <div>
-                                      <label className="navy-label">Profissionais</label>
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                                        {myProfessionals.map(p => {
-                                          const sel = srvProfIds.includes(p.id);
-                                          return (
-                                            <button type="button" key={p.id}
-                                              onClick={() => setSrvProfIds(ids => sel ? ids.filter(id => id !== p.id) : [...ids, p.id])}
-                                              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px 5px 6px', borderRadius: 20, background: sel ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.05)', border: `1px solid ${sel ? 'rgba(96,165,250,0.45)' : 'rgba(255,255,255,0.1)'}`, color: sel ? '#93c5fd' : 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'Outfit, sans-serif', transition: 'all 120ms' }}>
-                                              <img src={p.avatar} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                                              {p.name}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-                                  <button type="submit" style={{ padding: 12, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cadastrar Serviço</button>
-                                </form>
-                              )}
-
-                              {/* Coluna direita: lista de serviços ativos */}
-                              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 4px' }}>
-                                  Serviços Ativos <span style={{ fontFamily: 'monospace', color: 'rgba(255,255,255,0.2)' }}>({myServices.length})</span>
+                            {/* ── Lista de serviços ativos ── */}
+                            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                                  Serviços Ativos <span style={{ fontFamily: 'monospace', color: '#9CA3AF' }}>({myServices.length})</span>
                                 </p>
-                                <div className="no-scrollbar" style={{ maxHeight: 400, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                  {myServices.length === 0 ? (
-                                    <div style={{ textAlign: 'center', padding: '24px 0', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>Nenhum serviço cadastrado</div>
-                                  ) : myServices.map(s => {
-                                    const isEditing = editingSrv?.id === s.id;
-                                    const profOpen = srvProfPanel?.id === s.id;
-                                    return (
-                                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px', background: isEditing ? 'rgba(59,130,246,0.06)' : profOpen ? 'rgba(96,165,250,0.06)' : 'rgba(255,255,255,0.03)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.35)' : profOpen ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 10 }}>
-                                        <div style={{ minWidth: 0 }}>
-                                          <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
-                                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>{s.category} · {s.durationMinutes} min</div>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                          <span style={{ fontWeight: 800, color: s.price > 0 ? '#4ade80' : 'rgba(255,255,255,0.2)', fontFamily: 'monospace', fontSize: 13, minWidth: 60, textAlign: 'right' }}>
-                                            {s.price > 0 ? `R$ ${s.price.toFixed(2)}` : '—'}
-                                          </span>
-                                          <button onClick={() => { setSrvProfPanel(profOpen ? null : s); setEditingSrv(null); }} title="Definir profissionais"
-                                            style={{ width: 28, height: 28, borderRadius: 7, background: profOpen ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${profOpen ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.09)'}`, color: profOpen ? '#93c5fd' : 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                            <Users size={12} />
-                                          </button>
-                                          <button onClick={() => { setEditingSrv(isEditing ? null : { ...s }); setSrvProfPanel(null); }} title="Editar"
-                                            style={{ width: 28, height: 28, borderRadius: 7, background: isEditing ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)', border: `1px solid ${isEditing ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.09)'}`, color: isEditing ? '#60a5fa' : 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                            {isEditing ? <X size={12} /> : <Pencil size={12} />}
-                                          </button>
-                                          <button onClick={async () => { if (!window.confirm(`Remover "${s.name}"?`)) return; await onDeleteService(s.id); toast.success(`"${s.name}" removido.`); }} title="Remover"
-                                            style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                            <X size={12} />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                                <button type="button"
+                                  onClick={() => { setSrvName(''); setSrvPrice(50); setSrvDuration(30); setSrvCategory('Cabelo'); setSrvProfIds([]); setEditingSrv(null); setShowNewSrvModal(true); }}
+                                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 9, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', flexShrink: 0 }}>
+                                  <Plus size={13} /> Novo Serviço
+                                </button>
+                              </div>
+                              <div className="no-scrollbar" style={{ maxHeight: 440, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                {myServices.length === 0 ? (
+                                  <div style={{ textAlign: 'center', padding: '32px 0', color: '#9CA3AF', fontSize: 13 }}>Nenhum serviço cadastrado</div>
+                                ) : myServices.map(s => (
+                                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10 }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontWeight: 700, color: '#111827', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
+                                      <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>{s.category} · {s.durationMinutes} min</div>
+                                    </div>
+                                    <span style={{ fontWeight: 800, color: s.price > 0 ? '#059669' : '#9CA3AF', fontFamily: 'monospace', fontSize: 13, flexShrink: 0 }}>
+                                      {s.price > 0 ? `R$ ${s.price.toFixed(2)}` : '—'}
+                                    </span>
+                                    <button onClick={() => setSrvProfPanel(s)} title="Profissionais"
+                                      style={{ width: 28, height: 28, borderRadius: 7, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                      <Users size={12} />
+                                    </button>
+                                    <button onClick={() => { setEditingSrv({ ...s }); setShowNewSrvModal(true); }} title="Editar"
+                                      style={{ width: 28, height: 28, borderRadius: 7, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                      <Pencil size={12} />
+                                    </button>
+                                    <button onClick={async () => { if (!window.confirm(`Remover "${s.name}"?`)) return; await onDeleteService(s.id); toast.success(`"${s.name}" removido.`); }} title="Remover"
+                                      style={{ width: 28, height: 28, borderRadius: 7, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                ))}
                               </div>
                             </div>
 
@@ -1440,23 +1592,23 @@ export default function ClientAdminPanel({
                       {cfgTab === 'pagina-cliente' && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
                           {/* Form */}
-                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
+                          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
                             {/* Link do Cliente */}
                             <div>
-                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #E2E8F0', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <ExternalLink size={13} /> Link do Cliente
                               </p>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '10px 14px' }}>
-                                <span style={{ flex: 1, fontFamily: 'monospace', fontSize: 12, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '10px 14px' }}>
+                                <span style={{ flex: 1, fontFamily: 'monospace', fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {window.location.origin}/{activeTenant.slug}/agendamento
                                 </span>
                                 <button type="button" onClick={handleCopyBookingLink} title="Copiar link"
-                                  style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: slugCopied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.07)', border: `1px solid ${slugCopied ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.1)'}`, color: slugCopied ? '#4ade80' : 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 200ms' }}>
+                                  style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: slugCopied ? '#DCFCE7' : '#F8FAFC', border: `1px solid ${slugCopied ? '#86EFAC' : '#E2E8F0'}`, color: slugCopied ? '#166534' : '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 200ms' }}>
                                   {slugCopied ? <CheckCheck size={13} /> : <Copy size={13} />}
                                 </button>
                                 <button type="button" onClick={() => window.open(`${window.location.origin}/${activeTenant.slug}/agendamento`, '_blank')} title="Abrir link"
-                                  style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                   <ExternalLink size={13} />
                                 </button>
                               </div>
@@ -1464,33 +1616,33 @@ export default function ClientAdminPanel({
 
                             {/* Personalizar URL */}
                             <div>
-                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #E2E8F0', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <Pencil size={13} /> Personalizar URL
                               </p>
-                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 10 }}>
+                              <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
                                 Edite o nome que aparece no link de agendamento. Use apenas letras, números e hífens.
                               </p>
-                              <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.04)', border: `1px solid ${slugStatus === 'available' ? 'rgba(34,197,94,0.4)' : slugStatus === 'taken' ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 12, padding: '10px 14px', gap: 4, transition: 'border-color 200ms' }}>
-                                <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(255,255,255,0.3)', whiteSpace: 'nowrap', flexShrink: 0 }}>{window.location.origin}/</span>
+                              <div style={{ display: 'flex', alignItems: 'center', background: '#FFFFFF', border: `1px solid ${slugStatus === 'available' ? '#86EFAC' : slugStatus === 'taken' ? '#FCA5A5' : '#E2E8F0'}`, borderRadius: 12, padding: '10px 14px', gap: 4, transition: 'border-color 200ms' }}>
+                                <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#9CA3AF', whiteSpace: 'nowrap', flexShrink: 0 }}>{window.location.origin}/</span>
                                 <input
                                   value={slugInput}
                                   onChange={e => handleSlugChange(e.target.value)}
                                   placeholder={activeTenant.slug}
-                                  style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'monospace', fontSize: 13, color: 'rgba(255,255,255,0.85)', minWidth: 60 }}
+                                  style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'monospace', fontSize: 13, color: '#111827', minWidth: 60 }}
                                 />
-                                <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(255,255,255,0.3)', whiteSpace: 'nowrap', flexShrink: 0 }}>/agendamento</span>
+                                <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#9CA3AF', whiteSpace: 'nowrap', flexShrink: 0 }}>/agendamento</span>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
                                 <span style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                                  {slugStatus === 'checking' && <><RefreshCw size={12} style={{ color: '#94a3b8', animation: 'spin 1s linear infinite' }} /><span style={{ color: '#94a3b8' }}>Verificando…</span></>}
-                                  {slugStatus === 'available' && <><Check size={12} style={{ color: '#4ade80' }} /><span style={{ color: '#4ade80' }}>Disponível</span></>}
-                                  {slugStatus === 'taken' && <><X size={12} style={{ color: '#f87171' }} /><span style={{ color: '#f87171' }}>Já está em uso</span></>}
-                                  {slugStatus === 'saving' && <><RefreshCw size={12} style={{ color: '#94a3b8', animation: 'spin 1s linear infinite' }} /><span style={{ color: '#94a3b8' }}>Salvando…</span></>}
-                                  {slugStatus === 'idle' && slugInput === activeTenant.slug && <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>URL atual</span>}
+                                  {slugStatus === 'checking' && <><RefreshCw size={12} style={{ color: '#6B7280', animation: 'spin 1s linear infinite' }} /><span style={{ color: '#6B7280' }}>Verificando…</span></>}
+                                  {slugStatus === 'available' && <><Check size={12} style={{ color: '#16a34a' }} /><span style={{ color: '#16a34a' }}>Disponível</span></>}
+                                  {slugStatus === 'taken' && <><X size={12} style={{ color: '#DC2626' }} /><span style={{ color: '#DC2626' }}>Já está em uso</span></>}
+                                  {slugStatus === 'saving' && <><RefreshCw size={12} style={{ color: '#6B7280', animation: 'spin 1s linear infinite' }} /><span style={{ color: '#6B7280' }}>Salvando…</span></>}
+                                  {slugStatus === 'idle' && slugInput === activeTenant.slug && <span style={{ color: '#9CA3AF', fontSize: 11 }}>URL atual</span>}
                                 </span>
                                 <button type="button" onClick={handleSaveSlug}
                                   disabled={slugStatus !== 'available'}
-                                  style={{ padding: '7px 16px', background: slugStatus === 'available' ? '#ffffff' : 'rgba(255,255,255,0.08)', color: slugStatus === 'available' ? '#0F172A' : 'rgba(255,255,255,0.25)', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 9, cursor: slugStatus === 'available' ? 'pointer' : 'not-allowed', fontFamily: 'Outfit, sans-serif', transition: 'all 200ms' }}>
+                                  style={{ padding: '7px 16px', background: slugStatus === 'available' ? '#1D4ED8' : '#F1F5F9', color: slugStatus === 'available' ? '#FFFFFF' : '#9CA3AF', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 9, cursor: slugStatus === 'available' ? 'pointer' : 'not-allowed', fontFamily: 'Outfit, sans-serif', transition: 'all 200ms' }}>
                                   Salvar URL
                                 </button>
                               </div>
@@ -1498,7 +1650,7 @@ export default function ClientAdminPanel({
 
                             {/* Cor principal */}
                             <div>
-                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #E2E8F0', paddingBottom: 10, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <Palette size={13} /> Cor Principal
                               </p>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
@@ -1517,21 +1669,21 @@ export default function ClientAdminPanel({
                                 ))}
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Outfit, sans-serif' }}>Personalizada:</span>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '6px 12px' }}>
+                                <span style={{ fontSize: 12, color: '#374151', fontFamily: 'Outfit, sans-serif' }}>Personalizada:</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '6px 12px' }}>
                                   <input type="color" value={bookingPrimaryColor} onChange={e => setBookingPrimaryColor(e.target.value)}
                                     style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
-                                  <span style={{ fontSize: 13, fontFamily: 'monospace', color: 'rgba(255,255,255,0.7)', letterSpacing: '0.05em' }}>{bookingPrimaryColor.toUpperCase()}</span>
+                                  <span style={{ fontSize: 13, fontFamily: 'monospace', color: '#374151', letterSpacing: '0.05em' }}>{bookingPrimaryColor.toUpperCase()}</span>
                                 </div>
                               </div>
                             </div>
 
                             {/* Informações visíveis */}
                             <div>
-                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #E2E8F0', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <Eye size={13} /> Informações Visíveis
                               </p>
-                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 12, fontFamily: 'Outfit, sans-serif' }}>
+                              <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 12, fontFamily: 'Outfit, sans-serif' }}>
                                 Escolha quais dados aparecem para o cliente na página de agendamento.
                               </p>
                               {([
@@ -1539,15 +1691,15 @@ export default function ClientAdminPanel({
                                 { key: 'address',   label: 'Endereço',  icon: <MapPin size={14} />,    value: bookingShowAddress,   setter: setBookingShowAddress },
                                 { key: 'instagram', label: 'Instagram', icon: <Instagram size={14} />, value: bookingShowInstagram, setter: setBookingShowInstagram },
                               ] as { key: string; label: string; icon: React.ReactNode; value: boolean; setter: (v: boolean) => void }[]).map(row => (
-                                <div key={row.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '11px 14px', marginBottom: 8 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                                <div key={row.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '11px 14px', marginBottom: 8 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: '#374151', fontSize: 13 }}>
                                     {row.icon} {row.label}
                                   </div>
                                   <button type="button" onClick={() => row.setter(!row.value)}
                                     style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 13px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s',
-                                      background: row.value ? '#E6F4EC' : 'rgba(255,255,255,0.07)',
-                                      color:      row.value ? '#0A4A2C'  : 'rgba(255,255,255,0.4)',
-                                      border:     `1px solid ${row.value ? '#A7D7BC' : 'rgba(255,255,255,0.12)'}` }}>
+                                      background: row.value ? '#E6F4EC' : '#F8FAFC',
+                                      color:      row.value ? '#0A4A2C'  : '#6B7280',
+                                      border:     `1px solid ${row.value ? '#A7D7BC' : '#E2E8F0'}` }}>
                                     {row.value ? <Eye size={11} /> : <EyeOff size={11} />}
                                     {row.value ? 'Visível' : 'Oculto'}
                                   </button>
@@ -1557,10 +1709,10 @@ export default function ClientAdminPanel({
 
                             {/* Link Google Maps */}
                             <div>
-                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid #E2E8F0', paddingBottom: 10, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <MapPin size={13} /> Localização no Maps
                               </p>
-                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginBottom: 10 }}>
+                              <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
                                 Cole o link do Google Maps do estabelecimento. Aparece na confirmação e no cancelamento do agendamento.
                               </p>
                               <input
@@ -1568,20 +1720,20 @@ export default function ClientAdminPanel({
                                 placeholder="https://maps.app.goo.gl/..."
                                 value={bookingMapsUrl}
                                 onChange={e => setBookingMapsUrl(e.target.value)}
-                                style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#fff', outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' }}
+                                style={{ width: '100%', background: '#FFFFFF', border: '1px solid #D1D5DB', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#111827', outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' }}
                               />
                             </div>
 
                             <button type="button"
                               onClick={async () => { try { await onUpdateTenantDetails(activeTenant.id, { bookingPageConfig: { primaryColor: bookingPrimaryColor, showPhone: bookingShowPhone, showAddress: bookingShowAddress, showInstagram: bookingShowInstagram, mapsUrl: bookingMapsUrl || undefined } }); toast.success('Página do cliente atualizada!'); } catch { toast.error('Erro ao salvar.'); } }}
-                              style={{ padding: 13, background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                              style={{ padding: 13, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                               Salvar Configurações
                             </button>
                           </div>
 
                           {/* Pré-visualização */}
-                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24 }}>
-                            <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 16 }}>Pré-visualização</p>
+                          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                            <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 16 }}>Pré-visualização</p>
                             {(() => {
                               const h = bookingPrimaryColor.replace('#', '');
                               const pr = parseInt(h.slice(0,2),16), pg = parseInt(h.slice(2,4),16), pb = parseInt(h.slice(4,6),16);
@@ -1653,11 +1805,22 @@ export default function ClientAdminPanel({
 
                       {cfgTab === 'assinatura' && (() => {
                         const BASE = 89.90;
+                        const ACCENT = '#2563EB';
                         type PlanKey = 'mensal' | 'trimestral' | 'anual';
-                        const PLANS: Array<{ key: PlanKey; label: string; months: number; discountPct: number; color: string; badge: string | null }> = [
-                          { key: 'mensal',     label: '1 Mês',   months: 1,  discountPct: 0,  color: '#3b82f6', badge: null        },
-                          { key: 'trimestral', label: '3 Meses', months: 3,  discountPct: 15, color: '#8b5cf6', badge: '15% OFF'   },
-                          { key: 'anual',      label: '1 Ano',   months: 12, discountPct: 25, color: '#10b981', badge: '25% OFF'   },
+                        const PLANS: Array<{ key: PlanKey; label: string; months: number; discountPct: number; hot: boolean; badge: string | null; billing: string }> = [
+                          { key: 'mensal',     label: 'Mensal',     months: 1,  discountPct: 0,  hot: false, badge: null,           billing: 'Cobrado mensalmente' },
+                          { key: 'trimestral', label: 'Trimestral', months: 3,  discountPct: 15, hot: true,  badge: '15% OFF',      billing: `R$ ${(BASE*0.85*3).toFixed(2).replace('.',',')} / 3 meses` },
+                          { key: 'anual',      label: 'Anual',      months: 12, discountPct: 25, hot: false, badge: 'Melhor valor', billing: `R$ ${(BASE*0.75*12).toFixed(2).replace('.',',')} / ano` },
+                        ];
+                        const FEATURES = [
+                          'Agendamento online ilimitado',
+                          'WhatsApp automático (confirmação + lembrete)',
+                          'Gestão financeira completa',
+                          'Multi-profissional com comissões automáticas',
+                          'Página pública personalizada com seu link',
+                          'Histórico de clientes',
+                          'Relatórios e métricas',
+                          'Suporte via chat',
                         ];
 
                         const isTrial      = activeTenant.plan === 'trial';
@@ -1678,147 +1841,175 @@ export default function ClientAdminPanel({
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
                             {/* Status card */}
-                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 20, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+
+                              {/* Cabeçalho com gradiente */}
+                              <div style={{ background: isTrial ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : isActive ? 'linear-gradient(135deg, #2563EB 0%, #1d4ed8 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', padding: '24px 24px 20px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                                 <div>
-                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 6px' }}>Plano atual</p>
-                                  <p style={{ fontSize: 22, fontWeight: 800, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{planLabels[activeTenant.plan] ?? activeTenant.plan}</p>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.65)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 6px' }}>Plano atual</p>
+                                  <p style={{ fontSize: 26, fontWeight: 900, color: '#fff', margin: 0, letterSpacing: '-0.5px' }}>{planLabels[activeTenant.plan] ?? activeTenant.plan}</p>
                                 </div>
-                                <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44`, whiteSpace: 'nowrap' as const }}>
+                                <span style={{ padding: '5px 14px', borderRadius: 99, fontSize: 11, fontWeight: 800, background: 'rgba(255,255,255,0.2)', color: '#fff', backdropFilter: 'blur(4px)', whiteSpace: 'nowrap' as const, letterSpacing: '0.3px' }}>
                                   {statusLabel}
                                 </span>
                               </div>
 
-                              <div style={{ display: 'grid', gridTemplateColumns: isActive && !isTrial ? '1fr 1fr' : '1fr', gap: 10 }}>
-                                <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 14px' }}>
-                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>
-                                    {isTrial ? 'Trial encerra em' : 'Próxima renovação'}
-                                  </p>
-                                  <p style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{fmtDate(endDate)}</p>
-                                  {daysLeft !== null && (
-                                    <p style={{ fontSize: 11, color: daysLeft <= 10 ? '#f59e0b' : 'rgba(255,255,255,0.35)', margin: '3px 0 0', fontWeight: 600 }}>
-                                      {daysLeft > 0
-                                        ? `${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}`
-                                        : 'Vence hoje'}
+                              {/* Corpo */}
+                              <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                                {/* Métricas */}
+                                <div style={{ display: 'grid', gridTemplateColumns: isActive && !isTrial ? '1fr 1fr' : '1fr', gap: 10 }}>
+                                  <div style={{ background: '#F8FAFC', borderRadius: 12, padding: '14px 16px', border: '1px solid #E2E8F0' }}>
+                                    <p style={{ fontSize: 11, color: '#6B7280', margin: '0 0 4px', fontWeight: 600 }}>
+                                      {isTrial ? 'Trial encerra em' : 'Válido até'}
                                     </p>
+                                    <p style={{ fontSize: 16, fontWeight: 800, color: '#111827', margin: 0 }}>{fmtDate(endDate)}</p>
+                                    {daysLeft !== null && (
+                                      <p style={{ fontSize: 11, color: daysLeft <= 10 ? '#f59e0b' : '#22c55e', margin: '3px 0 0', fontWeight: 700 }}>
+                                        {daysLeft > 0
+                                          ? `${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}`
+                                          : 'Vence hoje'}
+                                      </p>
+                                    )}
+                                  </div>
+                                  {isActive && !isTrial && (
+                                    <div style={{ background: '#F8FAFC', borderRadius: 12, padding: '14px 16px', border: '1px solid #E2E8F0' }}>
+                                      <p style={{ fontSize: 11, color: '#6B7280', margin: '0 0 4px', fontWeight: 600 }}>Valor pago</p>
+                                      <p style={{ fontSize: 16, fontWeight: 800, color: '#111827', margin: 0 }}>
+                                        {activeTenant.mrr > 0 ? `R$ ${Number(activeTenant.mrr).toFixed(2).replace('.', ',')}` : '—'}
+                                      </p>
+                                      <p style={{ fontSize: 10, color: '#9CA3AF', margin: '3px 0 0', fontWeight: 600 }}>via Asaas · Pix / Boleto / Cartão</p>
+                                    </div>
                                   )}
                                 </div>
-                                {isActive && !isTrial && (
-                                  <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '12px 14px' }}>
-                                    <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '0 0 4px', fontWeight: 600 }}>Valor do plano</p>
-                                    <p style={{ fontSize: 15, fontWeight: 700, color: '#4ade80', margin: 0 }}>
-                                      {activeTenant.mrr > 0 ? `R$ ${Number(activeTenant.mrr).toFixed(2).replace('.', ',')}` : '—'}
+
+                                {/* Banner contextual */}
+                                {showAlert && (
+                                  <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                                    <p style={{ fontSize: 12, color: '#92400e', margin: 0, lineHeight: 1.5, fontWeight: 500 }}>
+                                      {isTrial
+                                        ? `Trial encerra em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Escolha um plano abaixo.`
+                                        : `Assinatura vence em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Renove para não perder o acesso.`}
                                     </p>
-                                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', margin: '3px 0 0' }}>renovação automática</p>
                                   </div>
                                 )}
+                                {isTrial && !showAlert && (
+                                  <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <span style={{ fontSize: 16, flexShrink: 0 }}>✨</span>
+                                    <p style={{ fontSize: 12, color: '#78350f', margin: 0, lineHeight: 1.5, fontWeight: 500 }}>
+                                      Período de teste gratuito de 7 dias. Explore tudo e escolha seu plano abaixo.
+                                    </p>
+                                  </div>
+                                )}
+                                {isActive && !isTrial && !showAlert && (
+                                  <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.15)', borderRadius: 10, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <span style={{ fontSize: 16, flexShrink: 0 }}>✅</span>
+                                    <p style={{ fontSize: 12, color: '#14532d', margin: 0, lineHeight: 1.5, fontWeight: 500 }}>
+                                      Assinatura ativa e em dia. Você pode adicionar mais tempo ao seu plano a qualquer momento.
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* Botão renovar */}
+                                {!isTrial && (
+                                  <button
+                                    onClick={() => handleSubscribe(activeTenant.plan as 'mensal' | 'trimestral' | 'anual')}
+                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '13px', background: showAlert ? '#f59e0b' : '#2563EB', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', boxShadow: showAlert ? '0 4px 14px rgba(245,158,11,0.35)' : '0 4px 14px rgba(37,99,235,0.30)', transition: 'all 0.2s' }}>
+                                    <RefreshCw size={15} />
+                                    {showAlert ? 'Renovar agora — não perca o acesso' : 'Renovar plano agora'}
+                                  </button>
+                                )}
+                                {isTrial && (
+                                  <button
+                                    onClick={() => handleSubscribe('trimestral')}
+                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '13px', background: '#2563EB', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', boxShadow: '0 4px 14px rgba(37,99,235,0.30)', transition: 'all 0.2s' }}>
+                                    <Zap size={15} />
+                                    Assinar agora
+                                  </button>
+                                )}
                               </div>
-
-                              {/* Alerta de vencimento próximo */}
-                              {showAlert && (
-                                <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '12px 14px' }}>
-                                  <p style={{ fontSize: 13, color: '#fcd34d', margin: 0, lineHeight: 1.5 }}>
-                                    {isTrial
-                                      ? `Seu trial encerra em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Escolha um plano abaixo para continuar sem interrupção.`
-                                      : `Sua assinatura vence em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Renove agora para não perder o acesso.`}
-                                  </p>
-                                </div>
-                              )}
-
-                              {/* Info trial sem urgência */}
-                              {isTrial && !showAlert && (
-                                <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, padding: '12px 14px' }}>
-                                  <p style={{ fontSize: 13, color: 'rgba(253,211,77,0.8)', margin: 0, lineHeight: 1.5 }}>
-                                    Você está no período de teste gratuito de 7 dias. Explore todos os recursos e escolha seu plano abaixo.
-                                  </p>
-                                </div>
-                              )}
-
-                              {/* Info assinatura saudável */}
-                              {isActive && !isTrial && !showAlert && (
-                                <div style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.15)', borderRadius: 10, padding: '12px 14px' }}>
-                                  <p style={{ fontSize: 13, color: '#86efac', margin: 0, lineHeight: 1.5 }}>
-                                    Assinatura ativa. O pagamento é renovado automaticamente via Asaas (boleto, Pix ou cartão).
-                                  </p>
-                                </div>
-                              )}
                             </div>
 
                             {/* Planos */}
                             <div>
-                              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 14px' }}>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 20px' }}>
                                 {isActive && !isTrial && !showAlert ? 'Alterar plano' : 'Escolha seu plano'}
                               </p>
 
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 20 }}>
                                 {PLANS.map(p => {
                                   const monthly   = parseFloat((BASE * (1 - p.discountPct / 100)).toFixed(2));
-                                  const total     = parseFloat((monthly * p.months).toFixed(2));
-                                  const saving    = parseFloat(((BASE - monthly) * p.months).toFixed(2));
                                   const isCurrent = activeTenant.plan === p.key;
                                   const isRenew   = isCurrent && showAlert;
 
                                   return (
                                     <div key={p.key} style={{
                                       position: 'relative' as const,
-                                      background: isCurrent ? `${p.color}18` : 'rgba(255,255,255,0.03)',
-                                      border: `1.5px solid ${isCurrent ? p.color + '66' : p.key === 'trimestral' ? p.color + '33' : 'rgba(255,255,255,0.09)'}`,
-                                      borderRadius: 8,
-                                      padding: '24px 16px 16px',
+                                      background: p.hot ? ACCENT : isCurrent ? '#EFF6FF' : '#FFFFFF',
+                                      border: `1px solid ${p.hot ? ACCENT : isCurrent ? '#BFDBFE' : '#E2E8F0'}`,
+                                      borderRadius: 28,
+                                      padding: '36px 24px 24px',
                                       display: 'flex',
                                       flexDirection: 'column' as const,
-                                      gap: 10,
+                                      boxShadow: p.hot ? '0 20px 56px rgba(37,99,235,0.28)' : '0 2px 12px rgba(0,0,0,0.05)',
+                                      transform: p.hot ? 'scale(1.03)' : 'none',
+                                      zIndex: p.hot ? 1 : 0,
                                     }}>
-                                      {/* Badge topo */}
+                                      {/* Badge */}
                                       {(p.badge || isCurrent) && (
-                                        <div style={{ position: 'absolute' as const, top: -11, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
-                                          <span style={{ background: isCurrent ? '#22c55e' : p.color, color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 4, letterSpacing: '0.5px', whiteSpace: 'nowrap' as const }}>
+                                        <div style={{ position: 'absolute' as const, top: -14, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap' as const }}>
+                                          <span style={{ background: isCurrent ? '#22c55e' : p.hot ? '#fff' : ACCENT, color: isCurrent ? '#fff' : p.hot ? ACCENT : '#fff', fontSize: 11, fontWeight: 800, padding: '5px 16px', borderRadius: 99, boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
                                             {isCurrent ? '✓ PLANO ATUAL' : p.badge}
                                           </span>
                                         </div>
                                       )}
 
-                                      <p style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' as const, letterSpacing: '1px', margin: 0 }}>{p.label}</p>
+                                      {/* Label */}
+                                      <p style={{ fontSize: 12, fontWeight: 700, color: p.hot ? 'rgba(255,255,255,0.65)' : '#475569', textTransform: 'uppercase' as const, letterSpacing: '1.5px', margin: '0 0 14px' }}>{p.label}</p>
 
                                       {/* Preço */}
-                                      <div>
-                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-                                          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.45)' }}>R$</span>
-                                          <span style={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1 }}>
-                                            {monthly.toFixed(2).replace('.', ',')}
-                                          </span>
-                                        </div>
-                                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>/mês</span>
+                                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 14, color: p.hot ? 'rgba(255,255,255,0.65)' : '#475569', fontWeight: 600 }}>R$</span>
+                                        <span style={{ fontSize: 46, fontWeight: 900, color: p.hot ? '#fff' : '#111111', lineHeight: 1, letterSpacing: '-2px' }}>
+                                          {monthly.toFixed(2).replace('.', ',')}
+                                        </span>
+                                        <span style={{ fontSize: 14, color: p.hot ? 'rgba(255,255,255,0.65)' : '#475569' }}>/mês</span>
                                       </div>
 
-                                      {/* Total e economia */}
-                                      {p.months > 1 ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
-                                          <p style={{ fontSize: 14, fontWeight: 800, color: '#fff', margin: 0 }}>
-                                            R$ {total.toFixed(2).replace('.', ',')}
-                                          </p>
-                                          <p style={{ fontSize: 10, color: '#4ade80', fontWeight: 700, margin: 0 }}>
-                                            Economia de R$ {saving.toFixed(2).replace('.', ',')}
-                                          </p>
-                                        </div>
-                                      ) : (
-                                        <div style={{ height: 34 }} />
-                                      )}
+                                      {/* Billing */}
+                                      <p style={{ fontSize: 12, color: p.hot ? 'rgba(255,255,255,0.45)' : '#94a3b8', margin: '0 0 20px' }}>{p.billing}</p>
 
+                                      {/* Features */}
+                                      <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', display: 'flex', flexDirection: 'column' as const, gap: 9, flex: 1 }}>
+                                        {FEATURES.map(f => (
+                                          <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, fontSize: 13, color: p.hot ? 'rgba(255,255,255,0.85)' : '#475569', lineHeight: 1.5 }}>
+                                            <span style={{ flexShrink: 0, marginTop: 2, width: 17, height: 17, borderRadius: 99, background: p.hot ? 'rgba(255,255,255,0.2)' : '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: p.hot ? '#fff' : '#16a34a' }}>
+                                              <Check size={10} strokeWidth={3} />
+                                            </span>
+                                            <span>{f}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+
+                                      {/* Botão */}
                                       <button
                                         disabled={isCurrent && !isTrial && !isRenew}
-                                        onClick={() => { if (!isCurrent || isRenew || isTrial) handleSubscribe(p.key as 'mensal' | 'trimestral' | 'anual'); }}
+                                        onClick={() => { if (!isCurrent || isRenew || isTrial) handleSubscribe(p.key); }}
                                         style={{
-                                          marginTop: 4,
-                                          padding: '10px 0',
-                                          background: isRenew ? p.color : isCurrent && !isTrial ? 'rgba(255,255,255,0.07)' : p.color,
-                                          color: '#fff',
-                                          border: isCurrent && !isTrial && !isRenew ? '1px solid rgba(255,255,255,0.15)' : 'none',
-                                          borderRadius: 6,
-                                          fontSize: 12,
+                                          display: 'block',
+                                          width: '100%',
+                                          padding: '14px',
                                           fontWeight: 700,
+                                          fontSize: 14,
+                                          background: p.hot ? '#fff' : isCurrent && !isTrial && !isRenew ? '#F1F5F9' : ACCENT,
+                                          color: p.hot ? ACCENT : isCurrent && !isTrial && !isRenew ? '#374151' : '#fff',
+                                          border: isCurrent && !isTrial && !isRenew && !p.hot ? '1px solid #E2E8F0' : 'none',
+                                          borderRadius: 14,
                                           cursor: isCurrent && !isTrial && !isRenew ? 'default' : 'pointer',
                                           fontFamily: 'Outfit, sans-serif',
+                                          boxShadow: p.hot ? '0 4px 16px rgba(0,0,0,0.10)' : 'none',
+                                          transition: 'all 0.2s',
                                         }}
                                       >
                                         {isRenew ? 'Renovar agora' : isCurrent && !isTrial ? 'Plano atual' : isTrial ? 'Assinar' : 'Mudar plano'}
@@ -1828,7 +2019,7 @@ export default function ClientAdminPanel({
                                 })}
                               </div>
 
-                              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', textAlign: 'center' as const, margin: '14px 0 0', lineHeight: 1.5 }}>
+                              <p style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center' as const, margin: '16px 0 0', lineHeight: 1.5 }}>
                                 Pagamentos processados via Asaas · Boleto, Pix ou Cartão de Crédito
                               </p>
                             </div>
@@ -1870,42 +2061,42 @@ export default function ClientAdminPanel({
 
                         const infoRow: React.CSSProperties = {
                           display: 'flex', alignItems: 'center', gap: 14,
-                          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                          background: '#F8FAFC', border: '1px solid #E2E8F0',
                           borderRadius: 12, padding: '14px 18px',
                         };
                         const iconWrap: React.CSSProperties = {
                           width: 36, height: 36, borderRadius: 9, flexShrink: 0,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)',
+                          background: '#F1F5F9', border: '1px solid #E2E8F0',
                         };
 
                         return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
                           {/* Informações da conta */}
-                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: '0 0 6px' }}>
+                          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid #E2E8F0', paddingBottom: 12, margin: '0 0 6px' }}>
                               Informações da Conta
                             </h4>
                             <div style={infoRow}>
-                              <div style={iconWrap}><Mail style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} /></div>
+                              <div style={iconWrap}><Mail style={{ width: 15, height: 15, color: '#6B7280' }} /></div>
                               <div>
-                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 2 }}>E-mail</div>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)', fontFamily: 'monospace' }}>{user?.email ?? '—'}</div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 2 }}>E-mail</div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', fontFamily: 'monospace' }}>{user?.email ?? '—'}</div>
                               </div>
                             </div>
                             <div style={infoRow}>
-                              <div style={iconWrap}><Clock style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} /></div>
+                              <div style={iconWrap}><Clock style={{ width: 15, height: 15, color: '#6B7280' }} /></div>
                               <div>
-                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 2 }}>Membro há</div>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{ageText}</div>
-                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.32)', marginTop: 2 }}>Desde {dataCadastro}</div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 2 }}>Membro há</div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{ageText}</div>
+                                <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>Desde {dataCadastro}</div>
                               </div>
                             </div>
                             <div style={infoRow}>
-                              <div style={iconWrap}><Shield style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} /></div>
+                              <div style={iconWrap}><Shield style={{ width: 15, height: 15, color: '#6B7280' }} /></div>
                               <div>
-                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 4 }}>Status</div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 4 }}>Status</div>
                                 <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700,
                                   background: activeTenant.status === 'active' ? '#E6F4EC' : activeTenant.status === 'trial' ? '#FEF9EC' : '#FEECEC',
                                   color: activeTenant.status === 'active' ? '#0A4A2C' : activeTenant.status === 'trial' ? '#7A4B0A' : '#7A0A0A' }}>
@@ -1916,12 +2107,12 @@ export default function ClientAdminPanel({
                           </div>
 
                           {/* Trocar / Definir senha */}
-                          <form onSubmit={handleTrocarSenha} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <form onSubmit={handleTrocarSenha} style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid #E2E8F0', paddingBottom: 12, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
                               <Lock style={{ width: 12, height: 12 }} /> {isGoogleUser ? 'Definir Senha' : 'Trocar Senha'}
                             </h4>
                             {isGoogleUser && (
-                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: 0, lineHeight: 1.6 }}>
+                              <p style={{ fontSize: 12, color: '#6B7280', margin: 0, lineHeight: 1.6 }}>
                                 Sua conta usa login pelo Google. Você pode definir uma senha para também acessar por e-mail e senha.
                               </p>
                             )}
@@ -1931,7 +2122,7 @@ export default function ClientAdminPanel({
                                   value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} required
                                   className="navy-input" style={{ paddingRight: 44 }} />
                                 <button type="button" onClick={() => setShowSenhaAtual(v => !v)}
-                                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }}>
+                                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', display: 'flex', alignItems: 'center' }}>
                                   {showSenhaAtual ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
                                 </button>
                               </div>
@@ -1941,7 +2132,7 @@ export default function ClientAdminPanel({
                                 value={novaSenha} onChange={e => setNovaSenha(e.target.value)} required
                                 className="navy-input" style={{ paddingRight: 44 }} />
                               <button type="button" onClick={() => setShowNovaSenha(v => !v)}
-                                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }}>
+                                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', display: 'flex', alignItems: 'center' }}>
                                 {showNovaSenha ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
                               </button>
                             </div>
@@ -1950,7 +2141,7 @@ export default function ClientAdminPanel({
                                 value={confirmarSenha} onChange={e => setConfirmarSenha(e.target.value)} required
                                 className="navy-input" style={{ paddingRight: 44 }} />
                               <button type="button" onClick={() => setShowConfSenha(v => !v)}
-                                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }}>
+                                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', display: 'flex', alignItems: 'center' }}>
                                 {showConfSenha ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
                               </button>
                             </div>
@@ -1958,36 +2149,36 @@ export default function ClientAdminPanel({
                               <p style={{ fontSize: 12, color: '#fca5a5', margin: 0 }}>As senhas não coincidem.</p>
                             )}
                             <button type="submit" disabled={salvandoSenha}
-                              style={{ padding: '12px', background: salvandoSenha ? 'rgba(255,255,255,0.3)' : '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: salvandoSenha ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}>
+                              style={{ padding: '12px', background: salvandoSenha ? '#F1F5F9' : '#1D4ED8', color: salvandoSenha ? '#9CA3AF' : '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: salvandoSenha ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}>
                               {salvandoSenha ? 'Salvando…' : isGoogleUser ? 'Definir Senha' : 'Alterar Senha'}
                             </button>
                           </form>
 
                           {/* Guia de configuração */}
-                          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                             <div>
-                              <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', marginBottom: 6 }}>Guia de Configuração</h4>
-                              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: 0, lineHeight: 1.6 }}>
+                              <h4 style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', marginBottom: 6 }}>Guia de Configuração</h4>
+                              <p style={{ fontSize: 12, color: '#6B7280', margin: 0, lineHeight: 1.6 }}>
                                 Rever o assistente que guia a configuração do negócio e do link de agendamento.
                               </p>
                             </div>
                             <button onClick={restartTour}
-                              style={{ padding: '9px 18px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 9, color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              style={{ padding: '9px 18px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 9, color: '#374151', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
                               🗺️ Rever guia
                             </button>
                           </div>
 
-                          <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 16, padding: 24 }}>
-                            <h4 style={{ fontSize: 11, fontWeight: 700, color: '#fca5a5', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(239,68,68,0.15)', paddingBottom: 12, margin: '0 0 16px' }}>Excluir Conta</h4>
+                          <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 16, padding: 24 }}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: '#DC2626', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid #FECACA', paddingBottom: 12, margin: '0 0 16px' }}>Excluir Conta</h4>
 
                             {deleteStep === 'idle' && (
                               <div>
-                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7, margin: '0 0 12px' }}>
-                                  Em conformidade com a <strong style={{ color: 'rgba(255,255,255,0.7)' }}>LGPD (Lei 13.709/2018)</strong>, você pode solicitar a exclusão permanente de todos os seus dados, incluindo agendamentos, clientes, serviços, profissionais e histórico financeiro.
+                                <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.7, margin: '0 0 12px' }}>
+                                  Em conformidade com a <strong style={{ color: '#111827' }}>LGPD (Lei 13.709/2018)</strong>, você pode solicitar a exclusão permanente de todos os seus dados, incluindo agendamentos, clientes, serviços, profissionais e histórico financeiro.
                                 </p>
-                                <p style={{ fontSize: 12, color: 'rgba(239,68,68,0.8)', margin: '0 0 16px' }}>⚠️ Esta ação é irreversível e não pode ser desfeita.</p>
+                                <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 16px' }}>⚠️ Esta ação é irreversível e não pode ser desfeita.</p>
                                 <button onClick={() => setDeleteStep('confirm')}
-                                  style={{ padding: '8px 20px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                  style={{ padding: '8px 20px', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, color: '#DC2626', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                                   Solicitar exclusão de dados
                                 </button>
                               </div>
@@ -1995,16 +2186,16 @@ export default function ClientAdminPanel({
 
                             {deleteStep === 'confirm' && (
                               <div>
-                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.7, margin: '0 0 8px' }}>Ao confirmar, serão excluídos permanentemente:</p>
-                                <ul style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.9, margin: '0 0 20px', paddingLeft: 20 }}>
+                                <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.7, margin: '0 0 8px' }}>Ao confirmar, serão excluídos permanentemente:</p>
+                                <ul style={{ fontSize: 13, color: '#6B7280', lineHeight: 1.9, margin: '0 0 20px', paddingLeft: 20 }}>
                                   <li>Todos os agendamentos e histórico</li>
                                   <li>Cadastro de clientes</li>
                                   <li>Serviços e profissionais</li>
                                   <li>Dados financeiros</li>
                                   <li>Assinatura e conta de acesso</li>
                                 </ul>
-                                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', margin: '0 0 10px' }}>
-                                  Digite <strong style={{ color: '#fca5a5' }}>EXCLUIR</strong> para confirmar:
+                                <p style={{ fontSize: 13, color: '#374151', margin: '0 0 10px' }}>
+                                  Digite <strong style={{ color: '#DC2626' }}>EXCLUIR</strong> para confirmar:
                                 </p>
                                 <div style={{ display: 'flex', gap: 10 }}>
                                   <input value={deleteInput} onChange={e => setDeleteInput(e.target.value)}
@@ -2021,14 +2212,14 @@ export default function ClientAdminPanel({
                                   </button>
                                 </div>
                                 <button onClick={() => { setDeleteStep('idle'); setDeleteInput(''); }}
-                                  style={{ marginTop: 12, background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                                  style={{ marginTop: 12, background: 'none', border: 'none', color: '#6B7280', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                                   Cancelar
                                 </button>
                               </div>
                             )}
 
                             {deleteStep === 'deleting' && (
-                              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Excluindo todos os dados… aguarde.</p>
+                              <p style={{ fontSize: 13, color: '#6B7280' }}>Excluindo todos os dados… aguarde.</p>
                             )}
                           </div>
                         </div>
@@ -2044,35 +2235,35 @@ export default function ClientAdminPanel({
                         const perm = permLabels[notifications.permission] ?? permLabels.default;
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 520 }}>
-                            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                              <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                              <h4 style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', borderBottom: '1px solid #E2E8F0', paddingBottom: 12, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <Bell style={{ width: 12, height: 12 }} /> Notificações do Navegador
                               </h4>
 
                               {!notifications.supported && (
-                                <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>
+                                <p style={{ margin: 0, fontSize: 13, color: '#6B7280', lineHeight: 1.6 }}>
                                   Seu navegador não suporta notificações push. Tente usar Chrome, Firefox ou Edge.
                                 </p>
                               )}
 
                               {notifications.supported && (
                                 <>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '14px 18px' }}>
-                                    <div style={{ width: 36, height: 36, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)' }}>
-                                      <Bell style={{ width: 15, height: 15, color: 'rgba(255,255,255,0.5)' }} />
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '14px 18px' }}>
+                                    <div style={{ width: 36, height: 36, borderRadius: 9, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F1F5F9', border: '1px solid #E2E8F0' }}>
+                                      <Bell style={{ width: 15, height: 15, color: '#6B7280' }} />
                                     </div>
                                     <div>
-                                      <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 4 }}>Permissão do navegador</div>
+                                      <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginBottom: 4 }}>Permissão do navegador</div>
                                       <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: perm.bg, color: perm.color }}>
                                         {perm.label}
                                       </span>
                                     </div>
                                   </div>
 
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '14px 18px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '14px 18px' }}>
                                     <div>
-                                      <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: 2 }}>Novos agendamentos</div>
-                                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>Receba um alerta quando um cliente agendar online</div>
+                                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 2 }}>Novos agendamentos</div>
+                                      <div style={{ fontSize: 11, color: '#6B7280' }}>Receba um alerta quando um cliente agendar online</div>
                                     </div>
                                     <button
                                       type="button"
@@ -2081,7 +2272,7 @@ export default function ClientAdminPanel({
                                       style={{
                                         width: 44, height: 24, borderRadius: 12, border: 'none',
                                         cursor: notifications.permission === 'granted' ? 'pointer' : 'not-allowed',
-                                        background: notifications.enabled && notifications.permission === 'granted' ? '#22c55e' : 'rgba(255,255,255,0.12)',
+                                        background: notifications.enabled && notifications.permission === 'granted' ? '#22c55e' : '#D1D5DB',
                                         position: 'relative', transition: 'background 200ms', flexShrink: 0,
                                         opacity: notifications.permission !== 'granted' ? 0.4 : 1,
                                       }}
@@ -2105,8 +2296,8 @@ export default function ClientAdminPanel({
                                   )}
 
                                   {notifications.permission === 'denied' && (
-                                    <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 10, padding: '12px 16px' }}>
-                                      <p style={{ margin: 0, fontSize: 12, color: '#fca5a5', lineHeight: 1.6 }}>
+                                    <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '12px 16px' }}>
+                                      <p style={{ margin: 0, fontSize: 12, color: '#DC2626', lineHeight: 1.6 }}>
                                         As notificações estão bloqueadas no seu navegador. Para habilitar, clique no cadeado na barra de endereços e permita notificações para este site.
                                       </p>
                                     </div>
@@ -2116,7 +2307,7 @@ export default function ClientAdminPanel({
                                     <button
                                       type="button"
                                       onClick={() => notifications.notify('Notificação de teste ✅', { body: 'As notificações estão funcionando corretamente!' })}
-                                      style={{ padding: '9px 18px', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', alignSelf: 'flex-start' }}>
+                                      style={{ padding: '9px 18px', background: '#F8FAFC', color: '#374151', border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', alignSelf: 'flex-start' }}>
                                       Enviar notificação de teste
                                     </button>
                                   )}
@@ -2144,25 +2335,25 @@ export default function ClientAdminPanel({
         >
           <div
             onClick={e => e.stopPropagation()}
-            style={{ background: '#0d2240', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+            style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 18, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 24px 64px rgba(0,0,0,0.15)' }}
           >
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
-              <X size={20} color="#f87171" />
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#FEE2E2', border: '1px solid #FCA5A5', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+              <X size={20} color="#DC2626" />
             </div>
-            <h3 style={{ fontSize: 16, fontWeight: 800, color: 'rgba(255,255,255,0.9)', margin: '0 0 8px', fontFamily: 'Outfit, sans-serif' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: '#111827', margin: '0 0 8px', fontFamily: 'Outfit, sans-serif' }}>
               Apagar cliente?
             </h3>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', margin: '0 0 6px', lineHeight: 1.6, fontFamily: 'Outfit, sans-serif' }}>
-              <strong style={{ color: 'rgba(255,255,255,0.85)' }}>{deleteCustomerPending.name}</strong> será removido permanentemente.
+            <p style={{ fontSize: 13, color: '#374151', margin: '0 0 6px', lineHeight: 1.6, fontFamily: 'Outfit, sans-serif' }}>
+              <strong style={{ color: '#111827' }}>{deleteCustomerPending.name}</strong> será removido permanentemente.
             </p>
-            <p style={{ fontSize: 12, color: '#fca5a5', margin: '0 0 24px', lineHeight: 1.6, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 8, padding: '8px 12px', fontFamily: 'Outfit, sans-serif' }}>
+            <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 24px', lineHeight: 1.6, background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 12px', fontFamily: 'Outfit, sans-serif' }}>
               ⚠️ Todos os agendamentos deste cliente também serão apagados.
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={() => setDeleteCustomerPending(null)}
                 disabled={deletingCustomer}
-                style={{ flex: 1, padding: '11px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: 'rgba(255,255,255,0.65)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+                style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
               >
                 Cancelar
               </button>
@@ -2192,16 +2383,16 @@ export default function ClientAdminPanel({
         <div onClick={() => setPrivacyModal(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.82)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: '#0d2240', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+            style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 18, width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.15)' }}>
 
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff', fontFamily: 'Outfit, sans-serif' }}>Política de Privacidade</h3>
-                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'Outfit, sans-serif' }}>WorkAgenda · Atualizada em junho de 2025</p>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827', fontFamily: 'Outfit, sans-serif' }}>Política de Privacidade</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: '#6B7280', fontFamily: 'Outfit, sans-serif' }}>WorkAgenda · Atualizada em junho de 2025</p>
               </div>
               <button onClick={() => setPrivacyModal(false)}
-                style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                style={{ width: 32, height: 32, borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <X size={15} />
               </button>
             </div>
@@ -2251,16 +2442,16 @@ export default function ClientAdminPanel({
                 },
               ] as { title: string; text: string }[]).map(({ title, text }) => (
                 <div key={title}>
-                  <h4 style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h4>
-                  <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7 }}>{text}</p>
+                  <h4 style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h4>
+                  <p style={{ margin: 0, fontSize: 13, color: '#6B7280', lineHeight: 1.7 }}>{text}</p>
                 </div>
               ))}
             </div>
 
             {/* Footer */}
-            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', flexShrink: 0 }}>
               <button onClick={() => setPrivacyModal(false)}
-                style={{ width: '100%', padding: '11px', background: '#ffffff', color: '#0F172A', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                style={{ width: '100%', padding: '11px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                 Entendi
               </button>
             </div>
@@ -2275,12 +2466,12 @@ export default function ClientAdminPanel({
           <div style={{ background: '#fff', borderRadius: 20, width: 440, maxWidth: '100%', boxShadow: '0 30px 80px rgba(0,0,0,0.5)', overflow: 'hidden' }}
             onClick={e => e.stopPropagation()}>
             {/* Header */}
-            <div style={{ background: '#0F172A', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff', fontFamily: 'Outfit, sans-serif' }}>Central de Suporte</h3>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Outfit, sans-serif' }}>Envie uma mensagem para nossa equipe</p>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827', fontFamily: 'Outfit, sans-serif' }}>Central de Suporte</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#6B7280', fontFamily: 'Outfit, sans-serif' }}>Envie uma mensagem para nossa equipe</p>
               </div>
-              <button onClick={() => setSupportModal(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: 4 }}>
+              <button onClick={() => setSupportModal(false)} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4 }}>
                 <X size={18} />
               </button>
             </div>
@@ -2292,7 +2483,7 @@ export default function ClientAdminPanel({
                 </div>
                 <h4 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#0f172a', fontFamily: 'Outfit, sans-serif' }}>Mensagem enviada!</h4>
                 <p style={{ margin: 0, fontSize: 13, color: '#64748b', fontFamily: 'Outfit, sans-serif' }}>Nossa equipe responderá em breve. Acompanhe pela aba Suporte.</p>
-                <button onClick={() => setSupportModal(false)} style={{ marginTop: 24, padding: '10px 28px', background: '#0F172A', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                <button onClick={() => setSupportModal(false)} style={{ marginTop: 24, padding: '10px 28px', background: '#1D4ED8', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                   Fechar
                 </button>
               </div>
@@ -2329,11 +2520,386 @@ export default function ClientAdminPanel({
                       setSupportSending(false);
                     }
                   }}
-                  style={{ width: '100%', padding: '12px', background: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? '#94a3b8' : '#0F172A', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'background 150ms' }}>
+                  style={{ width: '100%', padding: '12px', background: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? '#F1F5F9' : '#1D4ED8', color: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? '#9CA3AF' : '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: (!supportTitle.trim() || !supportMsg.trim() || supportSending) ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'background 150ms' }}>
                   {supportSending ? 'Enviando…' : 'Enviar mensagem'}
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Novo / Editar Serviço ────────────────────────────────────── */}
+      {showNewSrvModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => { setShowNewSrvModal(false); setEditingSrv(null); }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>{editingSrv ? `Editando: ${editingSrv.name}` : 'Novo Serviço'}</p>
+              <button onClick={() => { setShowNewSrvModal(false); setEditingSrv(null); }} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
+            </div>
+            <form
+              onSubmit={async e => {
+                e.preventDefault();
+                if (editingSrv) {
+                  await onUpdateService(editingSrv.id, { name: editingSrv.name, price: editingSrv.price, durationMinutes: editingSrv.durationMinutes, category: editingSrv.category });
+                  toast.success('Serviço atualizado!');
+                } else {
+                  if (!srvName.trim()) return;
+                  const created = await onAddService({ tenantId: activeTenant.id, name: srvName, price: srvPrice, durationMinutes: srvDuration, category: srvCategory });
+                  if (created && srvProfIds.length) await onSetServiceProfessionals(created.id, srvProfIds);
+                  toast.success(`"${srvName}" cadastrado!`);
+                  setSrvName(''); setSrvProfIds([]);
+                }
+                setShowNewSrvModal(false); setEditingSrv(null);
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <input
+                placeholder="Nome do serviço *"
+                value={editingSrv ? editingSrv.name : srvName}
+                onChange={e => editingSrv ? setEditingSrv(v => v && ({ ...v, name: e.target.value })) : setSrvName(e.target.value)}
+                required className="navy-input" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <div>
+                  <label className="navy-label">Preço R$</label>
+                  <input type="number" min={0}
+                    value={editingSrv ? editingSrv.price : srvPrice}
+                    onChange={e => editingSrv ? setEditingSrv(v => v && ({ ...v, price: Number(e.target.value) })) : setSrvPrice(Number(e.target.value))}
+                    className="navy-input" />
+                </div>
+                <div>
+                  <label className="navy-label">Duração min</label>
+                  <input type="number" min={5}
+                    value={editingSrv ? editingSrv.durationMinutes : srvDuration}
+                    onChange={e => editingSrv ? setEditingSrv(v => v && ({ ...v, durationMinutes: Number(e.target.value) })) : setSrvDuration(Number(e.target.value))}
+                    className="navy-input" />
+                </div>
+                <div>
+                  <label className="navy-label">Categoria</label>
+                  <select
+                    value={editingSrv ? editingSrv.category : srvCategory}
+                    onChange={e => editingSrv ? setEditingSrv(v => v && ({ ...v, category: e.target.value as Service['category'] })) : setSrvCategory(e.target.value as any)}
+                    className="navy-select">
+                    <option>Cabelo</option><option>Barba</option><option>Estética</option><option>Unhas</option><option>Combo</option>
+                  </select>
+                </div>
+              </div>
+              {!editingSrv && myProfessionals.length > 0 && (
+                <div>
+                  <label className="navy-label">Profissionais</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                    {myProfessionals.map(p => {
+                      const sel = srvProfIds.includes(p.id);
+                      return (
+                        <button type="button" key={p.id}
+                          onClick={() => setSrvProfIds(ids => sel ? ids.filter(id => id !== p.id) : [...ids, p.id])}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px 5px 6px', borderRadius: 20, background: sel ? '#EFF6FF' : '#F8FAFC', border: `1px solid ${sel ? '#BFDBFE' : '#E2E8F0'}`, color: sel ? '#2563EB' : '#6B7280', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'Outfit, sans-serif' }}>
+                          <img src={p.avatar} style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover' }} />{p.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button type="button" onClick={() => { setShowNewSrvModal(false); setEditingSrv(null); }}
+                  style={{ flex: 1, padding: 12, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                <button type="submit"
+                  style={{ flex: 2, padding: 12, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                  {editingSrv ? 'Salvar' : 'Cadastrar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Profissionais do Serviço ──────────────────────────────────── */}
+      {srvProfPanel && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => setSrvProfPanel(null)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#2563EB', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Profissionais</p>
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: '4px 0 2px' }}>{srvProfPanel.name}</p>
+                <p style={{ fontSize: 11, color: '#6B7280', margin: 0 }}>Marque quem realiza este serviço</p>
+              </div>
+              <button onClick={() => setSrvProfPanel(null)} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
+            </div>
+            {myProfessionals.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>Nenhum colaborador cadastrado. Adicione na aba Equipe.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {myProfessionals.map(p => {
+                  const checked = p.services.includes(srvProfPanel.id);
+                  return (
+                    <button key={p.id} type="button"
+                      onClick={async () => {
+                        const newIds = checked
+                          ? myProfessionals.filter(x => x.services.includes(srvProfPanel.id) && x.id !== p.id).map(x => x.id)
+                          : myProfessionals.filter(x => x.services.includes(srvProfPanel.id)).map(x => x.id).concat(p.id);
+                        await onSetServiceProfessionals(srvProfPanel.id, newIds);
+                      }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, background: checked ? '#EFF6FF' : '#FFFFFF', border: `1px solid ${checked ? '#BFDBFE' : '#E2E8F0'}`, cursor: 'pointer', transition: 'all 150ms', fontFamily: 'Outfit, sans-serif', textAlign: 'left' as const }}>
+                      <img src={p.avatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: checked ? '#2563EB' : '#111827' }}>{p.name}</div>
+                        <div style={{ fontSize: 10, color: '#6B7280' }}>{p.role}</div>
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: checked ? '#2563EB' : '#9CA3AF', flexShrink: 0 }}>{checked ? '✓ Ativo' : '+ Add'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <button onClick={() => setSrvProfPanel(null)}
+              style={{ width: '100%', marginTop: 16, padding: 11, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Fechar</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Novo / Editar Membro da Equipe ───────────────────────────── */}
+      {showNewProfModal && (() => {
+        const profCurHours = profHoursByDay[profSelectedDay] || [];
+        const profDayOpen  = profDays.includes(profSelectedDay);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+            onClick={cancelEditProf}>
+            <div onClick={e => e.stopPropagation()}
+              className="no-scrollbar"
+              style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 500, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', fontFamily: 'Outfit, sans-serif' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>{editingProf ? `Editando: ${editingProf.name}` : 'Novo Colaborador'}</p>
+                <button onClick={cancelEditProf} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
+              </div>
+              <form onSubmit={handleSaveProf} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Foto + nome + cargo */}
+                <input ref={avatarInputRef as any} type="file" className="hidden" accept="image/*" onChange={async e => { if (e.target.files?.[0]) setProfAvatar(await fileToDataURL(e.target.files[0])); }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 12, border: '1px solid #E2E8F0', overflow: 'hidden', background: '#F1F5F9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} onClick={() => avatarInputRef.current?.click()}>
+                    {(profAvatar || editingProf?.avatar)
+                      ? <img src={profAvatar || editingProf?.avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <User size={20} style={{ color: '#9CA3AF' }} />}
+                  </div>
+                  <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input placeholder="Nome *" value={profName} onChange={e => setProfName(e.target.value)} required className="navy-input" />
+                    <input placeholder="Cargo" value={profRole} onChange={e => setProfRole(e.target.value)} className="navy-input" />
+                  </div>
+                </div>
+                <div>
+                  <label className="navy-label">Comissão %</label>
+                  <input type="number" min={0} max={100} value={profCommission} onChange={e => setProfCommission(Number(e.target.value))} className="navy-input" />
+                </div>
+                {/* Horários */}
+                <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 14 }}>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 10px' }}>Horários de Atendimento</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
+                    {ALL_DAYS.map(d => {
+                      const active = profSelectedDay === d;
+                      const open   = profDays.includes(d);
+                      return (
+                        <button key={d} type="button" onClick={() => setProfSelectedDay(d)}
+                          style={{ padding: '4px 10px', borderRadius: 7, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: active ? '#1D4ED8' : '#F8FAFC', color: active ? '#FFFFFF' : open ? '#374151' : '#9CA3AF', border: `1px solid ${active ? '#1D4ED8' : '#E2E8F0'}`, opacity: open ? 1 : 0.55 }}>
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, padding: '7px 12px', background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                    <span style={{ fontSize: 12, color: '#374151', textTransform: 'capitalize' }}>{profSelectedDay} — {profDayOpen ? `${profCurHours.length} horários` : 'Folga'}</span>
+                    <button type="button" onClick={() => setProfDays(prev => prev.includes(profSelectedDay) ? prev.filter(d => d !== profSelectedDay) : [...prev, profSelectedDay])}
+                      style={{ padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: profDayOpen ? '#DCFCE7' : '#FEE2E2', color: profDayOpen ? '#166534' : '#DC2626', border: `1px solid ${profDayOpen ? '#86EFAC' : '#FCA5A5'}` }}>
+                      {profDayOpen ? 'Trabalha' : 'Folga'}
+                    </button>
+                  </div>
+                  {profCurHours.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+                      {profCurHours.map(h => (
+                        <span key={h} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 9px', borderRadius: 7, fontSize: 11, fontFamily: 'monospace', fontWeight: 700, background: '#F1F5F9', border: '1px solid #E2E8F0', color: '#374151' }}>
+                          {h}
+                          <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: (prev[profSelectedDay] || []).filter(x => x !== h) }))} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 0 0 2px' }}>×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ position: 'relative', marginBottom: 8 }}>
+                    <button type="button" onClick={() => { setProfNewHourInput(''); setProfPickerOpen(o => !o); }}
+                      style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, color: '#FFFFFF', background: '#1D4ED8', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                      + Adicionar Horário
+                    </button>
+                    {profPickerOpen && (
+                      <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 60, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 14, padding: 16, boxShadow: '0 12px 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 210 }}>
+                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Novo horário — {profSelectedDay}</p>
+                        <input type="time" value={profNewHourInput} onChange={e => setProfNewHourInput(e.target.value)} autoFocus className="navy-input" style={{ fontSize: 22, fontFamily: 'monospace', textAlign: 'center', letterSpacing: 2 }} />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button type="button" onClick={() => { if (profNewHourInput) setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: Array.from(new Set([...(prev[profSelectedDay] || []), profNewHourInput])).sort() })); setProfPickerOpen(false); setProfNewHourInput(''); }}
+                            style={{ flex: 1, padding: '9px 0', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 800, fontSize: 13, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>OK</button>
+                          <button type="button" onClick={() => { setProfPickerOpen(false); setProfNewHourInput(''); }}
+                            style={{ padding: '9px 14px', background: '#F1F5F9', color: '#6B7280', fontWeight: 600, fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" onClick={() => { const h = profHoursByDay[profSelectedDay] || []; setProfHoursByDay(Object.fromEntries(ALL_DAYS.map(d => [d, profDays.includes(d) ? [...h] : []]))); toast.info('Horários copiados para todos os dias de trabalho.'); }}
+                      style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#6B7280', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Copiar p/ todos</button>
+                    <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: [...DEFAULT_HOURS] }))}
+                      style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#6B7280', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Resetar padrão</button>
+                    <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: [] }))}
+                      style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#DC2626', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Limpar dia</button>
+                  </div>
+                </div>
+                {/* Ações */}
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <button type="button" onClick={cancelEditProf} style={{ flex: 1, padding: 12, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                  <button type="submit" style={{ flex: 2, padding: 12, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                    {editingProf ? 'Salvar' : 'Adicionar'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Modal: Novo / Editar Cliente ────────────────────────────────────── */}
+      {showNewClientModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={cancelEditCust}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>{editingCust ? 'Editar Cliente' : 'Novo Cliente'}</p>
+              <button onClick={cancelEditCust} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
+            </div>
+            <form onSubmit={handleAddCustomer} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input placeholder="Nome completo" value={custName} onChange={e => setCustName(e.target.value)} required className="navy-input" />
+              <input placeholder="(DDD) Telefone" value={custPhone} onChange={e => setCustPhone(e.target.value)} required className="navy-input" />
+              <input placeholder="Email (opcional)" value={custEmail} onChange={e => setCustEmail(e.target.value)} className="navy-input" />
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                {editingCust && (
+                  <button type="button" onClick={cancelEditCust} style={{ flex: 1, padding: 12, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                )}
+                <button type="submit" style={{ flex: 2, padding: 12, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                  {editingCust ? 'Salvar' : 'Adicionar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Lista de Espera ────────────────────────────────────────────── */}
+      {showWaitlistModal && (
+        <WaitlistModal
+          tenantId={activeTenant.id}
+          tenantName={activeTenant.name}
+          tenantSlug={activeTenant.slug}
+          professionals={myProfessionals}
+          onClose={() => setShowWaitlistModal(false)}
+        />
+      )}
+
+      {/* ── Modal: Novo Agendamento (do menu Agendamentos) ───────────────────── */}
+      {showNewApptModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => setShowNewApptModal(false)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>Novo Agendamento</p>
+              <button onClick={() => setShowNewApptModal(false)} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
+            </div>
+            <form onSubmit={async e => { await handleManualAppointment(e); setShowNewApptModal(false); }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Cliente */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1.5px' }}>Cliente</span>
+                  <button type="button" onClick={() => { setApptNewClient(v => !v); setApptCustId(''); setApptNewClientName(''); setApptNewClientPhone(''); }}
+                    style={{ fontSize: 11, fontWeight: 700, color: apptNewClient ? '#2563EB' : '#6B7280', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                    {apptNewClient ? '← Cliente existente' : '+ Novo cliente'}
+                  </button>
+                </div>
+                {!apptNewClient
+                  ? <select value={apptCustId} onChange={e => setApptCustId(e.target.value)} className="navy-select" style={{ width: '100%' }}>
+                      <option value="">Selecionar cliente…</option>
+                      {myCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <input placeholder="Nome *" value={apptNewClientName} onChange={e => setApptNewClientName(e.target.value)} className="navy-input" />
+                      <input placeholder="Telefone (opcional)" value={apptNewClientPhone} onChange={e => setApptNewClientPhone(e.target.value)} className="navy-input" />
+                    </div>
+                }
+              </div>
+              <select value={apptSrvId} onChange={e => setApptSrvId(e.target.value)} required className="navy-select" style={{ width: '100%' }}>
+                <option value="">Serviço…</option>
+                {myServices.map(s => <option key={s.id} value={s.id}>{s.name} — R$ {s.price}</option>)}
+              </select>
+              <select value={apptProfId} onChange={e => setApptProfId(e.target.value)} required className="navy-select" style={{ width: '100%' }}>
+                <option value="">Profissional…</option>
+                {myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)} required className="navy-input" />
+                <input type="time" value={apptTime} onChange={e => setApptTime(e.target.value)} required className="navy-input" />
+              </div>
+              <textarea placeholder="Notas (opcional)" value={apptNotes} onChange={e => setApptNotes(e.target.value)} className="navy-input" style={{ height: 60, resize: 'none' }} />
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button type="button" onClick={() => setShowNewApptModal(false)} style={{ flex: 1, padding: 12, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                <button type="submit" style={{ flex: 2, padding: 12, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Gravar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Agendamento rápido por cliente ────────────────────────────── */}
+      {quickApptCust && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => setQuickApptCust(null)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>Novo Agendamento</p>
+              <button onClick={() => setQuickApptCust(null)} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#EFF6FF', borderRadius: 8, marginBottom: 16 }}>
+              <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#2563EB', fontSize: 13, flexShrink: 0 }}>
+                {quickApptCust.name[0]}
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, color: '#111827', fontSize: 13 }}>{quickApptCust.name}</div>
+                {quickApptCust.phone && <div style={{ fontSize: 11, color: '#6B7280' }}>{quickApptCust.phone}</div>}
+              </div>
+            </div>
+            <form onSubmit={handleQuickAppt} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <select value={quickApptSrvId} onChange={e => setQuickApptSrvId(e.target.value)} required
+                style={{ width: '100%', padding: '10px 12px', border: '1px solid #E2E8F0', borderRadius: 9, fontSize: 13, color: '#111827', background: '#fff', outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }}>
+                <option value="">Serviço…</option>
+                {myServices.map(s => <option key={s.id} value={s.id}>{s.name} — R$ {s.price}</option>)}
+              </select>
+              <select value={quickApptProfId} onChange={e => setQuickApptProfId(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', border: '1px solid #E2E8F0', borderRadius: 9, fontSize: 13, color: '#111827', background: '#fff', outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }}>
+                <option value="">Qualquer profissional</option>
+                {myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <input type="date" value={quickApptDate} onChange={e => setQuickApptDate(e.target.value)} required
+                  style={{ width: '100%', padding: '10px 12px', border: '1px solid #E2E8F0', borderRadius: 9, fontSize: 13, color: '#111827', outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }} />
+                <input type="time" value={quickApptTime} onChange={e => setQuickApptTime(e.target.value)} required
+                  style={{ width: '100%', padding: '10px 12px', border: '1px solid #E2E8F0', borderRadius: 9, fontSize: 13, color: '#111827', outline: 'none', fontFamily: 'Outfit, sans-serif', boxSizing: 'border-box' as const }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button type="button" onClick={() => setQuickApptCust(null)} style={{ flex: 1, padding: 12, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                <button type="submit" disabled={quickApptSaving}
+                  style={{ flex: 2, padding: 12, background: quickApptSaving ? '#93C5FD' : '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: quickApptSaving ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                  {quickApptSaving ? 'Agendando…' : 'Agendar →'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -2391,12 +2957,12 @@ export default function ClientAdminPanel({
               {/* Cabeçalho */}
               <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: '1.5px', margin: '0 0 2px' }}>WorkAgenda · Assinatura</p>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#F1F5F9', textTransform: 'uppercase' as const, letterSpacing: '1.5px', margin: '0 0 2px' }}>WorkAgenda · Assinatura</p>
                   <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0f172a', margin: 0 }}>
                     {billingModal.step === 'payment' ? 'Concluir pagamento' : 'Assinar plano'}
                   </h3>
                 </div>
-                <button onClick={() => setBillingModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 4, display: 'flex', alignItems: 'center' }}>
+                <button onClick={() => setBillingModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#F1F5F9', padding: 4, display: 'flex', alignItems: 'center' }}>
                   <X size={20} />
                 </button>
               </div>
@@ -2408,7 +2974,7 @@ export default function ClientAdminPanel({
                   <p style={{ fontSize: 13, fontWeight: 600, color: '#475569', margin: '2px 0 0' }}>R$ {monthly.toFixed(2).replace('.', ',')} /mês</p>
                 </div>
                 <div style={{ textAlign: 'right' as const }}>
-                  <p style={{ fontSize: 10, color: '#94a3b8', margin: 0 }}>Total {pm.months > 1 ? `(${pm.months} meses)` : ''}</p>
+                  <p style={{ fontSize: 10, color: '#F1F5F9', margin: 0 }}>Total {pm.months > 1 ? `(${pm.months} meses)` : ''}</p>
                   <p style={{ fontSize: 22, fontWeight: 900, color: '#0f172a', margin: 0 }}>R$ {total.toFixed(2).replace('.', ',')}</p>
                 </div>
               </div>
@@ -2430,7 +2996,7 @@ export default function ClientAdminPanel({
                         onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
                         style={{ width: '100%', padding: '11px 14px', border: `1.5px solid ${billingModal.error ? '#fca5a5' : '#e2e8f0'}`, borderRadius: 10, fontSize: 14, color: '#0f172a', outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'Outfit, sans-serif', transition: 'border-color 0.15s' }}
                       />
-                      <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0' }}>Necessário para emissão da cobrança via Asaas.</p>
+                      <p style={{ fontSize: 11, color: '#F1F5F9', margin: '6px 0 0' }}>Necessário para emissão da cobrança via Asaas.</p>
                     </div>
                     {billingModal.error && (
                       <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
@@ -2464,12 +3030,12 @@ export default function ClientAdminPanel({
                         </div>
                         {billingModal.pixCode && (
                           <div>
-                            <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 6px' }}>Copia e cola:</p>
+                            <p style={{ fontSize: 11, color: '#F1F5F9', margin: '0 0 6px' }}>Copia e cola:</p>
                             <div style={{ display: 'flex', gap: 6 }}>
                               <input readOnly value={billingModal.pixCode}
                                 style={{ flex: 1, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 10, color: '#475569', fontFamily: 'monospace', background: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} />
                               <button onClick={() => { navigator.clipboard.writeText(billingModal.pixCode!); setPixCopied(true); setTimeout(() => setPixCopied(false), 2000); }}
-                                style={{ padding: '8px 14px', background: pixCopied ? '#10b981' : '#0f172a', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' as const, flexShrink: 0 }}>
+                                style={{ padding: '8px 14px', background: pixCopied ? '#10b981' : '#1D4ED8', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' as const, flexShrink: 0 }}>
                                 {pixCopied ? '✓ Copiado' : 'Copiar'}
                               </button>
                             </div>
@@ -2483,7 +3049,7 @@ export default function ClientAdminPanel({
                         {billingModal.pixImage && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0' }}>
                             <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
-                            <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>ou</span>
+                            <span style={{ fontSize: 12, color: '#F1F5F9', fontWeight: 600 }}>ou</span>
                             <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
                           </div>
                         )}
@@ -2494,7 +3060,7 @@ export default function ClientAdminPanel({
                       </>
                     )}
 
-                    <p style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center' as const, margin: '16px 0 0', lineHeight: 1.5 }}>
+                    <p style={{ fontSize: 11, color: '#F1F5F9', textAlign: 'center' as const, margin: '16px 0 0', lineHeight: 1.5 }}>
                       Após confirmação do pagamento, o acesso é liberado automaticamente.
                     </p>
                   </>
@@ -2510,7 +3076,7 @@ export default function ClientAdminPanel({
                     <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6, margin: '0 0 6px' }}>
                       Obrigado por assinar o WorkAgenda! 🎉
                     </p>
-                    <p style={{ fontSize: 13, color: '#94a3b8', margin: '0 0 24px' }}>
+                    <p style={{ fontSize: 13, color: '#F1F5F9', margin: '0 0 24px' }}>
                       Sua conta foi ativada. Recarregando em instantes…
                     </p>
                     <div style={{ height: 4, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>

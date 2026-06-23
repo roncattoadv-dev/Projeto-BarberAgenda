@@ -61,6 +61,7 @@ export interface Professional {
   commissionPercentage: number;
   businessDays?: string[];
   businessHoursByDay?: Record<string, string[]>;
+  blockedDates?: string[];
 }
 
 export interface Product {
@@ -165,6 +166,19 @@ export interface Review {
   appointmentId: string;
   stars: number;
   comment?: string;
+  createdAt: string;
+}
+
+export interface WaitlistEntry {
+  id: string;
+  tenantId: string;
+  customerName: string;
+  customerPhone: string;
+  date: string;
+  professionalId: string | null;
+  timePreference: string;  // 'qualquer' ou 'HH:MM'
+  notified: boolean;
+  notifiedAt: string | null;
   createdAt: string;
 }
 

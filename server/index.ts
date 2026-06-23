@@ -47,7 +47,21 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 const supabasePublic = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const app = express();
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+const CORS_ORIGINS = [
+  process.env.FRONTEND_URL,
+  process.env.CORS_ORIGIN,
+  'https://workagenda.org',
+].filter(Boolean) as string[];
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || CORS_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origem não permitida — ${origin}`));
+  },
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+}));
 app.use(express.json());
 app.use((req, _res, next) => {
   if (req.path.startsWith('/api/whatsapp')) {
@@ -835,13 +849,14 @@ app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { data } = await supabase
     .from('tenants')
-    .select('wpp_template_confirm, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes, wpp_enabled, email_enabled')
+    .select('wpp_template_confirm, wpp_template_remind, wpp_template_waitlist, wpp_booking_url, wpp_reminder_minutes, wpp_enabled, email_enabled')
     .eq('id', tenantId)
     .maybeSingle();
   res.json({
     ok: true,
     confirm:         data?.wpp_template_confirm   ?? TPL_CONFIRM_DEFAULT,
     remind:          data?.wpp_template_remind    ?? TPL_REMIND_DEFAULT,
+    waitlist:        data?.wpp_template_waitlist  ?? '',
     bookingUrl:      data?.wpp_booking_url        ?? '',
     reminderMinutes: data?.wpp_reminder_minutes   ?? 60,
     wppEnabled:      data?.wpp_enabled            ?? true,
@@ -854,12 +869,13 @@ app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.put('/api/whatsapp/templates', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
-  const { confirm, remind, bookingUrl, reminderMinutes, wppEnabled, emailEnabled } = req.body as { confirm?: string; remind?: string; bookingUrl?: string; reminderMinutes?: number; wppEnabled?: boolean; emailEnabled?: boolean };
+  const { confirm, remind, waitlist, bookingUrl, reminderMinutes, wppEnabled, emailEnabled } = req.body as { confirm?: string; remind?: string; waitlist?: string; bookingUrl?: string; reminderMinutes?: number; wppEnabled?: boolean; emailEnabled?: boolean };
   await supabase.from('tenants').update({
-    wpp_template_confirm:  confirm          ?? null,
-    wpp_template_remind:   remind           ?? null,
-    wpp_booking_url:       bookingUrl       ?? null,
-    wpp_reminder_minutes:  reminderMinutes  ?? 60,
+    wpp_template_confirm:   confirm          ?? null,
+    wpp_template_remind:    remind           ?? null,
+    ...(waitlist    !== undefined ? { wpp_template_waitlist: waitlist || null } : {}),
+    wpp_booking_url:        bookingUrl       ?? null,
+    wpp_reminder_minutes:   reminderMinutes  ?? 60,
     ...(wppEnabled   !== undefined ? { wpp_enabled:   wppEnabled   } : {}),
     ...(emailEnabled !== undefined ? { email_enabled: emailEnabled } : {}),
   }).eq('id', tenantId);
@@ -1275,12 +1291,13 @@ app.post('/api/cancel', async (req, res) => {
     // Verifica que o agendamento pertence ao tenant com este slug
     const { data: appt } = await supabase
       .from('appointments')
-      .select('id, status, tenant_id, tenants(slug)')
+      .select('id, status, tenant_id, scheduled_date, scheduled_time, professional_id, tenants(id, slug, name)')
       .eq('id', appointmentId)
       .maybeSingle();
 
     if (!appt) { res.status(404).json({ error: 'Agendamento não encontrado.' }); return; }
-    if ((appt.tenants as any)?.slug !== slug) { res.status(403).json({ error: 'Acesso negado.' }); return; }
+    const tenant = appt.tenants as any;
+    if (tenant?.slug !== slug) { res.status(403).json({ error: 'Acesso negado.' }); return; }
     if (appt.status === 'cancelled')  { res.json({ ok: true, alreadyCancelled: true }); return; }
     if (appt.status === 'attended' || appt.status === 'completed') {
       res.status(400).json({ error: 'Agendamento já realizado, não pode ser cancelado.' });
@@ -1289,6 +1306,79 @@ app.post('/api/cancel', async (req, res) => {
 
     await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', appointmentId);
     res.json({ ok: true });
+
+    // ── Notificar lista de espera (fire-and-forget) ────────────────────────
+    (async () => {
+      try {
+        const tenantId   = appt.tenant_id as string;
+        const apptDate   = (appt.scheduled_date as string).substring(0, 10);
+        const apptTime   = (appt.scheduled_time as string).substring(0, 5);
+        const apptProfId = appt.professional_id as string;
+        const bookingUrl = `https://workagenda.org/${slug}/agendamento`;
+
+        // Busca todas as entradas da lista
+        const { data: allWl } = await supabase
+          .from('waitlist')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .order('created_at');
+        if (!allWl?.length) return;
+
+        // Contagem de notificações por telefone (limite 5)
+        const notifCount = new Map<string, number>();
+        for (const e of allWl) {
+          if (e.notified) notifCount.set(e.customer_phone, (notifCount.get(e.customer_phone) ?? 0) + 1);
+        }
+
+        const compatible = allWl.filter(e =>
+          !e.notified &&
+          e.date === apptDate &&
+          (e.professional_id === null || e.professional_id === apptProfId) &&
+          (e.time_preference === 'qualquer' || e.time_preference === apptTime) &&
+          (notifCount.get(e.customer_phone) ?? 0) < 5
+        ).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        if (!compatible.length) {
+          console.log(`[Waitlist/Cancel] nenhum candidato compatível para ${apptDate} ${apptTime}`);
+          return;
+        }
+
+        console.log(`[Waitlist/Cancel] ${compatible.length} candidato(s) para notificar`);
+        const instanceToken = evoInstanceToken(slug, tenantId);
+
+        // Template do banco ou padrão
+        const { data: tplData } = await supabase.from('tenants')
+          .select('wpp_template_waitlist')
+          .eq('id', tenantId).maybeSingle();
+        const TPL_WAITLIST = tplData?.wpp_template_waitlist ||
+          `🎉 Olá, *{cliente}*!\n\nUma vaga abriu na *{salao}* para o dia *{data}* que você estava aguardando!\n\n⚡ Corra antes que alguém reserve:\n{link_agendamento}\n\n_Caso não queira mais agendar, é só ignorar esta mensagem._\n💈 _WorkAgenda_`;
+
+        compatible.forEach((entry: any, idx: number) => {
+          setTimeout(async () => {
+            try {
+              const phone = (entry.customer_phone as string).replace(/\D/g, '');
+              const msg   = applyTemplate(TPL_WAITLIST, {
+                cliente:          entry.customer_name,
+                salao:            tenant?.name ?? '',
+                data:             apptDate,
+                link_agendamento: bookingUrl,
+                link:             bookingUrl,
+              });
+              await evoSendWpp(instanceToken, slug, `55${phone}`, msg);
+              await supabase.from('waitlist')
+                .update({ notified: true, notified_at: new Date().toISOString() })
+                .eq('id', entry.id);
+              console.log(`[Waitlist/Cancel] ✓ ${entry.customer_name} notificado`);
+            } catch (err: any) {
+              console.error(`[Waitlist/Cancel] erro ao notificar ${entry.customer_name}:`, err.message);
+            }
+          }, idx * 3000);
+        });
+      } catch (err: any) {
+        console.error('[Waitlist/Cancel] erro geral:', err.message);
+      }
+    })();
+
   } catch (err: any) {
     console.error('[Cancel]', err.message);
     res.status(500).json({ error: err.message });

@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import ClientAdminPanel from '../../components/ClientAdminPanel';
-import { Scissors } from 'lucide-react';
+import { Scissors, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 function getApiUrl() {
   const w = (window as any).__BARBER_CONFIG__ || {};
@@ -10,10 +10,22 @@ function getApiUrl() {
 }
 
 const BASE_PRICE = 89.90;
+const ACCENT = '#2563EB';
+const LOGO_URL = 'https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2019%20de%20jun.%20de%202026,%2014_46_16.png';
+const FEATURES = [
+  'Agendamento online ilimitado',
+  'WhatsApp automático (confirmação + lembrete)',
+  'Gestão financeira completa',
+  'Multi-profissional com comissões automáticas',
+  'Página pública personalizada com seu link',
+  'Histórico de clientes',
+  'Relatórios e métricas',
+  'Suporte via chat',
+];
 const PLAN_META = {
-  mensal:     { label: 'Mensal',     months: 1,  discountPct: 0,  color: '#3b82f6', desc: 'R$ 89,90/mês' },
-  trimestral: { label: 'Trimestral', months: 3,  discountPct: 15, color: '#8b5cf6', desc: 'R$ 76,42/mês · 15% off' },
-  anual:      { label: 'Anual',      months: 12, discountPct: 25, color: '#10b981', desc: 'R$ 67,43/mês · 25% off' },
+  mensal:     { label: 'Mensal',     months: 1,  discountPct: 0,  hot: false, badge: null as string|null, billing: 'Cobrado mensalmente' },
+  trimestral: { label: 'Trimestral', months: 3,  discountPct: 15, hot: true,  badge: '15% OFF',           billing: `R$ ${(BASE_PRICE*0.85*3).toFixed(2).replace('.',',')} / 3 meses` },
+  anual:      { label: 'Anual',      months: 12, discountPct: 25, hot: false, badge: 'Melhor valor',      billing: `R$ ${(BASE_PRICE*0.75*12).toFixed(2).replace('.',',')} / ano` },
 } as const;
 type PlanKey = keyof typeof PLAN_META;
 
@@ -101,86 +113,110 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
   const monthly = parseFloat((BASE_PRICE * (1 - pm.discountPct / 100)).toFixed(2));
   const total   = parseFloat((monthly * pm.months).toFixed(2));
 
+  const isWide = step === 'loading' || step === 'select-plan';
+
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif', padding: 20 }}>
-      <div style={{ width: '100%', maxWidth: 460, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20, overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC', fontFamily: 'Outfit, sans-serif', padding: '32px 20px' }}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
-        {/* Header */}
-        <div style={{ padding: '32px 32px 24px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-          <div style={{ fontSize: 44, marginBottom: 12 }}>{isTrialEnd ? '⏰' : '🔒'}</div>
-          {isTrialEnd ? (
-            <>
-              <h2 style={{ color: 'rgba(255,255,255,0.88)', fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>Seu período de teste encerrou</h2>
-              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.7, margin: 0 }}>
-                Escolha um plano para continuar usando o WorkAgenda e manter todos os seus dados.
-              </p>
-            </>
-          ) : (
-            <>
-              <h2 style={{ color: '#fca5a5', fontSize: 20, fontWeight: 700, margin: '0 0 8px' }}>Acesso suspenso</h2>
-              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.7, margin: 0 }}>
-                Regularize sua assinatura para reativar o acesso ao painel.
-              </p>
-            </>
-          )}
+      {/* Logo */}
+      <img src={LOGO_URL} alt="WorkAgenda" style={{ height: 210, objectFit: 'contain', marginBottom: 28 }} />
+
+      {/* Título */}
+      <div style={{ textAlign: 'center', marginBottom: isWide ? 36 : 28 }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>{isTrialEnd ? '⏰' : '🔒'}</div>
+        {isTrialEnd ? (
+          <>
+            <h2 style={{ color: '#111827', fontSize: 24, fontWeight: 900, margin: '0 0 8px', letterSpacing: '-0.5px' }}>Seu período de teste encerrou</h2>
+            <p style={{ color: '#6B7280', fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+              Escolha um plano para continuar usando o WorkAgenda.<br />
+              <span style={{ fontSize: 12 }}>Todos os planos têm as mesmas funcionalidades.</span>
+            </p>
+          </>
+        ) : (
+          <>
+            <h2 style={{ color: '#111827', fontSize: 24, fontWeight: 900, margin: '0 0 8px', letterSpacing: '-0.5px' }}>Acesso suspenso</h2>
+            <p style={{ color: '#6B7280', fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+              Regularize sua assinatura para reativar o acesso ao painel.
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* ── Loading ─────────────────────────────────────────────────────────── */}
+      {step === 'loading' && (
+        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+          <div style={{ width: 36, height: 36, border: '3px solid #BFDBFE', borderTopColor: ACCENT, borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+          <p style={{ color: '#9CA3AF', fontSize: 13, margin: 0 }}>Verificando assinatura…</p>
         </div>
+      )}
 
-        {/* Body */}
-        <div style={{ padding: '24px 32px 28px' }}>
-
-          {/* Loading */}
-          {step === 'loading' && (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-              <div style={{ width: 32, height: 32, border: '3px solid rgba(255,255,255,0.08)', borderTopColor: 'rgba(255,255,255,0.5)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13, margin: 0 }}>Verificando assinatura…</p>
-            </div>
-          )}
-
-          {/* Selecionar plano */}
-          {step === 'select-plan' && (
-            <>
-              <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', margin: '0 0 14px' }}>Escolha seu plano</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-                {(Object.entries(PLAN_META) as [PlanKey, typeof PLAN_META[PlanKey]][]).map(([key, p]) => (
-                  <button key={key} onClick={() => { setPlan(key); setStep('cpf-form'); }}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: `${p.color}15`, border: `1.5px solid ${p.color}44`, borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'border-color 0.15s' }}
-                    onMouseEnter={e => (e.currentTarget.style.borderColor = p.color)}
-                    onMouseLeave={e => (e.currentTarget.style.borderColor = `${p.color}44`)}>
-                    <div style={{ textAlign: 'left' }}>
-                      <p style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.88)', margin: 0 }}>{p.label}</p>
-                      <p style={{ fontSize: 12, color: p.color, margin: '2px 0 0' }}>{p.desc}</p>
-                    </div>
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>→</span>
-                  </button>
-                ))}
+      {/* ── Selecionar plano — cards estilo landing page ─────────────────── */}
+      {step === 'select-plan' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 20, width: '100%', maxWidth: 920 }}>
+          {(Object.entries(PLAN_META) as [PlanKey, typeof PLAN_META[PlanKey]][]).map(([key, p]) => {
+            const cardMonthly = parseFloat((BASE_PRICE * (1 - p.discountPct / 100)).toFixed(2));
+            return (
+              <div key={key} style={{ position: 'relative' as const, background: p.hot ? ACCENT : '#FFFFFF', border: `1px solid ${p.hot ? ACCENT : '#E2E8F0'}`, borderRadius: 28, padding: '36px 28px 24px', display: 'flex', flexDirection: 'column' as const, boxShadow: p.hot ? '0 20px 56px rgba(37,99,235,0.28)' : '0 2px 12px rgba(0,0,0,0.05)', transform: p.hot ? 'scale(1.03)' : 'none', zIndex: p.hot ? 1 : 0 }}>
+                {p.badge && (
+                  <div style={{ position: 'absolute' as const, top: -14, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap' as const }}>
+                    <span style={{ background: p.hot ? '#fff' : ACCENT, color: p.hot ? ACCENT : '#fff', fontSize: 11, fontWeight: 800, padding: '5px 16px', borderRadius: 99, boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>{p.badge}</span>
+                  </div>
+                )}
+                <p style={{ fontSize: 12, fontWeight: 700, color: p.hot ? 'rgba(255,255,255,0.65)' : '#475569', textTransform: 'uppercase' as const, letterSpacing: '1.5px', margin: '0 0 14px' }}>{p.label}</p>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
+                  <span style={{ fontSize: 14, color: p.hot ? 'rgba(255,255,255,0.65)' : '#475569', fontWeight: 600 }}>R$</span>
+                  <span style={{ fontSize: 46, fontWeight: 900, color: p.hot ? '#fff' : '#111111', lineHeight: 1, letterSpacing: '-2px' }}>{cardMonthly.toFixed(2).replace('.', ',')}</span>
+                  <span style={{ fontSize: 14, color: p.hot ? 'rgba(255,255,255,0.65)' : '#475569' }}>/mês</span>
+                </div>
+                <p style={{ fontSize: 12, color: p.hot ? 'rgba(255,255,255,0.45)' : '#94a3b8', margin: '0 0 20px' }}>{p.billing}</p>
+                <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', display: 'flex', flexDirection: 'column' as const, gap: 9, flex: 1 }}>
+                  {FEATURES.map(f => (
+                    <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, fontSize: 13, color: p.hot ? 'rgba(255,255,255,0.85)' : '#475569', lineHeight: 1.5 }}>
+                      <span style={{ flexShrink: 0, marginTop: 2, width: 17, height: 17, borderRadius: 99, background: p.hot ? 'rgba(255,255,255,0.2)' : '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: p.hot ? '#fff' : '#16a34a' }}>
+                        <Check size={10} strokeWidth={3} />
+                      </span>
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <button onClick={() => { setPlan(key); setStep('cpf-form'); }}
+                  style={{ display: 'block', width: '100%', padding: '14px', fontWeight: 700, fontSize: 14, background: p.hot ? '#fff' : ACCENT, color: p.hot ? ACCENT : '#fff', border: 'none', borderRadius: 14, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', boxShadow: p.hot ? '0 4px 16px rgba(0,0,0,0.10)' : '0 4px 16px rgba(37,99,235,0.30)', transition: 'all 0.2s' }}>
+                  Assinar agora →
+                </button>
               </div>
-            </>
-          )}
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Steps pós-seleção: CPF, gerando, pagamento ─────────────────────── */}
+      {!isWide && (
+        <div style={{ width: '100%', maxWidth: 460, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 20, padding: '28px 32px', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
 
           {/* Formulário CPF */}
           {step === 'cpf-form' && (
             <>
-              <button onClick={() => setStep('select-plan')} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 4 }}>
-                ← Voltar
+              <button onClick={() => setStep('select-plan')} style={{ background: 'none', border: 'none', color: '#6B7280', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 4 }}>
+                ← Voltar aos planos
               </button>
-              <div style={{ background: `${pm.color}12`, border: `1px solid ${pm.color}30`, borderRadius: 10, padding: '12px 16px', marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 12, padding: '14px 16px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <p style={{ fontSize: 10, fontWeight: 800, color: pm.color, textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 2px' }}>Plano {pm.label}</p>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.7)', margin: 0 }}>R$ {monthly.toFixed(2).replace('.', ',')} /mês</p>
+                  <p style={{ fontSize: 10, fontWeight: 800, color: ACCENT, textTransform: 'uppercase' as const, letterSpacing: '1px', margin: '0 0 2px' }}>Plano {pm.label}</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: 0 }}>R$ {monthly.toFixed(2).replace('.', ',')} /mês</p>
                 </div>
-                <p style={{ fontSize: 20, fontWeight: 900, color: 'rgba(255,255,255,0.88)', margin: 0 }}>R$ {total.toFixed(2).replace('.', ',')}</p>
+                <p style={{ fontSize: 22, fontWeight: 900, color: '#111827', margin: 0 }}>R$ {total.toFixed(2).replace('.', ',')}</p>
               </div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: 8 }}>CPF ou CNPJ *</label>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '1.5px', color: '#6B7280', marginBottom: 8 }}>CPF ou CNPJ *</label>
               <input autoFocus type="text" placeholder="000.000.000-00 ou 00.000.000/0000-00"
                 value={cpfCnpj} onChange={e => { setCpfCnpj(e.target.value); setCpfError(''); }}
                 onKeyDown={e => e.key === 'Enter' && handleGenerate()}
-                style={{ width: '100%', padding: '11px 14px', background: 'rgba(255,255,255,0.06)', border: `1.5px solid ${cpfError ? '#f87171' : 'rgba(255,255,255,0.12)'}`, borderRadius: 10, color: 'rgba(255,255,255,0.88)', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'Outfit, sans-serif' }} />
-              {cpfError && <p style={{ color: '#f87171', fontSize: 12, margin: '6px 0 0' }}>{cpfError}</p>}
-              <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11, margin: '6px 0 16px' }}>Necessário para emissão da cobrança.</p>
-              {genError && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}><p style={{ color: '#f87171', fontSize: 13, margin: 0 }}>{genError}</p></div>}
+                style={{ width: '100%', padding: '11px 14px', background: '#FFFFFF', border: `1.5px solid ${cpfError ? '#FCA5A5' : '#D1D5DB'}`, borderRadius: 10, color: '#111827', fontSize: 14, outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'Outfit, sans-serif' }} />
+              {cpfError && <p style={{ color: '#EF4444', fontSize: 12, margin: '6px 0 0' }}>{cpfError}</p>}
+              <p style={{ color: '#9CA3AF', fontSize: 11, margin: '6px 0 18px' }}>Necessário para emissão da cobrança via Asaas.</p>
+              {genError && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}><p style={{ color: '#EF4444', fontSize: 13, margin: 0 }}>{genError}</p></div>}
               <button onClick={handleGenerate}
-                style={{ width: '100%', padding: '13px 0', background: pm.color, color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                style={{ width: '100%', padding: '14px 0', background: ACCENT, color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', boxShadow: '0 4px 14px rgba(37,99,235,0.30)' }}>
                 Gerar cobrança →
               </button>
             </>
@@ -188,87 +224,51 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
 
           {/* Gerando */}
           {step === 'generating' && (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-              <div style={{ width: 32, height: 32, border: `3px solid ${pm.color}33`, borderTopColor: pm.color, borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-              <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, margin: 0 }}>Gerando cobrança…</p>
+            <div style={{ textAlign: 'center', padding: '24px 0' }}>
+              <div style={{ width: 36, height: 36, border: '3px solid #BFDBFE', borderTopColor: ACCENT, borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 14px' }} />
+              <p style={{ color: '#6B7280', fontSize: 14, margin: 0, fontWeight: 600 }}>Gerando cobrança…</p>
             </div>
           )}
 
-          {/* Pagamento — cobrança existente */}
-          {step === 'has-link' && (
+          {/* Pagamento */}
+          {(step === 'has-link' || step === 'payment') && (
             <div style={{ textAlign: 'center' }}>
               {pixImage && (
                 <div style={{ marginBottom: 20 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 12px' }}>Pagar via PIX</p>
-                  <div style={{ display: 'inline-block', padding: 10, border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: 14, marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1px', margin: '0 0 12px' }}>Pagar via PIX</p>
+                  <div style={{ display: 'inline-block', padding: 10, border: '1.5px solid #E2E8F0', borderRadius: 14, marginBottom: 12, background: '#FFFFFF' }}>
                     <img src={`data:image/png;base64,${pixImage}`} alt="QR Code PIX" style={{ width: 180, height: 180, display: 'block' }} />
                   </div>
                   {pixCode && (
                     <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-                      <input readOnly value={pixCode} style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, fontSize: 10, color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} />
+                      <input readOnly value={pixCode} style={{ flex: 1, padding: '8px 10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 10, color: '#374151', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} />
                       <button onClick={() => { navigator.clipboard.writeText(pixCode); setPixCopied(true); setTimeout(() => setPixCopied(false), 2000); }}
-                        style={{ padding: '8px 14px', background: pixCopied ? '#10b981' : 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        style={{ padding: '8px 14px', background: pixCopied ? '#16a34a' : ACCENT, color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap' as const, flexShrink: 0 }}>
                         {pixCopied ? '✓' : 'Copiar'}
                       </button>
                     </div>
                   )}
                 </div>
               )}
-              <a href={payUrl} target="_blank" rel="noopener noreferrer"
-                style={{ display: 'block', padding: '12px 0', background: '#22c55e', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: 'none', textAlign: 'center' }}>
-                Pagar via boleto / outro método
-              </a>
-            </div>
-          )}
-
-          {/* Pagamento — cobrança recém-gerada */}
-          {step === 'payment' && (
-            <div style={{ textAlign: 'center' }}>
-              {pixImage && (
-                <div style={{ marginBottom: 20 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 12px' }}>Pagar via PIX</p>
-                  <div style={{ display: 'inline-block', padding: 10, border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: 14, marginBottom: 12 }}>
-                    <img src={`data:image/png;base64,${pixImage}`} alt="QR Code PIX" style={{ width: 180, height: 180, display: 'block' }} />
-                  </div>
-                  {pixCode && (
-                    <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-                      <input readOnly value={pixCode} style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, fontSize: 10, color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} />
-                      <button onClick={() => { navigator.clipboard.writeText(pixCode); setPixCopied(true); setTimeout(() => setPixCopied(false), 2000); }}
-                        style={{ padding: '8px 14px', background: pixCopied ? '#10b981' : 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        {pixCopied ? '✓' : 'Copiar'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-              {payUrl && (
+              {(payUrl) && (
                 <a href={payUrl} target="_blank" rel="noopener noreferrer"
-                  style={{ display: 'block', padding: '12px 0', background: pm.color, color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: 'none', textAlign: 'center', marginBottom: 8 }}>
+                  style={{ display: 'block', padding: '13px 0', background: '#16a34a', color: '#fff', borderRadius: 12, fontWeight: 700, fontSize: 15, textDecoration: 'none', textAlign: 'center' as const, boxShadow: '0 4px 14px rgba(22,163,74,0.30)', marginBottom: 16 }}>
                   Pagar via boleto / outro método
                 </a>
               )}
-            </div>
-          )}
-
-          {/* Verificar pagamento — mostrado após ter cobrança */}
-          {(step === 'has-link' || step === 'payment') && (
-            <div style={{ marginTop: 18, textAlign: 'center' }}>
               <button onClick={handleVerify} disabled={verifying}
-                style={{ padding: '9px 22px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: 600, cursor: verifying ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                style={{ width: '100%', padding: '11px 0', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 10, color: '#6B7280', fontSize: 13, fontWeight: 600, cursor: verifying ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                 {verifying ? 'Verificando…' : 'Já paguei — verificar agora'}
               </button>
-              {verifyMsg && <p style={{ marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{verifyMsg}</p>}
+              {verifyMsg && <p style={{ marginTop: 8, fontSize: 12, color: '#9CA3AF' }}>{verifyMsg}</p>}
             </div>
           )}
         </div>
+      )}
 
-        <div style={{ padding: '0 32px 20px', textAlign: 'center' }}>
-          <button onClick={signOut} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.2)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-            Sair da conta
-          </button>
-        </div>
-      </div>
+      <button onClick={signOut} style={{ background: 'none', border: 'none', color: '#9CA3AF', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', marginTop: 24 }}>
+        Sair da conta
+      </button>
     </div>
   );
 }
@@ -281,7 +281,6 @@ import {
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours, mapAppointment,
 } from '../../lib/db';
-import { supabase } from '../../lib/supabase';
 import type { Tenant, Service, Professional, Product, Customer, Appointment, Payment } from '../../types';
 import { useNotifications } from '../../hooks/useNotifications';
 
@@ -417,45 +416,24 @@ export default function TenantAdminPage() {
     <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}>
       {/* Barra de aviso de vencimento */}
       {daysUntilExpiry !== null && (
-        <button onClick={handleExpiryClick} style={{ width: '100%', background: '#f59e0b', color: '#1c1000', padding: '8px 20px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'Outfit, sans-serif', border: 'none', cursor: 'pointer' }}>
-          <span>⚠️</span>
-          <span>
+        <div style={{ width: '100%', background: '#1d4ed8', padding: '9px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, fontFamily: 'Outfit, sans-serif', flexWrap: 'wrap' as const }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: '#e0eaff' }}>
             {isTenantTrial
               ? daysUntilExpiry === 0
-                ? 'Seu período de teste encerra hoje! Assine um plano para continuar.'
-                : `Seu período de teste encerra em ${daysUntilExpiry} dia${daysUntilExpiry! > 1 ? 's' : ''}. Assine agora para não perder o acesso.`
+                ? 'Seu período de teste encerra hoje!'
+                : `Seu período de teste encerra em ${daysUntilExpiry} dia${daysUntilExpiry! > 1 ? 's' : ''}.`
               : daysUntilExpiry === 0
-                ? 'Sua assinatura vence hoje! Clique aqui para renovar.'
-                : `Sua assinatura vence em ${daysUntilExpiry} dia${daysUntilExpiry! > 1 ? 's' : ''}. Clique aqui para renovar.`}
+                ? 'Sua assinatura vence hoje!'
+                : `Sua assinatura vence em ${daysUntilExpiry} dia${daysUntilExpiry! > 1 ? 's' : ''}.`}
           </span>
-        </button>
-      )}
-      {/* Top bar */}
-      <div style={{ backgroundColor: '#1E293B', borderBottom: '1px solid rgba(255,255,255,0.09)', padding: '0 20px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <img
-            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"
-            alt="WorkAgenda"
-            style={{ height: 36, objectFit: 'contain' }}
-          />
-          {tenant && (
-            <>
-              <span style={{ width: 1, height: 22, background: 'rgba(255,255,255,0.12)' }} />
-              {(tenant.logo?.startsWith('http') || tenant.logo?.startsWith('data:')) && (
-                <div style={{ width: 28, height: 28, borderRadius: 7, overflow: 'hidden', flexShrink: 0 }}>
-                  <img src={tenant.logo} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                </div>
-              )}
-              <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 14, fontWeight: 600, fontFamily: 'Outfit, sans-serif' }}>{tenant.name}</span>
-            </>
-          )}
+          <button
+            onClick={handleExpiryClick}
+            style={{ background: '#ffffff', color: '#1d4ed8', padding: '5px 16px', fontSize: 12, fontWeight: 700, border: 'none', borderRadius: 20, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', letterSpacing: '0.3px', flexShrink: 0 }}
+          >
+            {isTenantTrial ? 'Assinar agora' : 'Pagar agora'}
+          </button>
         </div>
-        <button onClick={signOut} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.28)', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', fontWeight: 500, padding: '4px 8px', borderRadius: 6, transition: 'color 150ms' }}
-          onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
-          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.28)')}>
-          Sair
-        </button>
-      </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -574,6 +552,7 @@ export default function TenantAdminPage() {
             if (!r.ok) { const e = await r.json(); throw new Error(e.error); }
             await signOut();
           }}
+          onSignOut={signOut}
           openSubscriptionTab={openSubscription}
           onSubscriptionTabOpened={() => setOpenSubscription(false)}
           notifications={notifications}

@@ -105,6 +105,7 @@ export async function updateProfessional(id: string, p: Partial<Omit<Professiona
   if (p.commissionPercentage !== undefined) updates.commission_percentage = p.commissionPercentage;
   if (p.businessDays       !== undefined) updates.business_days       = p.businessDays;
   if (p.businessHoursByDay !== undefined) updates.business_hours_by_day = p.businessHoursByDay;
+  if (p.blockedDates       !== undefined) updates.blocked_dates       = p.blockedDates;
   if (Object.keys(updates).length) {
     const { error } = await supabase.from('professionals').update(updates).eq('id', id);
     if (error) throw error;
@@ -307,7 +308,7 @@ function mapService(r: any): Service {
   return { id: r.id, tenantId: r.tenant_id, name: r.name, durationMinutes: r.duration_minutes, price: Number(r.price), category: r.category, description: r.description };
 }
 function mapProfessional(r: any): Professional {
-  return { id: r.id, tenantId: r.tenant_id, name: r.name, role: r.role, avatar: r.avatar ?? '', rating: Number(r.rating ?? 5), services: [], commissionPercentage: Number(r.commission_percentage ?? 40), businessDays: r.business_days ?? [], businessHoursByDay: r.business_hours_by_day ?? {} };
+  return { id: r.id, tenantId: r.tenant_id, name: r.name, role: r.role, avatar: r.avatar ?? '', rating: Number(r.rating ?? 5), services: [], commissionPercentage: Number(r.commission_percentage ?? 40), businessDays: r.business_days ?? [], businessHoursByDay: r.business_hours_by_day ?? {}, blockedDates: r.blocked_dates ?? [] };
 }
 function mapCustomer(r: any): Customer {
   return { id: r.id, tenantId: r.tenant_id, name: r.name, email: r.email ?? '', phone: r.phone, notes: r.notes, createdAt: r.created_at };
@@ -393,5 +394,56 @@ export async function resolveTicket(ticketId: string, replyMessage: string): Pro
   const { error } = await supabase.from('support_tickets')
     .update({ status: 'resolved', messages: [...(ticket.messages ?? []), replyMsg] })
     .eq('id', ticketId);
+  if (error) throw error;
+}
+
+// ── WAITLIST ───────────────────────────────────────────────────────────────────
+import type { WaitlistEntry } from '../types';
+
+function mapWaitlistEntry(d: any): WaitlistEntry {
+  return {
+    id: d.id,
+    tenantId: d.tenant_id,
+    customerName: d.customer_name,
+    customerPhone: d.customer_phone,
+    date: d.date,
+    professionalId: d.professional_id ?? null,
+    timePreference: d.time_preference ?? 'qualquer',
+    notified: d.notified ?? false,
+    notifiedAt: d.notified_at ?? null,
+    createdAt: d.created_at,
+  };
+}
+
+export async function getWaitlistEntries(tenantId: string, date?: string): Promise<WaitlistEntry[]> {
+  let q = supabase.from('waitlist').select('*').eq('tenant_id', tenantId).order('created_at');
+  if (date) q = (q as any).eq('date', date);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map(mapWaitlistEntry);
+}
+
+export async function addWaitlistEntry(e: Pick<WaitlistEntry, 'tenantId' | 'customerName' | 'customerPhone' | 'date' | 'professionalId' | 'timePreference'>): Promise<WaitlistEntry> {
+  const { data, error } = await supabase.from('waitlist').insert({
+    tenant_id: e.tenantId,
+    customer_name: e.customerName,
+    customer_phone: e.customerPhone,
+    date: e.date,
+    professional_id: e.professionalId ?? null,
+    time_preference: e.timePreference,
+  }).select().single();
+  if (error) throw error;
+  return mapWaitlistEntry(data);
+}
+
+export async function markWaitlistNotified(id: string): Promise<void> {
+  const { error } = await supabase.from('waitlist')
+    .update({ notified: true, notified_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteWaitlistEntry(id: string): Promise<void> {
+  const { error } = await supabase.from('waitlist').delete().eq('id', id);
   if (error) throw error;
 }

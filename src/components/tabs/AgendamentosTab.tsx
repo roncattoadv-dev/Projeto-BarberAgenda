@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Clock, Search, MessageSquare, ChevronDown } from 'lucide-react';
 import { Appointment, Service, Professional, Tenant } from '../../types';
@@ -21,18 +21,137 @@ interface Props {
 type SendState = 'idle' | 'sending' | 'done' | 'error';
 
 const STATUS_OPTIONS = [
-  { value: 'todos',       label: 'Todos os status' },
-  { value: 'confirmed',   label: 'Confirmados' },
-  { value: 'pending',     label: 'Pendentes' },
-  { value: 'cancelled',   label: 'Cancelados' },
-  { value: 'attended',    label: 'Histórico' },
+  { value: 'confirmed', label: 'Confirmados' },
+  { value: 'pending',   label: 'Pendentes'   },
+  { value: 'cancelled', label: 'Cancelados'  },
+  { value: 'attended',  label: 'Concluídos'  },
 ];
 
+type DatePreset = 'todos' | 'hoje' | 'ontem' | 'semana' | 'mes' | 'custom';
+const DATE_PRESETS: { value: DatePreset; label: string }[] = [
+  { value: 'todos',  label: 'Todas as datas' },
+  { value: 'hoje',   label: 'Hoje'           },
+  { value: 'ontem',  label: 'Ontem'          },
+  { value: 'semana', label: 'Esta semana'    },
+  { value: 'mes',    label: 'Este mês'       },
+  { value: 'custom', label: 'Personalizado'  },
+];
+
+function MultiSelect({ label, options, selected, onChange }: {
+  label: string;
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const toggle = (value: string) =>
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
+
+  const displayLabel = selected.length === 0
+    ? label
+    : selected.length === 1
+    ? (options.find(o => o.value === selected[0])?.label ?? label)
+    : `${selected.length} selecionados`;
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', fontSize: 11, fontWeight: 600, fontFamily: 'Outfit, sans-serif', background: selected.length > 0 ? '#EFF6FF' : '#FFFFFF', border: `1px solid ${selected.length > 0 ? '#BFDBFE' : '#D1D5DB'}`, borderRadius: 8, color: selected.length > 0 ? '#1D4ED8' : '#374151', cursor: 'pointer', outline: 'none', whiteSpace: 'nowrap' as const }}>
+        {displayLabel}
+        <ChevronDown size={11} style={{ color: '#9CA3AF', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: 180, padding: 6 }}>
+          {selected.length > 0 && (
+            <button type="button" onClick={() => onChange([])}
+              style={{ display: 'block', width: '100%', textAlign: 'left' as const, padding: '6px 10px', fontSize: 11, fontWeight: 700, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', borderRadius: 6, marginBottom: 2 }}>
+              Limpar seleção
+            </button>
+          )}
+          {options.map(o => (
+            <label key={o.value} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', borderRadius: 6, background: selected.includes(o.value) ? '#EFF6FF' : 'transparent' }}>
+              <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)}
+                style={{ width: 14, height: 14, accentColor: '#2563EB', cursor: 'pointer', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, fontWeight: selected.includes(o.value) ? 700 : 500, color: selected.includes(o.value) ? '#1D4ED8' : '#374151', fontFamily: 'Outfit, sans-serif' }}>
+                {o.label}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DateFilter({ preset, from, to, onPreset, onFrom, onTo }: {
+  preset: DatePreset; from: string; to: string;
+  onPreset: (p: DatePreset) => void; onFrom: (d: string) => void; onTo: (d: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const isActive = preset !== 'todos';
+  const displayLabel = isActive ? (DATE_PRESETS.find(p => p.value === preset)?.label ?? 'Data') : 'Data';
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', fontSize: 11, fontWeight: 600, fontFamily: 'Outfit, sans-serif', background: isActive ? '#EFF6FF' : '#FFFFFF', border: `1px solid ${isActive ? '#BFDBFE' : '#D1D5DB'}`, borderRadius: 8, color: isActive ? '#1D4ED8' : '#374151', cursor: 'pointer', outline: 'none', whiteSpace: 'nowrap' as const }}>
+        {displayLabel}
+        <ChevronDown size={11} style={{ color: '#9CA3AF', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: 180, padding: 6 }}>
+          {DATE_PRESETS.map(p => (
+            <button key={p.value} type="button"
+              onClick={() => { onPreset(p.value); if (p.value !== 'custom') setOpen(false); }}
+              style={{ display: 'block', width: '100%', textAlign: 'left' as const, padding: '7px 10px', fontSize: 12, fontWeight: preset === p.value ? 700 : 500, color: preset === p.value ? '#1D4ED8' : '#374151', background: preset === p.value ? '#EFF6FF' : 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', borderRadius: 6 }}>
+              {p.label}
+            </button>
+          ))}
+          {preset === 'custom' && (
+            <div style={{ padding: '8px 10px', borderTop: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column' as const, gap: 6, marginTop: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: '#6B7280', width: 24, flexShrink: 0 }}>De</span>
+                <input type="date" value={from} onChange={e => onFrom(e.target.value)}
+                  style={{ flex: 1, padding: '5px 8px', fontSize: 11, border: '1px solid #E2E8F0', borderRadius: 7, outline: 'none', fontFamily: 'Outfit, sans-serif', color: '#111827' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: '#6B7280', width: 24, flexShrink: 0 }}>Até</span>
+                <input type="date" value={to} onChange={e => onTo(e.target.value)}
+                  style={{ flex: 1, padding: '5px 8px', fontSize: 11, border: '1px solid #E2E8F0', borderRadius: 7, outline: 'none', fontFamily: 'Outfit, sans-serif', color: '#111827' }} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const STATUS_META: Record<string, { label: string; dot: string; bg: string; border: string; text: string }> = {
-  confirmed: { label: 'Confirmado', dot: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.25)',  text: '#86efac' },
-  pending:   { label: 'Pendente',   dot: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.25)', text: '#fcd34d' },
-  cancelled: { label: 'Cancelado',  dot: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.2)',   text: '#fca5a5' },
-  attended:  { label: 'Concluído',  dot: '#3b82f6', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.25)', text: '#93c5fd' },
+  confirmed: { label: 'Confirmado', dot: '#22C55E', bg: '#DCFCE7',  border: '#86EFAC',  text: '#166534' },
+  pending:   { label: 'Pendente',   dot: '#F59E0B', bg: '#FEF9C3',  border: '#FCD34D',  text: '#92400E' },
+  cancelled: { label: 'Cancelado',  dot: '#EF4444', bg: '#FEE2E2',  border: '#FCA5A5',  text: '#DC2626' },
+  attended:  { label: 'Concluído',  dot: '#3B82F6', bg: '#DBEAFE',  border: '#93C5FD',  text: '#1D4ED8' },
 };
 
 const ACTIVE_STATUSES = new Set(['confirmed', 'pending']);
@@ -54,10 +173,10 @@ const selectStyle: React.CSSProperties = {
   fontSize: 11,
   fontWeight: 600,
   fontFamily: 'Outfit, sans-serif',
-  background: '#1e293b',
-  border: '1px solid rgba(255,255,255,0.12)',
+  background: '#FFFFFF',
+  border: '1px solid #D1D5DB',
   borderRadius: 8,
-  color: 'rgba(255,255,255,0.75)',
+  color: '#374151',
   appearance: 'none',
   WebkitAppearance: 'none',
   cursor: 'pointer',
@@ -69,16 +188,28 @@ function SelectWrap({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ position: 'relative' }}>
       {children}
-      <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.35)', pointerEvents: 'none' }} />
+      <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#6B7280', pointerEvents: 'none' }} />
     </div>
   );
 }
 
+const LS_KEY = 'bf_agend_filters';
+function loadFilters() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; }
+}
+
 export default function AgendamentosTab({ activeTenant, myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment }: Props) {
-  const [search,      setSearch]      = useState('');
-  const [profFilter,  setProfFilter]  = useState('todos');
-  const [statusFilter, setStatusFilter] = useState('todos');
-  const [sortOrder,   setSortOrder]   = useState<'desc' | 'asc'>('desc');
+  const [search,       setSearch]       = useState('');
+  const [profFilter,   setProfFilter]   = useState<string[]>(() => loadFilters().profFilter   ?? []);
+  const [statusFilter, setStatusFilter] = useState<string[]>(() => loadFilters().statusFilter ?? []);
+  const [sortOrder,    setSortOrder]    = useState<'desc' | 'asc'>(() => loadFilters().sortOrder  ?? 'desc');
+  const [datePreset,   setDatePreset]   = useState<DatePreset>(() => loadFilters().datePreset  ?? 'todos');
+  const [dateFrom,     setDateFrom]     = useState<string>(() => loadFilters().dateFrom    ?? '');
+  const [dateTo,       setDateTo]       = useState<string>(() => loadFilters().dateTo      ?? '');
+
+  useEffect(() => {
+    localStorage.setItem(LS_KEY, JSON.stringify({ profFilter, statusFilter, sortOrder, datePreset, dateFrom, dateTo }));
+  }, [profFilter, statusFilter, sortOrder, datePreset, dateFrom, dateTo]);
 
   // ── WhatsApp connection ────────────────────────────────────
   const [authToken,  setAuthToken]  = useState('');
@@ -154,18 +285,36 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
 
   const btnLabel = (key: string) => ({ idle: '', sending: '⏳', done: '✓', error: '✕' }[sendStates[key] || 'idle']);
 
-  const connDotColor = { open: '#4ade80', close: '#ef4444', connecting: '#fbbf24', error: '#94a3b8', checking: '#64748b' }[connState];
+  const connDotColor = { open: '#4ade80', close: '#ef4444', connecting: '#fbbf24', error: '#F1F5F9', checking: '#64748b' }[connState];
   const connLabel    = { open: 'Conectado', close: 'Desconectado', connecting: 'Aguardando…', error: 'Erro', checking: 'Verificando…' }[connState];
 
   // ── Filter ─────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = [...myAppointments];
 
-    if (statusFilter !== 'todos') {
-      list = list.filter(a => displayStatus(a) === statusFilter);
-    }
+    if (statusFilter.length > 0) list = list.filter(a => statusFilter.includes(displayStatus(a)));
+    if (profFilter.length > 0)   list = list.filter(a => profFilter.includes(a.professionalId));
 
-    if (profFilter !== 'todos') list = list.filter(a => a.professionalId === profFilter);
+    if (datePreset !== 'todos') {
+      const today = new Date().toISOString().split('T')[0];
+      if (datePreset === 'hoje') {
+        list = list.filter(a => a.date === today);
+      } else if (datePreset === 'ontem') {
+        const y = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+        list = list.filter(a => a.date === y);
+      } else if (datePreset === 'semana') {
+        const d = new Date(); const dow = d.getDay();
+        const mon = new Date(d.getTime() - (dow === 0 ? 6 : dow - 1) * 86400000).toISOString().split('T')[0];
+        const sun = new Date(d.getTime() + (dow === 0 ? 0 : 7 - dow) * 86400000).toISOString().split('T')[0];
+        list = list.filter(a => a.date >= mon && a.date <= sun);
+      } else if (datePreset === 'mes') {
+        const ym = today.substring(0, 7);
+        list = list.filter(a => a.date.startsWith(ym));
+      } else if (datePreset === 'custom') {
+        if (dateFrom) list = list.filter(a => a.date >= dateFrom);
+        if (dateTo)   list = list.filter(a => a.date <= dateTo);
+      }
+    }
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -183,40 +332,45 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
     });
 
     return list;
-  }, [myAppointments, statusFilter, profFilter, search, sortOrder]);
+  }, [myAppointments, statusFilter, profFilter, datePreset, dateFrom, dateTo, search, sortOrder]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
 
       {/* ── Search ─────────────────────────────────────────── */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
-        <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
+        <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }} />
         <input
           placeholder="Buscar cliente ou telefone…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="navy-input"
-          style={{ paddingLeft: 34 }}
+          style={{ paddingLeft: 34, background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' }}
         />
       </div>
 
       {/* ── Filters ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
-        <SelectWrap>
-          <select value={profFilter} onChange={e => setProfFilter(e.target.value)} style={selectStyle}>
-            <option value="todos">Profissional</option>
-            {myProfessionals.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </SelectWrap>
-        <SelectWrap>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectStyle}>
-            {STATUS_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </SelectWrap>
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+        <MultiSelect
+          label="Profissional"
+          options={myProfessionals.map(p => ({ value: p.id, label: p.name }))}
+          selected={profFilter}
+          onChange={setProfFilter}
+        />
+        <MultiSelect
+          label="Status"
+          options={STATUS_OPTIONS}
+          selected={statusFilter}
+          onChange={setStatusFilter}
+        />
+        <DateFilter
+          preset={datePreset}
+          from={dateFrom}
+          to={dateTo}
+          onPreset={setDatePreset}
+          onFrom={setDateFrom}
+          onTo={setDateTo}
+        />
         <SelectWrap>
           <select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'desc' | 'asc')} style={selectStyle}>
             <option value="desc">Mais novo</option>
@@ -226,11 +380,11 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
       </div>
 
       {/* ── WhatsApp status bar ─────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, flexShrink: 0 }}>
-        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, padding: '8px 12px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, flexShrink: 0 }}>
+        <p style={{ fontSize: 11, color: '#6B7280', margin: 0 }}>
           {filtered.length} agendamento{filtered.length !== 1 ? 's' : ''} · disparos: 5 min entre reenvios
         </p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 9px', borderRadius: 20, border: '1px solid', fontSize: 10, fontWeight: 600, ...(connState === 'open' ? { background: '#E6F4EC', color: '#0A4A2C', borderColor: '#A7D7BC' } : { background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', borderColor: 'rgba(255,255,255,0.08)' }) }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 9px', borderRadius: 20, border: '1px solid', fontSize: 10, fontWeight: 600, ...(connState === 'open' ? { background: '#E6F4EC', color: '#0A4A2C', borderColor: '#A7D7BC' } : { background: '#F1F5F9', color: '#6B7280', borderColor: '#E2E8F0' }) }}>
           <span style={{ width: 5, height: 5, borderRadius: '50%', background: connDotColor, flexShrink: 0 }} />
           WhatsApp · {connLabel}
         </div>
@@ -241,7 +395,7 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
         <AnimatePresence mode="popLayout">
           {filtered.length === 0 ? (
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              style={{ textAlign: 'center', padding: '48px 20px', border: '1px dashed rgba(255,255,255,0.07)', borderRadius: 16, color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>
+              style={{ textAlign: 'center', padding: '48px 20px', border: '1px dashed #D1D5DB', borderRadius: 16, background: '#F8FAFC', color: '#9CA3AF', fontSize: 13 }}>
               Nenhum agendamento neste filtro
             </motion.div>
           ) : filtered.map((appt, i) => {
@@ -259,7 +413,7 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.97 }}
                 transition={{ duration: 0.18, delay: Math.min(i * 0.03, 0.15) }}
-                style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${sm.border}`, borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 8 }}
+                style={{ padding: '12px 14px', background: '#FFFFFF', border: `1px solid ${sm.border}`, borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 8, boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}
               >
                 {/* Row 1: info + status actions */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
@@ -267,10 +421,10 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: sm.dot, flexShrink: 0, marginTop: 3 }} />
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontWeight: 700, color: '#111827', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {appt.customerName}
                       </div>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: '0 6px' }}>
+                      <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: '0 6px' }}>
                         <span>{appt.date} · {appt.time}</span>
                         {srv && <span>· {srv.name}</span>}
                       </div>
@@ -280,24 +434,24 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                   {/* Right: professional + status + action buttons */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     {prof && (
-                      <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' }}>
                         {prof.name}
                       </span>
                     )}
                     <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sm.bg, color: sm.text, border: `1px solid ${sm.border}`, whiteSpace: 'nowrap' }}>
                       {sm.label}
                     </span>
-                    <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#4ade80' }}>
+                    <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#16A34A' }}>
                       R$ {appt.price.toFixed(2)}
                     </span>
                     {active && (
                       <>
                         <button onClick={() => onCompleteAppointment(appt)} title="Concluir"
-                          style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', color: '#86efac', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          style={{ width: 26, height: 26, borderRadius: 7, background: '#DCFCE7', border: '1px solid #86EFAC', color: '#166534', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Check size={11} />
                         </button>
                         <button onClick={() => { if (window.confirm(`Cancelar ${appt.customerName}?`)) onUpdateAppointmentStatus(appt.id, 'cancelled'); }} title="Cancelar"
-                          style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          style={{ width: 26, height: 26, borderRadius: 7, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <X size={11} />
                         </button>
                       </>
@@ -310,15 +464,15 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                   {/* Sent badges */}
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {appt.wppConfirmSent && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', color: '#86efac', fontSize: 9, fontWeight: 700 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, background: '#DCFCE7', border: '1px solid #86EFAC', color: '#166534', fontSize: 9, fontWeight: 700 }}>
                         <MessageSquare size={8} /> Confirmação
                       </span>
                     )}
                     {active && (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700,
                         ...(appt.wppReminderSent
-                          ? { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', color: '#86efac' }
-                          : { background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', color: '#fcd34d' })
+                          ? { background: '#DCFCE7', border: '1px solid #86EFAC', color: '#166534' }
+                          : { background: '#FEF9C3', border: '1px solid #FCD34D', color: '#92400E' })
                       }}>
                         <Clock size={8} /> Lembrete
                       </span>
@@ -341,8 +495,8 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                         const disabled = busy || onCd || connState !== 'open';
                         const cdLabel  = btnCooldownLabel(key);
 
-                        const bg    = onCd ? 'rgba(255,255,255,0.06)' : state === 'done' ? '#E6F4EC' : state === 'error' ? '#FEECEC' : state === 'sending' ? '#FEF9EC' : 'rgba(255,255,255,0.88)';
-                        const color = onCd ? 'rgba(255,255,255,0.3)'  : state === 'done' ? '#0A4A2C' : state === 'error' ? '#7A0A0A' : state === 'sending' ? '#7A4B0A' : '#0F172A';
+                        const bg    = onCd ? '#F1F5F9' : state === 'done' ? '#DCFCE7' : state === 'error' ? '#FEE2E2' : state === 'sending' ? '#FEF9C3' : '#1E293B';
+                        const color = onCd ? '#9CA3AF' : state === 'done' ? '#166534' : state === 'error' ? '#DC2626' : state === 'sending' ? '#92400E' : '#FFFFFF';
 
                         return (
                           <button

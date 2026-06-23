@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CustomerBookingFlow from '../../components/CustomerBookingFlow';
 import { supabase } from '../../lib/supabase';
-import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, upsertCustomerByPhone, notifyAppointmentWhatsApp, getOccupiedSlots } from '../../lib/db';
+import { getTenantBySlug, getServices, getProfessionals, getAppointments, getCustomers, createAppointment, upsertCustomerByPhone, notifyAppointmentWhatsApp, getOccupiedSlots, addWaitlistEntry } from '../../lib/db';
 
 function getApiUrl() {
   const w = (window as any).__BARBER_CONFIG__ || {};
@@ -144,6 +144,7 @@ export default function BookingPage() {
             await supabase.from('reviews').insert({ tenant_id: appt.tenantId, appointment_id: apptId, stars, comment });
           }}
           onGetOccupiedSlots={(profId, date) => getOccupiedSlots(profId, date)}
+          onAddWaitlistEntry={async e => { await addWaitlistEntry(e); }}
         />
       </div>
 
@@ -151,7 +152,7 @@ export default function BookingPage() {
       <div style={{ textAlign: 'center', padding: '24px 0 32px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.3px' }}>Powered by WorkAgenda</span>
         <img
-          src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%208%20de%20jun.%20de%202026,%2019_42_41.png"
+          src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2023%20de%20jun.%20de%202026,%2014_55_26%20(1).png"
           alt="WorkAgenda"
           style={{ height: 28, display: 'inline-block', opacity: 0.4 }}
         />

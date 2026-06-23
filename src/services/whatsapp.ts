@@ -340,11 +340,42 @@ export function buildCancellationMsg(appt: ApptData): string {
 }
 
 export function buildCustomMsg(template: string, appt: ApptData): string {
+  const bookingLink = appt.tenantSlug ? `https://workagenda.org/${appt.tenantSlug}/agendamento` : '';
   return template
-    .replace(/\{cliente\}/g,      appt.customerName)
-    .replace(/\{servico\}/g,      appt.serviceName)
-    .replace(/\{profissional\}/g, appt.professionalName)
-    .replace(/\{data\}/g,         formatDatePT(appt.date))
-    .replace(/\{hora\}/g,         appt.time)
-    .replace(/\{salao\}/g,        appt.tenantName);
+    .replace(/\{cliente\}/g,           appt.customerName)
+    .replace(/\{nome\}/g,              appt.customerName)
+    .replace(/\{servico\}/g,           appt.serviceName)
+    .replace(/\{profissional\}/g,      appt.professionalName)
+    .replace(/\{data\}/g,              formatDatePT(appt.date))
+    .replace(/\{hora\}/g,              appt.time)
+    .replace(/\{salao\}/g,             appt.tenantName)
+    .replace(/\{link_agendamento\}/g,  bookingLink)
+    .replace(/\{link\}/g,              buildApptLink(appt));
+}
+
+// ── Lista de Espera ────────────────────────────────────────────────────────────
+export interface WaitlistData {
+  customerName: string;
+  tenantName: string;
+  tenantSlug: string;
+  date: string;
+  timePreference?: string;
+}
+
+export function buildWaitlistMsg(d: WaitlistData): string {
+  const link = `https://workagenda.org/${d.tenantSlug}/agendamento`;
+  const horario = d.timePreference && d.timePreference !== 'qualquer'
+    ? ` às *${d.timePreference}*`
+    : '';
+  return [
+    `🎉 Olá, *${d.customerName}*!`,
+    '',
+    `Uma vaga abriu na *${d.tenantName}* para o dia *${formatDatePT(d.date)}*${horario} — exatamente o que você estava aguardando!`,
+    '',
+    `⚡ Corra antes que alguém reserve:`,
+    link,
+    '',
+    `_Caso não queira mais agendar, é só ignorar esta mensagem._`,
+    `💈 _WorkAgenda_`,
+  ].join('\n');
 }
