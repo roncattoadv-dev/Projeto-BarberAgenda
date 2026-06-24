@@ -1,15 +1,11 @@
-// src/pages/admin/SuperAdminPage.tsx
 import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import SuperAdminPanel from '../../components/SuperAdminPanel';
 import { getTenants, getCoupons, getAuditLogs, updateTenant, createCoupon, logAudit, getSupportTickets, resolveTicket } from '../../lib/db';
 import type { Tenant, Coupon, AuditLog, SupportTicket } from '../../types';
-import { ShieldCheck } from 'lucide-react';
 
 export default function SuperAdminPage() {
   const { profile, signOut } = useAuth();
-  const navigate = useNavigate();
 
   const [tenants,        setTenants]        = useState<Tenant[]>([]);
   const [coupons,        setCoupons]        = useState<Coupon[]>([]);
@@ -52,53 +48,35 @@ export default function SuperAdminPage() {
     setCoupons(prev => [c, ...prev]);
   };
 
-  return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F8FAFC', fontFamily: 'Outfit, sans-serif' }}>
-      {/* Top bar */}
-      <div style={{ backgroundColor: '#FFFFFF', borderBottom: '1px solid #E2E8F0', padding: '12px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <img
-            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2019%20de%20jun.%20de%202026,%2014_46_16.png"
-            alt="WorkAgenda"
-            style={{ height: 48, objectFit: 'contain', filter: 'brightness(0)' }}
-          />
-          <span style={{ width: 1, height: 20, background: '#E2E8F0' }} />
-          <ShieldCheck style={{ width: 15, height: 15, color: '#2563EB' }} />
-          <span style={{ color: '#475569', fontSize: 13, fontWeight: 600 }}>Super Admin</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span style={{ color: '#9CA3AF', fontSize: 13 }}>{profile?.name}</span>
-          <button onClick={signOut} style={{ color: '#475569', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '6px 16px', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', fontWeight: 600 }}>
-            Sair
-          </button>
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Outfit, sans-serif' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <div style={{ width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: '#2563EB', borderRadius: '50%' }} className="animate-spin" />
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Carregando…</p>
         </div>
       </div>
+    );
+  }
 
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-8">
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div style={{ width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: '#2563EB', borderRadius: '50%' }} className="animate-spin" />
-          </div>
-        ) : (
-          <SuperAdminPanel
-            tenants={tenants}
-            onUpdateTenantStatus={handleUpdateStatus}
-            onExtendTrial={handleExtendTrial}
-            coupons={coupons}
-            onAddCoupon={handleAddCoupon}
-            supportTickets={supportTickets}
-            onResolveTicket={async (ticketId, reply) => {
-              if (!reply) return;
-              await resolveTicket(ticketId, reply);
-              setSupportTickets(prev => prev.map(t => t.id === ticketId
-                ? { ...t, status: 'resolved', messages: [...t.messages, { sender: 'superadmin', content: reply, timestamp: new Date().toISOString() }] }
-                : t
-              ));
-            }}
-            auditLogs={auditLogs}
-          />
-        )}
-      </div>
-    </div>
+  return (
+    <SuperAdminPanel
+      tenants={tenants}
+      onUpdateTenantStatus={handleUpdateStatus}
+      onExtendTrial={handleExtendTrial}
+      coupons={coupons}
+      onAddCoupon={handleAddCoupon}
+      supportTickets={supportTickets}
+      onResolveTicket={async (ticketId, reply) => {
+        if (!reply) return;
+        await resolveTicket(ticketId, reply);
+        setSupportTickets(prev => prev.map(t => t.id === ticketId
+          ? { ...t, status: 'resolved', messages: [...t.messages, { sender: 'superadmin', content: reply, timestamp: new Date().toISOString() }] }
+          : t
+        ));
+      }}
+      auditLogs={auditLogs}
+      onSignOut={signOut}
+    />
   );
 }
