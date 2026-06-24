@@ -1319,7 +1319,7 @@ app.post('/api/cancel', async (req, res) => {
     // Verifica que o agendamento pertence ao tenant com este slug
     const { data: appt } = await supabase
       .from('appointments')
-      .select('id, status, tenant_id, scheduled_date, scheduled_time, professional_id, tenants(id, slug, name)')
+      .select('id, status, tenant_id, customer_name, customer_phone, scheduled_date, scheduled_time, professional_id, service_id, professionals(name), services(name), tenants(id, slug, name)')
       .eq('id', appointmentId)
       .maybeSingle();
 
@@ -1335,13 +1335,28 @@ app.post('/api/cancel', async (req, res) => {
     await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', appointmentId);
     res.json({ ok: true });
 
-    // ── Notificar lista de espera (fire-and-forget) ────────────────────────
+    // ── Registrar histórico + Notificar lista de espera (fire-and-forget) ──
     (async () => {
       try {
         const tenantId   = appt.tenant_id as string;
         const apptDate   = (appt.scheduled_date as string).substring(0, 10);
         const apptTime   = (appt.scheduled_time as string).substring(0, 5);
         const apptProfId = appt.professional_id as string;
+
+        // Grava no slot_history
+        const { data: histRow } = await supabase.from('slot_history').insert({
+          tenant_id:               tenantId,
+          slot_date:               apptDate,
+          slot_time:               apptTime,
+          professional_name:       (appt.professionals as any)?.name ?? null,
+          service_name:            (appt.services as any)?.name ?? null,
+          cancelled_customer_name: (appt.customer_name as string) ?? '',
+          cancelled_customer_phone:(appt.customer_phone as string) ?? null,
+          filled_customer_name:    null,
+          filled_customer_phone:   null,
+          filled_at:               null,
+        }).select('id').single();
+        const histId = histRow?.id as string | undefined;
         const bookingUrl = `https://workagenda.org/${slug}/agendamento`;
 
         // Busca todas as entradas da lista
@@ -1390,6 +1405,14 @@ app.post('/api/cancel', async (req, res) => {
               await supabase.from('waitlist')
                 .update({ notified: true, notified_at: new Date().toISOString() })
                 .eq('id', entry.id);
+              // Marca histórico como preenchido pelo primeiro notificado
+              if (histId && idx === 0) {
+                await supabase.from('slot_history').update({
+                  filled_customer_name:  entry.customer_name,
+                  filled_customer_phone: entry.customer_phone,
+                  filled_at:             new Date().toISOString(),
+                }).eq('id', histId);
+              }
               console.log(`[Waitlist/Cancel] ✓ ${entry.customer_name} notificado`);
             } catch (err: any) {
               console.error(`[Waitlist/Cancel] erro ao notificar ${entry.customer_name}:`, err.message);
