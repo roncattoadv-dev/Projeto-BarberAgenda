@@ -57,6 +57,7 @@ interface Props {
   onAddRecurringExpense: (r: Omit<RecurringExpense, 'id' | 'createdAt'>) => void;
   onUpdateRecurringExpense: (id: string, updates: Partial<Pick<RecurringExpense, 'active' | 'nextDueDate'>>) => void;
   onDeleteRecurringExpense: (id: string) => void;
+  waitlistFailedIds: Set<string>;
   onAddCustomer: (c: Omit<Customer, 'id'>) => Promise<Customer>;
   onUpdateCustomer: (id: string, updates: { name?: string; phone?: string; email?: string }) => Promise<void>;
   onDeleteCustomer: (id: string) => Promise<void>;
@@ -100,6 +101,7 @@ export default function ClientAdminPanel({
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount, onSignOut,
   openSubscriptionTab, onSubscriptionTabOpened,
   recurringExpenses, onAddRecurringExpense, onUpdateRecurringExpense, onDeleteRecurringExpense,
+  waitlistFailedIds,
   notifications,
 }: Props) {
   const toast = useToast();
@@ -3029,6 +3031,7 @@ export default function ClientAdminPanel({
           tenantName={activeTenant.name}
           tenantSlug={activeTenant.slug}
           professionals={myProfessionals}
+          failedIds={waitlistFailedIds}
           onClose={() => setShowWaitlistModal(false)}
         />
       )}

@@ -281,7 +281,9 @@ import {
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours, mapAppointment,
   getRecurringExpenses, createRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
+  getWaitlistEntries, markWaitlistNotified,
 } from '../../lib/db';
+import { sendWhatsAppServer, buildWaitlistMsg } from '../../services/whatsapp';
 import type { Tenant, Service, Professional, Product, Customer, Appointment, Payment, RecurringExpense } from '../../types';
 import { useNotifications } from '../../hooks/useNotifications';
 
@@ -301,6 +303,7 @@ export default function TenantAdminPage() {
   const [appointments,        setAppointments]        = useState<Appointment[]>([]);
   const [payments,            setPayments]            = useState<Payment[]>([]);
   const [recurringExpenses,   setRecurringExpenses]   = useState<RecurringExpense[]>([]);
+  const [waitlistFailedIds,   setWaitlistFailedIds]   = useState<Set<string>>(new Set());
   const [loading,             setLoading]             = useState(true);
   const [openSubscription,    setOpenSubscription]    = useState(false);
 
@@ -520,6 +523,27 @@ export default function TenantAdminPage() {
           onUpdateAppointmentStatus={async (id, status) => {
             await updateAppointmentStatus(id, status);
             setAppointments(p => p.map(a => a.id === id ? { ...a, status } : a));
+
+            if (status === 'cancelled') {
+              const appt = appointments.find(a => a.id === id);
+              if (!appt || !tenant) return;
+              try {
+                const { data: { session } } = await (await import('../../lib/supabase')).supabase.auth.getSession();
+                const token = session?.access_token ?? '';
+                const pending = await getWaitlistEntries(tenantId, appt.date);
+                const first = pending.find(e => !e.notified);
+                if (!first || !token) return;
+                const msg = buildWaitlistMsg({ customerName: first.customerName, tenantName: tenant.name, tenantSlug: tenant.slug, date: first.date, timePreference: first.timePreference });
+                const result = await sendWhatsAppServer(tenantId, token, first.customerPhone, msg);
+                if (result === 'sent') {
+                  await markWaitlistNotified(first.id).catch(() => {});
+                } else {
+                  setWaitlistFailedIds(prev => new Set([...prev, first.id]));
+                }
+              } catch {
+                // falha silenciosa — botão manual aparecerá no modal
+              }
+            }
           }}
           onRescheduleAppointment={async (id, date, time) => {
             await rescheduleAppointment(id, date, time);
@@ -544,6 +568,7 @@ export default function TenantAdminPage() {
             await deleteRecurringExpense(id);
             setRecurringExpenses(prev => prev.filter(r => r.id !== id));
           }}
+          waitlistFailedIds={waitlistFailedIds}
           onAddCustomer={async c => {
             const created = c.phone
               ? await upsertCustomerByPhone(c.tenantId, c.phone, c.name, c.email)
