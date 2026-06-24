@@ -856,28 +856,35 @@ export default function SuperAdminPanel({
                         <StatusChip s={intStatus.asaas} />
                       </div>
 
-                      {/* Modo sandbox / produção */}
+                      {/* Toggle sandbox / produção */}
                       <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                        {/* Label do modo atual */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           {intStatus.asaas?.sandbox
                             ? <><FlaskConical size={15} color={C.amber} /><div><p style={{ fontSize: 13, fontWeight: 700, color: C.amber, margin: 0 }}>Modo Sandbox</p><p style={{ fontSize: 11, color: C.secondary, margin: 0 }}>Transações de teste — não cobra de verdade</p></div></>
                             : <><Globe size={15} color={C.green} /><div><p style={{ fontSize: 13, fontWeight: 700, color: C.green, margin: 0 }}>Modo Produção</p><p style={{ fontSize: 11, color: C.secondary, margin: 0 }}>Transações reais — cobra clientes</p></div></>
                           }
                         </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button
-                            onClick={() => toggleAsaasMode(true)}
-                            disabled={modeToggling || intStatus.asaas?.sandbox === true}
-                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, border: `1px solid ${C.amberBd}`, background: intStatus.asaas?.sandbox ? C.amberBg : C.surface, color: intStatus.asaas?.sandbox ? C.amber : C.secondary, cursor: (modeToggling || intStatus.asaas?.sandbox === true) ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif', opacity: intStatus.asaas?.sandbox === true ? 0.7 : 1 }}>
-                            <FlaskConical size={12} /> Sandbox
-                          </button>
-                          <button
-                            onClick={() => toggleAsaasMode(false)}
-                            disabled={modeToggling || intStatus.asaas?.sandbox === false}
-                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, border: `1px solid ${C.greenBd}`, background: intStatus.asaas?.sandbox === false ? C.greenBg : C.surface, color: intStatus.asaas?.sandbox === false ? C.green : C.secondary, cursor: (modeToggling || intStatus.asaas?.sandbox === false) ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif', opacity: intStatus.asaas?.sandbox === false ? 0.7 : 1 }}>
-                            <Globe size={12} /> Produção
-                          </button>
-                        </div>
+
+                        {/* Toggle switch */}
+                        <button
+                          onClick={() => toggleAsaasMode(!intStatus.asaas?.sandbox)}
+                          disabled={modeToggling || intStatus.asaas === null}
+                          title={intStatus.asaas?.sandbox ? 'Clique para ativar Produção' : 'Clique para ativar Sandbox'}
+                          style={{ display: 'flex', alignItems: 'center', gap: 0, background: 'none', border: 'none', cursor: (modeToggling || intStatus.asaas === null) ? 'default' : 'pointer', padding: 0, opacity: modeToggling ? 0.6 : 1 }}>
+                          {/* Track */}
+                          <div style={{ width: 52, height: 28, borderRadius: 99, background: intStatus.asaas?.sandbox ? C.amberBg : C.greenBg, border: `2px solid ${intStatus.asaas?.sandbox ? C.amberBd : C.greenBd}`, position: 'relative', transition: 'background 0.25s, border-color 0.25s', flexShrink: 0 }}>
+                            {/* Thumb */}
+                            <div style={{ position: 'absolute', top: 2, left: intStatus.asaas?.sandbox ? 2 : 22, width: 20, height: 20, borderRadius: '50%', background: intStatus.asaas?.sandbox ? C.amber : C.green, transition: 'left 0.25s, background 0.25s', boxShadow: '0 1px 4px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {modeToggling
+                                ? <RefreshCw size={10} color="#fff" style={{ animation: 'spin 0.8s linear infinite' }} />
+                                : intStatus.asaas?.sandbox
+                                  ? <FlaskConical size={10} color="#fff" />
+                                  : <Globe size={10} color="#fff" />
+                              }
+                            </div>
+                          </div>
+                        </button>
                       </div>
 
                       {intStatus.asaas && !intStatus.asaas.ok && (
