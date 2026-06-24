@@ -360,8 +360,8 @@ export default function LandingPage() {
                 <img src={IMGS[0]} alt="WorkAgenda painel" style={{ width:'100%', display:'block' }} />
               </div>
 
-              {/* Card: novo agendamento — canto superior direito */}
-              <FloatCard className="fb float-m" style={{ position:'absolute', top:20, right:-20, minWidth:230, zIndex:2 }}>
+              {/* Card: novo agendamento — canto superior esquerdo */}
+              <FloatCard className="fb float-m" style={{ position:'absolute', top:20, left:-20, minWidth:230, zIndex:2 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                   <div style={{ width:38, height:38, borderRadius:10, background:'#EFF6FF', border:'1px solid #BFDBFE', display:'flex', alignItems:'center', justifyContent:'center', color:C.accent, flexShrink:0 }}>
                     <Ico.Calendar />
@@ -577,35 +577,35 @@ export default function LandingPage() {
       </section>
 
       {/* ── LISTA DE ESPERA ─────────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
+      <section style={{ padding:`80px ${PX}`, background:C.bg, borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
         <div style={{ maxWidth:1020, margin:'0 auto' }}>
 
           {/* Header */}
           <Reveal style={{ textAlign:'center', marginBottom:56 }}>
-            <Pill color={C.success}>Exclusivo WorkAgenda</Pill>
+            <Pill color={C.accent}>Lista de Espera</Pill>
             <h2 style={{ fontSize:'clamp(28px,4vw,44px)', fontWeight:900, margin:'16px 0 14px', letterSpacing:'-1.2px', color:C.text }}>
               Pare de perder faturamento com cancelamentos
             </h2>
-            <p style={{ fontSize:17, color:C.secondary, maxWidth:560, margin:'0 auto', lineHeight:1.65 }}>
-              Cada cancelamento de última hora é dinheiro jogado fora. A <strong style={{ color:C.text }}>Lista de Espera automática</strong> preenche a vaga em minutos — sem você precisar fazer nada.
+            <p style={{ fontSize:17, color:C.secondary, maxWidth:540, margin:'0 auto', lineHeight:1.65 }}>
+              Cada cancelamento de última hora é dinheiro perdido. A <strong style={{ color:C.text }}>Lista de Espera automática</strong> preenche a vaga em minutos — sem você precisar fazer nada.
             </p>
           </Reveal>
 
-          {/* Como funciona — fluxo visual */}
-          <Reveal style={{ marginBottom:56 }}>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', gap:0, background:'#F8FAFC', borderRadius:20, border:`1px solid ${C.border}`, overflow:'hidden' }}>
-              {[
-                { step:'1', icon:'📱', title:'Cliente se candidata', desc:'Na página de agendamento, quando o dia está lotado, o cliente entra na lista de espera em 30 segundos — nome e telefone apenas.' },
-                { step:'2', icon:'❌', title:'Horário é cancelado', desc:'Outro cliente cancela o agendamento pelo link ou o responsável cancela pelo painel. O sistema detecta imediatamente.' },
-                { step:'3', icon:'⚡', title:'WhatsApp automático', desc:'O primeiro da fila recebe uma mensagem via WhatsApp com o link para agendar — em segundos, sem intervenção manual.' },
-                { step:'4', icon:'💰', title:'Vaga preenchida', desc:'A barbearia não perde o horário. O faturamento que seria perdido é recuperado automaticamente.' },
-              ].map(({ step, icon, title, desc }, i) => (
-                <div key={step} style={{ padding:'28px 24px', borderRight: i < 3 ? `1px solid ${C.border}` : 'none', position:'relative' as const }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+          {/* Como funciona — 4 passos */}
+          <Reveal style={{ marginBottom:48 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', background:C.surface, borderRadius:20, border:`1px solid ${C.border}`, overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
+              {([
+                { step:'1', Icon:Ico.Phone,    title:'Cliente entra na fila',    desc:'Quando o dia está lotado, o cliente adiciona nome e telefone na lista de espera diretamente pela página de agendamento.' },
+                { step:'2', Icon:Ico.Calendar, title:'Horário é cancelado',      desc:'Outro cliente cancela pelo link ou o responsável cancela no painel. O sistema detecta a vaga disponível imediatamente.' },
+                { step:'3', Icon:Ico.Whatsapp, title:'Aviso automático',         desc:'O primeiro da fila recebe uma mensagem via WhatsApp com o link para confirmar o horário — em segundos, sem intervenção.' },
+                { step:'4', Icon:Ico.Chart,    title:'Vaga preenchida',          desc:'A barbearia não perde o horário. O faturamento que seria perdido é recuperado automaticamente, sem esforço.' },
+              ] as const).map(({ step, Icon, title, desc }, i) => (
+                <div key={step} style={{ padding:'28px 24px', borderRight: i < 3 ? `1px solid ${C.border}` : 'none' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
                     <div style={{ width:28, height:28, borderRadius:'50%', background:C.accent, color:'#fff', fontWeight:900, fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                       {step}
                     </div>
-                    <span style={{ fontSize:22 }}>{icon}</span>
+                    <span style={{ color:C.accent }}><Icon /></span>
                   </div>
                   <p style={{ fontWeight:700, fontSize:14, color:C.text, margin:'0 0 8px' }}>{title}</p>
                   <p style={{ fontSize:13, color:C.secondary, margin:0, lineHeight:1.65 }}>{desc}</p>
@@ -614,24 +614,26 @@ export default function LandingPage() {
             </div>
           </Reveal>
 
-          {/* Impacto no faturamento */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }} className="col-m gap-m-16">
+          {/* Comparação */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }} className="col-m gap-m-16">
 
-            {/* Coluna esquerda: problema */}
+            {/* Sem lista de espera */}
             <Reveal from="left">
-              <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:20, padding:'28px 28px' }}>
-                <p style={{ fontSize:13, fontWeight:700, color:'#DC2626', textTransform:'uppercase' as const, letterSpacing:'1.5px', margin:'0 0 16px', display:'flex', alignItems:'center', gap:8 }}>
-                  <span style={{ fontSize:18 }}>❌</span> Sem lista de espera
+              <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:20, padding:'28px', height:'100%' }}>
+                <p style={{ fontSize:11, fontWeight:700, color:C.secondary, textTransform:'uppercase' as const, letterSpacing:'1.5px', margin:'0 0 18px' }}>
+                  Sem lista de espera
                 </p>
                 <div style={{ display:'flex', flexDirection:'column' as const, gap:12 }}>
                   {[
-                    'Horário cancelado = prejuízo imediato',
-                    'Admin precisa ligar para clientes manualmente',
-                    'Último cancelamento ninguém fica sabendo',
+                    'Horário cancelado vira prejuízo direto',
+                    'Admin precisa contatar clientes manualmente',
+                    'Outros interessados nunca ficam sabendo',
                     'Barbearia com 3 faltas/semana perde R$ 800+/mês',
                   ].map(t => (
-                    <div key={t} style={{ display:'flex', alignItems:'flex-start', gap:10, fontSize:14, color:'#7F1D1D' }}>
-                      <span style={{ flexShrink:0, marginTop:1, color:'#DC2626', fontWeight:700 }}>✕</span>
+                    <div key={t} style={{ display:'flex', alignItems:'flex-start', gap:10, fontSize:14, color:C.secondary }}>
+                      <span style={{ flexShrink:0, marginTop:2, width:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', color:'#94a3b8' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </span>
                       {t}
                     </div>
                   ))}
@@ -639,11 +641,11 @@ export default function LandingPage() {
               </div>
             </Reveal>
 
-            {/* Coluna direita: solução */}
+            {/* Com lista de espera */}
             <Reveal from="right">
-              <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:20, padding:'28px 28px' }}>
-                <p style={{ fontSize:13, fontWeight:700, color:'#166534', textTransform:'uppercase' as const, letterSpacing:'1.5px', margin:'0 0 16px', display:'flex', alignItems:'center', gap:8 }}>
-                  <span style={{ fontSize:18 }}>✅</span> Com lista de espera WorkAgenda
+              <div style={{ background:C.surface, border:`1.5px solid ${C.accent}40`, borderRadius:20, padding:'28px', height:'100%', boxShadow:`0 0 0 3px ${C.accent}06` }}>
+                <p style={{ fontSize:11, fontWeight:700, color:C.accent, textTransform:'uppercase' as const, letterSpacing:'1.5px', margin:'0 0 18px' }}>
+                  Com WorkAgenda
                 </p>
                 <div style={{ display:'flex', flexDirection:'column' as const, gap:12 }}>
                   {[
@@ -652,8 +654,10 @@ export default function LandingPage() {
                     'WhatsApp enviado sem você tocar no celular',
                     'Limite de 5 avisos por cliente — sem spam',
                   ].map(t => (
-                    <div key={t} style={{ display:'flex', alignItems:'flex-start', gap:10, fontSize:14, color:'#14532D' }}>
-                      <span style={{ flexShrink:0, marginTop:1, color:'#16A34A', fontWeight:700 }}>✓</span>
+                    <div key={t} style={{ display:'flex', alignItems:'flex-start', gap:10, fontSize:14, color:C.secondary }}>
+                      <span style={{ flexShrink:0, marginTop:2, width:16, height:16, borderRadius:'50%', background:C.accentBg, display:'flex', alignItems:'center', justifyContent:'center', color:C.accent }}>
+                        <Ico.Check />
+                      </span>
                       {t}
                     </div>
                   ))}
@@ -662,20 +666,27 @@ export default function LandingPage() {
             </Reveal>
           </div>
 
-          {/* Destaque central */}
-          <Reveal style={{ marginTop:32 }}>
-            <div style={{ background:`linear-gradient(135deg, ${C.accent} 0%, ${C.purple} 100%)`, borderRadius:20, padding:'32px 40px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:24, flexWrap:'wrap' as const }}>
-              <div>
-                <p style={{ fontSize:'clamp(22px,3vw,30px)', fontWeight:900, color:'#fff', margin:'0 0 6px', letterSpacing:'-0.5px' }}>
-                  Cada horário cancelado pode render R$ 50–200
-                </p>
-                <p style={{ fontSize:15, color:'rgba(255,255,255,0.75)', margin:0 }}>
-                  A lista de espera recupera automaticamente esse valor. Com 4 cancelamentos/mês preenchidos, você já paga o plano anual.
-                </p>
+          {/* Destaque */}
+          <Reveal style={{ marginTop:24 }}>
+            <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:20, padding:'32px 40px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:24, flexWrap:'wrap' as const, boxShadow:'0 2px 12px rgba(0,0,0,0.04)' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+                <div style={{ width:48, height:48, borderRadius:14, background:C.accentBg, border:`1px solid ${C.accentBdr}`, display:'flex', alignItems:'center', justifyContent:'center', color:C.accent, flexShrink:0 }}>
+                  <Ico.Zap />
+                </div>
+                <div>
+                  <p style={{ fontSize:'clamp(16px,2vw,20px)', fontWeight:800, color:C.text, margin:'0 0 4px', letterSpacing:'-0.3px' }}>
+                    Cada horário cancelado pode render R$ 50–200
+                  </p>
+                  <p style={{ fontSize:14, color:C.secondary, margin:0, lineHeight:1.55 }}>
+                    Com 4 cancelamentos preenchidos por mês, você já paga o plano anual inteiro.
+                  </p>
+                </div>
               </div>
-              <a href="/cadastro" style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'14px 28px', background:'#fff', color:C.accent, fontWeight:800, fontSize:15, borderRadius:14, textDecoration:'none', whiteSpace:'nowrap' as const, flexShrink:0, boxShadow:'0 4px 16px rgba(0,0,0,0.15)' }}>
-                Testar grátis por 7 dias →
-              </a>
+              <Link to="/cadastro" style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'13px 26px', background:C.accent, color:'#fff', fontWeight:700, fontSize:14, borderRadius:12, textDecoration:'none', whiteSpace:'nowrap' as const, flexShrink:0, boxShadow:'0 4px 16px rgba(37,99,235,0.32)', transition:'all 0.2s' }}
+                onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 8px 24px rgba(37,99,235,0.44)'}}
+                onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 4px 16px rgba(37,99,235,0.32)'}}>
+                Testar grátis por 7 dias
+              </Link>
             </div>
           </Reveal>
 

@@ -288,7 +288,7 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
         {/* Footer */}
         <div style={{ padding: '10px 20px', borderTop: '1px solid #F1F5F9', flexShrink: 0, background: '#F8FAFC' }}>
           <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0, textAlign: 'center' }}>
-            Disparos automáticos em ordem de chegada · limite 5 por cliente · 3s entre cada envio
+            Disparos em ordem de chegada · 3s entre cada envio · cada entrada recebe no máximo 1 aviso
           </p>
         </div>
       </div>

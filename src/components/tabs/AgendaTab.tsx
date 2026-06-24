@@ -16,6 +16,8 @@ interface Props {
   onResendReminder: (apptId: string) => Promise<void>;
   onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
   tenantId: string;
+  onOpenWaitlist?: () => void;
+  waitlistEnabled?: boolean;
 }
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -191,7 +193,7 @@ function MultiSelect({ label, options, selected, onChange }: {
   );
 }
 
-export default function AgendaTab({ myAppointments, myServices, myProfessionals, myCustomers, onUpdateAppointmentStatus, onAddAppointment, onAddCustomer, onCompleteAppointment, onResendReminder, onRescheduleAppointment, tenantId }: Props) {
+export default function AgendaTab({ myAppointments, myServices, myProfessionals, myCustomers, onUpdateAppointmentStatus, onAddAppointment, onAddCustomer, onCompleteAppointment, onResendReminder, onRescheduleAppointment, tenantId, onOpenWaitlist, waitlistEnabled = true }: Props) {
   const [view, setView] = useState<ViewMode>(() => {
     const s = localStorage.getItem('bf_agenda_view');
     return (s === 'day' || s === 'week' || s === 'month') ? s : 'day';
@@ -403,17 +405,30 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
           <span style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginLeft: 4 }}>{headerLabel}</span>
         </div>
 
-        {/* View toggle */}
-        <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: 8, border: '1px solid #E2E8F0', overflow: 'hidden' }}>
-          {([['day','Dia'],['week','Semana'],['month','Mês']] as [ViewMode,string][]).map(([v, label]) => (
-            <button key={v} onClick={() => { setView(v); localStorage.setItem('bf_agenda_view', v); }}
-              style={{ ...btnBase, padding: '5px 14px', fontSize: 12, fontWeight: 700, border: 'none',
-                background: view === v ? '#EFF6FF' : 'transparent',
-                color: view === v ? '#1D4ED8' : '#9CA3AF',
-              }}>
-              {label}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Botão Lista de Espera */}
+          {onOpenWaitlist && (
+            <button onClick={onOpenWaitlist}
+              title={!waitlistEnabled ? 'Lista de espera desativada em Configurações → Agenda' : 'Lista de Espera'}
+              style={{ ...btnBase, padding: '5px 10px', fontSize: 11, fontWeight: 700, borderRadius: 8, border: '1px solid #E2E8F0', background: waitlistEnabled ? '#FFFFFF' : '#F8FAFC', color: waitlistEnabled ? '#374151' : '#9CA3AF', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Clock size={12} />
+              Lista de Espera
+              {!waitlistEnabled && <span style={{ fontSize: 8, fontWeight: 800, background: '#FEF3C7', color: '#92400E', borderRadius: 3, padding: '1px 4px' }}>OFF</span>}
             </button>
-          ))}
+          )}
+
+          {/* View toggle */}
+          <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: 8, border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+            {([['day','Dia'],['week','Semana'],['month','Mês']] as [ViewMode,string][]).map(([v, label]) => (
+              <button key={v} onClick={() => { setView(v); localStorage.setItem('bf_agenda_view', v); }}
+                style={{ ...btnBase, padding: '5px 14px', fontSize: 12, fontWeight: 700, border: 'none',
+                  background: view === v ? '#EFF6FF' : 'transparent',
+                  color: view === v ? '#1D4ED8' : '#9CA3AF',
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

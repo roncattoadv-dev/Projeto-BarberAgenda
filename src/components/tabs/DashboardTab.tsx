@@ -26,10 +26,11 @@ export default function DashboardTab({ myServices, myProfessionals, myAppointmen
   })).sort((a, b) => b.occurrences - a.occurrences);
 
   const card: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(255,255,255,0.09)',
+    background: '#FFFFFF',
+    border: '1px solid #E2E8F0',
     borderRadius: 16,
     padding: 24,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
   };
 
   return (
@@ -43,9 +44,9 @@ export default function DashboardTab({ myServices, myProfessionals, myAppointmen
           { label: 'Catálogo', value: String(myServices.length), sub: 'serviços configurados', highlight: false },
         ].map(c => (
           <div key={c.label} style={card}>
-            <span style={{ display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2px', color: 'rgba(255,255,255,0.38)', marginBottom: 12 }}>{c.label}</span>
-            <p style={{ fontSize: 28, fontWeight: 800, color: c.highlight ? '#4ade80' : 'rgba(255,255,255,0.88)', fontFamily: 'monospace', marginBottom: 6 }}>{c.value}</p>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{c.sub}</div>
+            <span style={{ display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#6B7280', marginBottom: 12 }}>{c.label}</span>
+            <p style={{ fontSize: 28, fontWeight: 800, color: c.highlight ? '#16A34A' : '#111827', fontFamily: 'monospace', marginBottom: 6 }}>{c.value}</p>
+            <div style={{ fontSize: 11, color: '#9CA3AF' }}>{c.sub}</div>
           </div>
         ))}
       </div>
@@ -53,8 +54,8 @@ export default function DashboardTab({ myServices, myProfessionals, myAppointmen
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Serviços mais vendidos */}
         <div style={card}>
-          <h3 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', display: 'inline-block', flexShrink: 0 }} />
+          <h3 style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1.5px', borderBottom: '1px solid #E2E8F0', paddingBottom: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', display: 'inline-block', flexShrink: 0 }} />
             Serviços Mais Vendidos
           </h3>
           <div className="space-y-4">
@@ -63,11 +64,11 @@ export default function DashboardTab({ myServices, myProfessionals, myAppointmen
               return (
                 <div key={idx} className="space-y-1">
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                    <span style={{ color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>{srv.name}</span>
-                    <span style={{ color: 'rgba(255,255,255,0.38)', fontFamily: 'monospace', fontWeight: 700 }}>{srv.occurrences} agend. (R$ {srv.revenueGenerated})</span>
+                    <span style={{ color: '#374151', fontWeight: 600 }}>{srv.name}</span>
+                    <span style={{ color: '#6B7280', fontFamily: 'monospace', fontWeight: 700 }}>{srv.occurrences} agend. (R$ {srv.revenueGenerated})</span>
                   </div>
-                  <div style={{ width: '100%', background: 'rgba(255,255,255,0.07)', height: 6, borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{ background: '#4ade80', height: 6, borderRadius: 4, transition: 'width 0.5s', width: `${(srv.occurrences / maxOccur) * 100}%` }} />
+                  <div style={{ width: '100%', background: '#F1F5F9', height: 6, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ background: '#22C55E', height: 6, borderRadius: 4, transition: 'width 0.5s', width: `${(srv.occurrences / maxOccur) * 100}%` }} />
                   </div>
                 </div>
               );
@@ -77,22 +78,22 @@ export default function DashboardTab({ myServices, myProfessionals, myAppointmen
 
         {/* Clientes recentes */}
         <div style={card}>
-          <h3 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '2px', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', display: 'inline-block', flexShrink: 0 }} />
+          <h3 style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1.5px', borderBottom: '1px solid #E2E8F0', paddingBottom: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', display: 'inline-block', flexShrink: 0 }} />
             Cadastro de Clientes
           </h3>
           <div style={{ maxHeight: 220, overflowY: 'auto' }} className="no-scrollbar">
             {myCustomers.map(cust => (
-              <div key={cust.id} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
+              <div key={cust.id} style={{ padding: '10px 0', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
                 <div>
-                  <p style={{ fontWeight: 600, color: 'rgba(255,255,255,0.65)' }}>{cust.name}</p>
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', fontFamily: 'monospace' }}>{cust.phone}</span>
+                  <p style={{ fontWeight: 600, color: '#374151' }}>{cust.name}</p>
+                  <span style={{ fontSize: 10, color: '#6B7280', fontFamily: 'monospace' }}>{cust.phone}</span>
                 </div>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>{cust.email}</span>
+                <span style={{ fontSize: 10, color: '#9CA3AF', fontFamily: 'monospace' }}>{cust.email}</span>
               </div>
             ))}
           </div>
-          <p style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: 'rgba(255,255,255,0.38)', fontStyle: 'italic', marginTop: 12 }}>
+          <p style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: '#6B7280', fontStyle: 'italic', marginTop: 12 }}>
             💡 Atualizado a cada novo agendamento no portal online.
           </p>
         </div>
