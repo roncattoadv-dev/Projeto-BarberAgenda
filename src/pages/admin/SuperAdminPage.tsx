@@ -14,11 +14,25 @@ export default function SuperAdminPage() {
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [loading,        setLoading]        = useState(true);
 
+  const [tenantEmails, setTenantEmails] = useState<Record<string, string>>({});
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [t, c, a, s] = await Promise.all([getTenants(), getCoupons(), getAuditLogs(null), getSupportTickets()]);
       setTenants(t); setCoupons(c); setAuditLogs(a); setSupportTickets(s);
+
+      // Busca emails dos tenant_admins via profiles (cross-schema: public.profiles)
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('tenant_id, email')
+        .eq('role', 'tenant_admin')
+        .in('tenant_id', t.map(x => x.id).filter(Boolean));
+      if (profiles) {
+        const map: Record<string, string> = {};
+        profiles.forEach((p: any) => { if (p.tenant_id && p.email) map[p.tenant_id] = p.email; });
+        setTenantEmails(map);
+      }
     } catch (err) {
       console.error('[SuperAdmin] load error:', err);
     } finally {
@@ -77,6 +91,7 @@ export default function SuperAdminPage() {
       onUpdateTenantStatus={handleUpdateStatus}
       onExtendTrial={handleExtendTrial}
       onDeleteTenant={handleDeleteTenant}
+      tenantEmails={tenantEmails}
       coupons={coupons}
       onAddCoupon={handleAddCoupon}
       supportTickets={supportTickets}

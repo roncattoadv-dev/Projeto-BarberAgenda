@@ -19,6 +19,7 @@ function getApiUrl() {
 
 interface SuperAdminPanelProps {
   tenants: Tenant[];
+  tenantEmails: Record<string, string>;
   onUpdateTenantStatus: (tenantId: string, status: 'active' | 'blocked' | 'trial') => void;
   onExtendTrial: (tenantId: string) => void;
   onDeleteTenant?: (tenantId: string) => Promise<void>;
@@ -183,7 +184,7 @@ function MultiSelect({ label, options, selected, onChange }: {
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function SuperAdminPanel({
-  tenants, onUpdateTenantStatus, onExtendTrial, onDeleteTenant,
+  tenants, tenantEmails, onUpdateTenantStatus, onExtendTrial, onDeleteTenant,
   coupons, onAddCoupon,
   supportTickets, onResolveTicket,
   auditLogs, onSignOut,
@@ -735,6 +736,13 @@ export default function SuperAdminPanel({
                                       <div>
                                         <p style={sLbl}>Contato</p>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                                          {tenantEmails[t.id] && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                              <Mail style={{ width: 12, height: 12, color: C.accent, flexShrink: 0 }} />
+                                              <a href={`mailto:${tenantEmails[t.id]}`} onClick={e => e.stopPropagation()} style={{ fontSize: 12, color: C.accent, textDecoration: 'none', fontWeight: 600 }}>{tenantEmails[t.id]}</a>
+                                              <span style={{ fontSize: 9, background: C.accentBg, color: C.accent, border: `1px solid ${C.accentBd}`, borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>login</span>
+                                            </div>
+                                          )}
                                           {t.phone && <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Phone style={{ width: 12, height: 12, color: C.muted, flexShrink: 0 }} /><a href={`https://wa.me/${t.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 12, color: C.accent, textDecoration: 'none' }}>{t.phone}</a></div>}
                                           {t.contactEmail && <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Mail style={{ width: 12, height: 12, color: C.muted, flexShrink: 0 }} /><span style={{ fontSize: 12, color: C.text }}>{t.contactEmail}</span></div>}
                                           {t.address && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}><MapPin style={{ width: 12, height: 12, color: C.muted, flexShrink: 0, marginTop: 1 }} /><span style={{ fontSize: 12, color: C.secondary, lineHeight: 1.4 }}>{t.address}</span></div>}
