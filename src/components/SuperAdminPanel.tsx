@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tenant, Coupon, SupportTicket, AuditLog } from '../types';
 import {
@@ -8,7 +8,7 @@ import {
   DollarSign, Activity, Clock, ChevronDown, ChevronUp,
   ExternalLink, Phone, MapPin, Instagram, Mail,
   ArrowUpDown, ArrowUp, ArrowDown, CheckCircle, LogOut,
-  ChevronLeft, ChevronRight, RefreshCw, XCircle, FlaskConical, Globe,
+  ChevronLeft, ChevronRight, RefreshCw, XCircle, FlaskConical, Globe, Trash2,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -21,6 +21,7 @@ interface SuperAdminPanelProps {
   tenants: Tenant[];
   onUpdateTenantStatus: (tenantId: string, status: 'active' | 'blocked' | 'trial') => void;
   onExtendTrial: (tenantId: string) => void;
+  onDeleteTenant?: (tenantId: string) => Promise<void>;
   coupons: Coupon[];
   onAddCoupon: (code: string, discount: number, expiresAt: string) => void;
   supportTickets: SupportTicket[];
@@ -124,9 +125,65 @@ function KpiCard({ label: lbl, value, sub, color, icon: Icon }: { label: string;
   );
 }
 
+// ── Dropdown multi-select (igual AgendaTab) ───────────────────────────────────
+function MultiSelect({ label, options, selected, onChange }: {
+  label: string;
+  options: { value: string; label: string; count?: number }[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const toggle = (value: string) =>
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
+
+  const displayLabel = selected.length === 0 ? label
+    : selected.length === 1 ? (options.find(o => o.value === selected[0])?.label ?? label)
+    : `${selected.length} filtros`;
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', fontSize: 12, fontWeight: 600, fontFamily: 'Outfit, sans-serif', background: selected.length > 0 ? C.accentBg : C.surface, border: `1px solid ${selected.length > 0 ? C.accentBd : C.border}`, borderRadius: 10, color: selected.length > 0 ? C.accent : C.secondary, cursor: 'pointer', outline: 'none', whiteSpace: 'nowrap' as const }}>
+        {displayLabel}
+        <ChevronDown size={12} style={{ color: C.muted, flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 300, minWidth: 200, padding: 6 }}>
+          {selected.length > 0 && (
+            <button type="button" onClick={() => { onChange([]); setOpen(false); }}
+              style={{ display: 'block', width: '100%', textAlign: 'left' as const, padding: '6px 10px', fontSize: 11, fontWeight: 700, color: C.red, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', borderRadius: 6, marginBottom: 2 }}>
+              Limpar filtros
+            </button>
+          )}
+          {options.map(o => (
+            <label key={o.value} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'pointer', borderRadius: 8, background: selected.includes(o.value) ? C.accentBg : 'transparent' }}>
+              <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)}
+                style={{ width: 14, height: 14, accentColor: C.accent, cursor: 'pointer', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: selected.includes(o.value) ? 700 : 500, color: selected.includes(o.value) ? C.accent : C.text, fontFamily: 'Outfit, sans-serif', flex: 1 }}>
+                {o.label}
+              </span>
+              {o.count !== undefined && (
+                <span style={{ fontSize: 10, fontFamily: 'monospace', color: C.muted }}>{o.count}</span>
+              )}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default function SuperAdminPanel({
-  tenants, onUpdateTenantStatus, onExtendTrial,
+  tenants, onUpdateTenantStatus, onExtendTrial, onDeleteTenant,
   coupons, onAddCoupon,
   supportTickets, onResolveTicket,
   auditLogs, onSignOut,
@@ -172,8 +229,10 @@ export default function SuperAdminPanel({
     setModeToggling(false);
   };
   const [search,           setSearch]           = useState('');
-  const [statusFilter,     setStatusFilter]     = useState<'all' | Tenant['status']>('all');
+  const [statusFilter,     setStatusFilter]     = useState<string[]>([]);
   const [expandedTenant,   setExpandedTenant]   = useState<string | null>(null);
+  const [deleteConfirm,    setDeleteConfirm]    = useState<{ id: string; name: string } | null>(null);
+  const [deleting,         setDeleting]         = useState(false);
   const [sortKey,          setSortKey]          = useState<'name' | 'mrr' | 'expiry'>('mrr');
   const [sortDir,          setSortDir]          = useState<'asc' | 'desc'>('desc');
   const [newCode,          setNewCode]          = useState('');
@@ -205,7 +264,7 @@ export default function SuperAdminPanel({
   const filteredTenants = useMemo(() => {
     const q = search.toLowerCase();
     const list = tenants
-      .filter(t => statusFilter === 'all' || t.status === statusFilter)
+      .filter(t => statusFilter.length === 0 || statusFilter.includes(t.status))
       .filter(t => !q || t.name.toLowerCase().includes(q) || t.slug.includes(q) || (t.phone || '').includes(q));
     return list.sort((a, b) => {
       let av: string | number = 0, bv: string | number = 0;
@@ -578,27 +637,21 @@ export default function SuperAdminPanel({
               {/* ══ ASSINANTES ═══════════════════════════════════════════════ */}
               {activeTab === 'tenants' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
                       <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: C.muted, pointerEvents: 'none' }} />
                       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome, slug ou telefone…" style={{ ...inp, paddingLeft: 30, fontSize: 12 }} />
                     </div>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {(['all', 'active', 'trial', 'blocked'] as const).map(s => {
-                        const colors: Record<string, string> = { all: C.accent, active: C.green, trial: C.amber, blocked: C.red };
-                        const bgs:    Record<string, string> = { all: C.accentBg, active: C.greenBg, trial: C.amberBg, blocked: C.redBg };
-                        const bds:    Record<string, string> = { all: C.accentBd, active: C.greenBd, trial: C.amberBd, blocked: C.redBd };
-                        const isA = statusFilter === s;
-                        return (
-                          <button key={s} onClick={() => setStatusFilter(s)} style={{ padding: '7px 13px', fontSize: 11, fontWeight: 700, borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', border: `1px solid ${isA ? bds[s] : C.border}`, background: isA ? bgs[s] : C.surface, color: isA ? colors[s] : C.secondary, transition: 'all 0.15s' }}>
-                            {{ all: 'Todos', active: 'Ativos', trial: 'Trial', blocked: 'Bloqueados' }[s]}
-                            <span style={{ marginLeft: 5, fontSize: 9, fontFamily: 'monospace', opacity: 0.8 }}>
-                              {s === 'all' ? tenants.length : tenants.filter(t => t.status === s).length}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <MultiSelect
+                      label="Status"
+                      selected={statusFilter}
+                      onChange={setStatusFilter}
+                      options={[
+                        { value: 'active',  label: 'Ativos',     count: tenants.filter(t => t.status === 'active').length  },
+                        { value: 'trial',   label: 'Em Trial',   count: tenants.filter(t => t.status === 'trial').length   },
+                        { value: 'blocked', label: 'Bloqueados', count: tenants.filter(t => t.status === 'blocked').length },
+                      ]}
+                    />
                   </div>
 
                   <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
@@ -728,6 +781,11 @@ export default function SuperAdminPanel({
                                           {t.status === 'blocked' && (
                                             <button onClick={e => { e.stopPropagation(); onUpdateTenantStatus(t.id, 'trial'); }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`, color: C.secondary, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', width: '100%', boxSizing: 'border-box' }}>
                                               <Clock style={{ width: 12, height: 12 }} /> Recolocar em trial
+                                            </button>
+                                          )}
+                                          {onDeleteTenant && (
+                                            <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ id: t.id, name: t.name }); }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, background: C.redBg, border: `1px solid ${C.redBd}`, color: C.red, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', width: '100%', boxSizing: 'border-box', marginTop: 4 }}>
+                                              <Trash2 style={{ width: 12, height: 12 }} /> Apagar conta permanentemente
                                             </button>
                                           )}
                                         </div>
@@ -1037,6 +1095,53 @@ export default function SuperAdminPanel({
           </AnimatePresence>
         </div>
       </main>
+
+      {/* ── Modal de confirmação de exclusão ─────────────────────────────── */}
+      {deleteConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => !deleting && setDeleteConfirm(null)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: C.surface, borderRadius: 18, width: '100%', maxWidth: 440, padding: 28, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', fontFamily: 'Outfit, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: C.redBg, border: `1px solid ${C.redBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Trash2 size={20} color={C.red} />
+              </div>
+              <div>
+                <p style={{ fontSize: 16, fontWeight: 800, color: C.text, margin: 0 }}>Apagar conta permanentemente</p>
+                <p style={{ fontSize: 12, color: C.secondary, margin: '2px 0 0' }}>{deleteConfirm.name}</p>
+              </div>
+            </div>
+            <div style={{ padding: '14px 16px', background: C.redBg, border: `1px solid ${C.redBd}`, borderRadius: 12, marginBottom: 20 }}>
+              <p style={{ fontSize: 13, color: C.red, fontWeight: 700, margin: '0 0 6px' }}>Esta ação é irreversível.</p>
+              <p style={{ fontSize: 12, color: C.red, margin: 0, lineHeight: 1.6 }}>
+                Todos os dados do tenant serão removidos permanentemente: agendamentos, clientes, serviços, profissionais, pagamentos e usuários associados.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setDeleteConfirm(null)} disabled={deleting}
+                style={{ flex: 1, padding: '12px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, fontSize: 13, fontWeight: 600, color: C.secondary, cursor: deleting ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (!onDeleteTenant) return;
+                  setDeleting(true);
+                  try {
+                    await onDeleteTenant(deleteConfirm.id);
+                    setDeleteConfirm(null);
+                  } catch (err: any) {
+                    alert(`Erro ao apagar: ${err?.message ?? 'tente novamente'}`);
+                  }
+                  setDeleting(false);
+                }}
+                disabled={deleting}
+                style={{ flex: 1, padding: '12px', background: C.red, border: 'none', borderRadius: 12, fontSize: 13, fontWeight: 700, color: '#fff', cursor: deleting ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: deleting ? 0.7 : 1 }}>
+                {deleting ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Apagando…</> : <><Trash2 size={14} /> Apagar permanentemente</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

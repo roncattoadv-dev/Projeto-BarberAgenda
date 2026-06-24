@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import SuperAdminPanel from '../../components/SuperAdminPanel';
 import { getTenants, getCoupons, getAuditLogs, updateTenant, createCoupon, logAudit, getSupportTickets, resolveTicket } from '../../lib/db';
+import { supabase } from '../../lib/supabase';
 import type { Tenant, Coupon, AuditLog, SupportTicket } from '../../types';
 
 export default function SuperAdminPage() {
@@ -48,6 +49,17 @@ export default function SuperAdminPage() {
     setCoupons(prev => [c, ...prev]);
   };
 
+  const handleDeleteTenant = async (tenantId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const r = await fetch(`${(window as any).__BARBER_CONFIG__?.API_URL || ''}/api/account?tenantId=${tenantId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Erro ao apagar tenant'); }
+    setTenants(prev => prev.filter(t => t.id !== tenantId));
+    await logAudit('Tenant Apagado', `Tenant ${tenantId} removido pelo Super Admin`, null, profile?.name ?? 'Super Admin', profile?.id);
+  };
+
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Outfit, sans-serif' }}>
@@ -64,6 +76,7 @@ export default function SuperAdminPage() {
       tenants={tenants}
       onUpdateTenantStatus={handleUpdateStatus}
       onExtendTrial={handleExtendTrial}
+      onDeleteTenant={handleDeleteTenant}
       coupons={coupons}
       onAddCoupon={handleAddCoupon}
       supportTickets={supportTickets}
