@@ -265,7 +265,7 @@ export default function SuperAdminPanel({
                 <img
                   src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2019%20de%20jun.%20de%202026,%2014_46_16.png"
                   alt="WorkAgenda"
-                  style={{ height: 36, objectFit: 'contain', filter: 'brightness(0)', flexShrink: 0 }}
+                  style={{ height: 72, objectFit: 'contain', flexShrink: 0 }}
                 />
                 <p style={{ fontSize: 10, color: C.muted, margin: 0, whiteSpace: 'nowrap' }}>Super Admin</p>
               </motion.div>
