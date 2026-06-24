@@ -369,13 +369,23 @@ app.delete('/api/account', async (req, res) => {
     if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
 
     const { data: profile } = await supabasePublic
-      .from('profiles').select('tenant_id').eq('id', user.id).maybeSingle();
-    if (profile?.tenant_id !== tenantId) {
+      .from('profiles').select('tenant_id, role').eq('id', user.id).maybeSingle();
+
+    const isSuperAdmin = profile?.role === 'super_admin';
+
+    if (!isSuperAdmin && profile?.tenant_id !== tenantId) {
       return res.status(403).json({ error: 'Acesso negado.' });
     }
 
+    // Busca o usuário dono do tenant (para deletar o auth user)
+    const { data: tenantProfile } = await supabasePublic
+      .from('profiles').select('id').eq('tenant_id', tenantId).eq('role', 'tenant_admin').maybeSingle();
+
     // Registra email em used_trials ANTES de deletar (impede abuso de trial)
-    const email = user.email ?? '';
+    const targetUserId = isSuperAdmin ? tenantProfile?.id : user.id;
+    const email = isSuperAdmin
+      ? (await supabasePublic.auth.admin.getUserById(targetUserId ?? '').then(r => r.data.user?.email ?? '')).catch?.(() => '') ?? ''
+      : user.email ?? '';
     if (email) {
       await supabasePublic.from('used_trials').upsert({ email, deleted_at: new Date().toISOString() });
     }
@@ -388,11 +398,13 @@ app.delete('/api/account', async (req, res) => {
     // Deleta tenant — CASCADE remove appointments, professionals, services, etc.
     await supabase.from('tenants').delete().eq('id', tenantId);
 
-    // Deleta profile público
-    await supabasePublic.from('profiles').delete().eq('id', user.id);
+    // Deleta profiles do tenant
+    await supabasePublic.from('profiles').delete().eq('tenant_id', tenantId);
 
-    // Deleta usuário do auth (remove sessões e identidades OAuth)
-    await supabasePublic.auth.admin.deleteUser(user.id);
+    // Deleta usuário do auth
+    if (targetUserId) {
+      await supabasePublic.auth.admin.deleteUser(targetUserId);
+    }
 
     console.log(`[DeleteAccount] Conta excluída: tenant=${tenantId} user=${user.id} email=${email}`);
     return res.status(200).json({ ok: true });
