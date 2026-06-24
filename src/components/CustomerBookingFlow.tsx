@@ -89,7 +89,7 @@ export default function CustomerBookingFlow({
   const [showWlForm,   setShowWlForm]   = useState(false);
   const [wlName,       setWlName]       = useState('');
   const [wlPhone,      setWlPhone]      = useState('');
-  const [wlTimePref,   setWlTimePref]   = useState('qualquer');
+  const [wlTimePref,   setWlTimePref]   = useState<string[]>([]); // [] = qualquer
   const [wlProfPref,   setWlProfPref]   = useState<string | null>(null);
   const [wlSaving,     setWlSaving]     = useState(false);
   const [wlDone,       setWlDone]       = useState(false);
@@ -262,7 +262,7 @@ export default function CustomerBookingFlow({
         customerPhone: wlPhone.trim(),
         date: selectedDate,
         professionalId: wlProfPref,
-        timePreference: wlTimePref,
+        timePreference: wlTimePref.length === 0 ? 'qualquer' : wlTimePref.join(','),
       });
       setWlDone(true);
       setShowWlForm(false);
@@ -381,8 +381,32 @@ export default function CustomerBookingFlow({
 
   const allSlotsOccupied = step === 3 && HOURLY_SLOTS.length > 0 && HOURLY_SLOTS.every(t => checkSlotOccupied(t) || checkSlotPast(t));
 
+  // Horários ocupados E futuros (para lista de espera)
+  const occupiedFutureSlots = step === 3 ? HOURLY_SLOTS.filter(t => checkSlotOccupied(t) && !checkSlotPast(t)) : [];
+
+  // Verifica se todos os slots de hoje já passaram (independente de selectedDate)
+  const allTodaySlotsArePast = (() => {
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    return HOURLY_SLOTS.length > 0 && HOURLY_SLOTS.every(t => toMin(t) <= nowMin);
+  })();
+
+  // Auto-avança para amanhã se hoje estiver completamente no passado
+  useEffect(() => {
+    if (selectedDate !== todayStr || !allTodaySlotsArePast) return;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const y = tomorrow.getFullYear();
+    const m = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const d = String(tomorrow.getDate()).padStart(2, '0');
+    setSelectedDate(`${y}-${m}-${d}`);
+    setViewYear(tomorrow.getFullYear());
+    setViewMonth(tomorrow.getMonth());
+    setSelectedTime('');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reset waitlist form when date/prof changes
-  useEffect(() => { setShowWlForm(false); setWlDone(false); setWlName(''); setWlPhone(''); setWlTimePref('qualquer'); }, [selectedDate, selectedProfId]);
+  useEffect(() => { setShowWlForm(false); setWlDone(false); setWlName(''); setWlPhone(''); setWlTimePref([]); }, [selectedDate, selectedProfId]);
 
   /* ── dynamic theme from bookingPageConfig ── */
   const pc = activeTenant.bookingPageConfig?.primaryColor ?? '#2563eb';
@@ -550,7 +574,7 @@ export default function CustomerBookingFlow({
                       ? !activeTenant.businessDays.includes(WEEKDAYS_MAP[dow])
                       : false;
                     const dk = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                    const isPast = dk < todayStr;
+                    const isPast = dk < todayStr || (dk === todayStr && allTodaySlotsArePast);
                     const isBlocked = (activeTenant.blockedDates ?? []).includes(dk) || (selectedProfessional?.blockedDates ?? []).includes(dk);
                     const ps = selectedDate.split('-');
                     const isSel = ps.length === 3 && +ps[0] === viewYear && +ps[1]-1 === viewMonth && +ps[2] === day;
@@ -661,7 +685,7 @@ export default function CustomerBookingFlow({
               </button>
 
               {/* ── Lista de espera (desktop) ── */}
-              {onAddWaitlistEntry && !wlDone && (
+              {onAddWaitlistEntry && !wlDone && occupiedFutureSlots.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   {allSlotsOccupied ? (
                     /* Dia lotado — destaque total */
@@ -694,11 +718,33 @@ export default function CustomerBookingFlow({
                           style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
                         <input required placeholder="Telefone (WhatsApp) *" value={wlPhone} onChange={e => setWlPhone(e.target.value)}
                           style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
-                        <select value={wlTimePref} onChange={e => setWlTimePref(e.target.value)}
-                          style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, outline: 'none', fontFamily: 'inherit', background: '#fff', width: '100%', boxSizing: 'border-box' as const }}>
-                          <option value="qualquer">Qualquer horário disponível</option>
-                          {HOURLY_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
+                        {(() => {
+                          const occupiedFuture = occupiedFutureSlots;
+                          return (
+                            <div style={{ border: '1px solid #D1D5DB', borderRadius: 8, background: '#fff', overflow: 'hidden' }}>
+                              {/* Qualquer */}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#374151', cursor: 'pointer', padding: '8px 10px', fontWeight: wlTimePref.length === 0 ? 700 : 500, background: wlTimePref.length === 0 ? '#EFF6FF' : 'transparent' }}>
+                                <input type="checkbox" checked={wlTimePref.length === 0} onChange={() => setWlTimePref([])} style={{ accentColor: pc, cursor: 'pointer', flexShrink: 0 }} />
+                                Qualquer horário que cancelar
+                              </label>
+                              {occupiedFuture.length > 0 && (
+                                <div style={{ borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column' as const }}>
+                                  {occupiedFuture.map(t => (
+                                    <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontFamily: 'monospace', cursor: 'pointer', padding: '6px 10px', background: wlTimePref.includes(t) ? '#EFF6FF' : 'transparent', color: wlTimePref.includes(t) ? pc : '#374151', fontWeight: wlTimePref.includes(t) ? 700 : 400, borderTop: '1px solid #F1F5F9' }}>
+                                      <input type="checkbox" checked={wlTimePref.includes(t)} onChange={() => setWlTimePref(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} style={{ accentColor: pc, cursor: 'pointer', flexShrink: 0 }} />
+                                      {t} — ocupado
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
+                              {wlTimePref.length > 0 && (
+                                <p style={{ fontSize: 10, color: '#6B7280', margin: 0, padding: '6px 10px', background: '#F8FAFC', borderTop: '1px solid #F1F5F9' }}>
+                                  {wlTimePref.length} horário{wlTimePref.length > 1 ? 's' : ''} selecionado{wlTimePref.length > 1 ? 's' : ''} · Aviso se algum deles cancelar.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button type="button" onClick={() => setShowWlForm(false)}
                             style={{ flex: 1, padding: '9px', background: '#F1F5F9', color: '#6B7280', fontWeight: 600, fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -780,7 +826,7 @@ export default function CustomerBookingFlow({
                     const dow = new Date(viewYear, viewMonth, day).getDay();
                     const isClosed = selectedProfessional?.businessDays?.length ? !selectedProfessional.businessDays.includes(WEEKDAYS_MAP[dow]) : activeTenant.businessDays?.length ? !activeTenant.businessDays.includes(WEEKDAYS_MAP[dow]) : false;
                     const dk = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                    const isPast = dk < todayStr;
+                    const isPast = dk < todayStr || (dk === todayStr && allTodaySlotsArePast);
                     const isBlocked = (activeTenant.blockedDates ?? []).includes(dk) || (selectedProfessional?.blockedDates ?? []).includes(dk);
                     const ps = selectedDate.split('-');
                     const isSel = ps.length === 3 && +ps[0] === viewYear && +ps[1]-1 === viewMonth && +ps[2] === day;
@@ -826,7 +872,7 @@ export default function CustomerBookingFlow({
                 </button>
 
                 {/* ── Lista de espera (mobile) ── */}
-                {onAddWaitlistEntry && !wlDone && (
+                {onAddWaitlistEntry && !wlDone && occupiedFutureSlots.length > 0 && (
                   <div style={{ marginTop: 12 }}>
                     {allSlotsOccupied ? (
                       <div style={{ padding: '14px 16px', background: '#FEF9C3', border: '1px solid #FCD34D', borderRadius: 12 }}>
@@ -856,11 +902,32 @@ export default function CustomerBookingFlow({
                             style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
                           <input required placeholder="Telefone (WhatsApp) *" value={wlPhone} onChange={e => setWlPhone(e.target.value)}
                             style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
-                          <select value={wlTimePref} onChange={e => setWlTimePref(e.target.value)}
-                            style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none', fontFamily: 'inherit', background: '#fff', width: '100%', boxSizing: 'border-box' as const }}>
-                            <option value="qualquer">Qualquer horário disponível</option>
-                            {HOURLY_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
+                          {(() => {
+                            const occupiedFuture = HOURLY_SLOTS.filter(t => checkSlotOccupied(t) && !checkSlotPast(t));
+                            return (
+                              <div style={{ border: '1px solid #D1D5DB', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', cursor: 'pointer', padding: '10px 12px', fontWeight: wlTimePref.length === 0 ? 700 : 500, background: wlTimePref.length === 0 ? '#EFF6FF' : 'transparent' }}>
+                                  <input type="checkbox" checked={wlTimePref.length === 0} onChange={() => setWlTimePref([])} style={{ accentColor: pc, cursor: 'pointer', width: 15, height: 15, flexShrink: 0 }} />
+                                  Qualquer horário que cancelar
+                                </label>
+                                {occupiedFuture.length > 0 && (
+                                  <div style={{ borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column' as const }}>
+                                    {occupiedFuture.map(t => (
+                                      <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontFamily: 'monospace', cursor: 'pointer', padding: '9px 12px', background: wlTimePref.includes(t) ? '#EFF6FF' : 'transparent', color: wlTimePref.includes(t) ? pc : '#374151', fontWeight: wlTimePref.includes(t) ? 700 : 400, borderTop: '1px solid #F1F5F9' }}>
+                                        <input type="checkbox" checked={wlTimePref.includes(t)} onChange={() => setWlTimePref(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} style={{ accentColor: pc, cursor: 'pointer', width: 15, height: 15, flexShrink: 0 }} />
+                                        {t} — ocupado
+                                      </label>
+                                    ))}
+                                  </div>
+                                )}
+                                {wlTimePref.length > 0 && (
+                                  <p style={{ fontSize: 11, color: '#6B7280', margin: 0, padding: '7px 12px', background: '#F8FAFC', borderTop: '1px solid #F1F5F9' }}>
+                                    {wlTimePref.length} horário{wlTimePref.length > 1 ? 's' : ''} selecionado{wlTimePref.length > 1 ? 's' : ''} · Aviso se algum deles cancelar.
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
                           <div style={{ display: 'flex', gap: 8 }}>
                             <button type="button" onClick={() => setShowWlForm(false)}
                               style={{ flex: 1, padding: '10px', background: '#F1F5F9', color: '#6B7280', fontWeight: 600, fontSize: 13, border: '1px solid #E2E8F0', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>

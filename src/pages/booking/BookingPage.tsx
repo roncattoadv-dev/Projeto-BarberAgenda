@@ -144,7 +144,9 @@ export default function BookingPage() {
             await supabase.from('reviews').insert({ tenant_id: appt.tenantId, appointment_id: apptId, stars, comment });
           }}
           onGetOccupiedSlots={(profId, date) => getOccupiedSlots(profId, date)}
-          onAddWaitlistEntry={async e => { await addWaitlistEntry(e); }}
+          onAddWaitlistEntry={tenant.bookingPageConfig?.waitlistEnabled !== false
+            ? async e => { await addWaitlistEntry(e); }
+            : undefined}
         />
       </div>
 

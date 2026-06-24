@@ -1324,18 +1324,12 @@ app.post('/api/cancel', async (req, res) => {
           .order('created_at');
         if (!allWl?.length) return;
 
-        // Contagem de notificações por telefone (limite 5)
-        const notifCount = new Map<string, number>();
-        for (const e of allWl) {
-          if (e.notified) notifCount.set(e.customer_phone, (notifCount.get(e.customer_phone) ?? 0) + 1);
-        }
-
+        // Cada entrada já tem proteção via notified=true — sem limite adicional
         const compatible = allWl.filter(e =>
           !e.notified &&
           e.date === apptDate &&
           (e.professional_id === null || e.professional_id === apptProfId) &&
-          (e.time_preference === 'qualquer' || e.time_preference === apptTime) &&
-          (notifCount.get(e.customer_phone) ?? 0) < 5
+          (e.time_preference === 'qualquer' || e.time_preference.split(',').includes(apptTime))
         ).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
         if (!compatible.length) {
@@ -1491,6 +1485,118 @@ async function sendConfirmations(): Promise<void> {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Job a cada 5 min: auto-conclusão ou auto-cancelamento conforme agenda_mode do tenant
+// ─────────────────────────────────────────────────────────────────────────────
+async function processAutoActions(): Promise<void> {
+  try {
+    // Busca tenants com modo automático configurado
+    const { data: tenants } = await supabase
+      .from('tenants')
+      .select('id, slug, name, agenda_mode, agenda_time_minutes, timezone')
+      .in('agenda_mode', ['auto_complete', 'auto_cancel']);
+    if (!tenants?.length) return;
+
+    const now = Date.now();
+
+    for (const tenant of tenants) {
+      const bufferMs = ((tenant.agenda_time_minutes ?? 30) as number) * 60_000;
+
+      // Busca agendamentos confirmados que ainda não foram processados
+      const { data: appts } = await supabase
+        .from('appointments')
+        .select('id, scheduled_date, scheduled_time, duration_minutes, price, customer_name, customer_phone, professional_id, tenant_id')
+        .eq('tenant_id', tenant.id)
+        .eq('status', 'confirmed');
+
+      if (!appts?.length) continue;
+
+      for (const appt of appts) {
+        // Calcula o fim do atendimento convertendo do fuso do tenant para UTC
+        const tz = (tenant.timezone as string) || 'America/Sao_Paulo';
+        const [h, m] = (appt.scheduled_time as string).split(':').map(Number);
+        const duration = (appt.duration_minutes as number) ?? 60;
+        const endMin   = h * 60 + m + duration;
+        const endH     = Math.floor(endMin / 60);
+        const endM     = endMin % 60;
+        const endTimeStr = `${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}:00`;
+        // Obtém o offset UTC do fuso do tenant no momento atual
+        const tzOffset = (() => {
+          try {
+            const d = new Date();
+            const utc  = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
+            const local = new Date(d.toLocaleString('en-US', { timeZone: tz }));
+            return local.getTime() - utc.getTime(); // ms que o local está à frente de UTC
+          } catch { return -3 * 60 * 60 * 1000; } // fallback Brasília
+        })();
+        // Timestamp UTC do fim do atendimento = data local + hora local - offset
+        const endTs = new Date(`${appt.scheduled_date}T${endTimeStr}`).getTime() - tzOffset;
+
+        const actionAt = endTs + bufferMs;
+        if (now < actionAt) continue; // ainda não chegou a hora
+
+        if (tenant.agenda_mode === 'auto_complete') {
+          await supabase.from('appointments').update({ status: 'attended' }).eq('id', appt.id);
+          // Registra pagamento automático
+          try {
+            await supabase.from('payments').insert({
+              tenant_id:      tenant.id,
+              appointment_id: appt.id,
+              amount:         appt.price,
+              method:         'pix',
+              status:         'paid',
+              description:    `[Auto] ${appt.customer_name}`,
+            });
+          } catch {}
+          console.log(`[AutoComplete] ${tenant.name} — ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time})`);
+
+        } else if (tenant.agenda_mode === 'auto_cancel') {
+          await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', appt.id);
+          console.log(`[AutoCancel] ${tenant.name} — ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time})`);
+
+          // Notifica lista de espera (reutiliza a mesma lógica do /api/cancel)
+          try {
+            const apptDate = appt.scheduled_date as string;
+            const apptTime = (appt.scheduled_time as string).substring(0, 5);
+            const apptProfId = appt.professional_id as string;
+            const bookingUrl = `https://workagenda.org/${tenant.slug}/agendamento`;
+
+            const { data: allWl } = await supabase.from('waitlist').select('*')
+              .eq('tenant_id', tenant.id).order('created_at');
+
+            const { data: tplData } = await supabase.from('tenants')
+              .select('wpp_template_waitlist').eq('id', tenant.id).maybeSingle();
+            const TPL = tplData?.wpp_template_waitlist ||
+              `🎉 Olá, *{cliente}*!\n\nUma vaga abriu na *{salao}* para o dia *{data}* que você estava aguardando!\n\n⚡ Corra antes que alguém reserve:\n{link_agendamento}\n\n_Caso não queira mais agendar, é só ignorar esta mensagem._\n💈 _WorkAgenda_`;
+
+            const compatible = (allWl ?? []).filter((e: any) =>
+              !e.notified &&
+              e.date === apptDate &&
+              (e.professional_id === null || e.professional_id === apptProfId) &&
+              (e.time_preference === 'qualquer' || e.time_preference.split(',').includes(apptTime))
+            ).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+            const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
+            compatible.forEach((entry: any, idx: number) => {
+              setTimeout(async () => {
+                try {
+                  const phone = (entry.customer_phone as string).replace(/\D/g, '');
+                  const msg   = applyTemplate(TPL, { cliente: entry.customer_name, salao: tenant.name, data: apptDate, link_agendamento: bookingUrl, link: bookingUrl });
+                  await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg);
+                  await supabase.from('waitlist').update({ notified: true, notified_at: new Date().toISOString() }).eq('id', entry.id);
+                  console.log(`[AutoCancel/Waitlist] ${entry.customer_name} notificado`);
+                } catch {}
+              }, idx * 3000);
+            });
+          } catch {}
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[processAutoActions] erro:', err.message);
+  }
+}
+
 // Job a cada 5 min: envia lembrete antes do atendimento (tempo configurável por tenant)
 // ─────────────────────────────────────────────────────────────────────────────
 // Brasília = UTC-3
@@ -1578,6 +1684,9 @@ app.listen(PORT, () => {
   console.log(`[Server] EvoGo: ${EVO_URL && EVO_GLOBAL_KEY ? '✓' : '✗ não configurado'}`);
   console.log(`[Server] Resend: ${process.env.RESEND_API_KEY ? '✓' : '✗ não configurado'}`);
 
+  // Auto-ações: roda 30s após o boot para dar tempo de inicializar
+  setTimeout(processAutoActions, 30_000);
+
   // Cleanup de instâncias: 1 min após boot, depois a cada 24h
   setTimeout(() => {
     cleanupStaleInstances();
@@ -1590,4 +1699,7 @@ app.listen(PORT, () => {
 
   // Lembretes 1h antes: a cada 5 min
   setInterval(sendReminders, 5 * 60_000);
+
+  // Auto-conclusão / auto-cancelamento de agendamentos: a cada 5 min
+  setInterval(processAutoActions, 5 * 60_000);
 });

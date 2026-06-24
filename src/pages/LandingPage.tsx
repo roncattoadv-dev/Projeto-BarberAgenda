@@ -576,6 +576,112 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── LISTA DE ESPERA ─────────────────────────────────────────────────── */}
+      <section style={{ padding:`80px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
+        <div style={{ maxWidth:1020, margin:'0 auto' }}>
+
+          {/* Header */}
+          <Reveal style={{ textAlign:'center', marginBottom:56 }}>
+            <Pill color={C.success}>Exclusivo WorkAgenda</Pill>
+            <h2 style={{ fontSize:'clamp(28px,4vw,44px)', fontWeight:900, margin:'16px 0 14px', letterSpacing:'-1.2px', color:C.text }}>
+              Pare de perder faturamento com cancelamentos
+            </h2>
+            <p style={{ fontSize:17, color:C.secondary, maxWidth:560, margin:'0 auto', lineHeight:1.65 }}>
+              Cada cancelamento de última hora é dinheiro jogado fora. A <strong style={{ color:C.text }}>Lista de Espera automática</strong> preenche a vaga em minutos — sem você precisar fazer nada.
+            </p>
+          </Reveal>
+
+          {/* Como funciona — fluxo visual */}
+          <Reveal style={{ marginBottom:56 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', gap:0, background:'#F8FAFC', borderRadius:20, border:`1px solid ${C.border}`, overflow:'hidden' }}>
+              {[
+                { step:'1', icon:'📱', title:'Cliente se candidata', desc:'Na página de agendamento, quando o dia está lotado, o cliente entra na lista de espera em 30 segundos — nome e telefone apenas.' },
+                { step:'2', icon:'❌', title:'Horário é cancelado', desc:'Outro cliente cancela o agendamento pelo link ou o responsável cancela pelo painel. O sistema detecta imediatamente.' },
+                { step:'3', icon:'⚡', title:'WhatsApp automático', desc:'O primeiro da fila recebe uma mensagem via WhatsApp com o link para agendar — em segundos, sem intervenção manual.' },
+                { step:'4', icon:'💰', title:'Vaga preenchida', desc:'A barbearia não perde o horário. O faturamento que seria perdido é recuperado automaticamente.' },
+              ].map(({ step, icon, title, desc }, i) => (
+                <div key={step} style={{ padding:'28px 24px', borderRight: i < 3 ? `1px solid ${C.border}` : 'none', position:'relative' as const }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+                    <div style={{ width:28, height:28, borderRadius:'50%', background:C.accent, color:'#fff', fontWeight:900, fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      {step}
+                    </div>
+                    <span style={{ fontSize:22 }}>{icon}</span>
+                  </div>
+                  <p style={{ fontWeight:700, fontSize:14, color:C.text, margin:'0 0 8px' }}>{title}</p>
+                  <p style={{ fontSize:13, color:C.secondary, margin:0, lineHeight:1.65 }}>{desc}</p>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          {/* Impacto no faturamento */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }} className="col-m gap-m-16">
+
+            {/* Coluna esquerda: problema */}
+            <Reveal from="left">
+              <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:20, padding:'28px 28px' }}>
+                <p style={{ fontSize:13, fontWeight:700, color:'#DC2626', textTransform:'uppercase' as const, letterSpacing:'1.5px', margin:'0 0 16px', display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ fontSize:18 }}>❌</span> Sem lista de espera
+                </p>
+                <div style={{ display:'flex', flexDirection:'column' as const, gap:12 }}>
+                  {[
+                    'Horário cancelado = prejuízo imediato',
+                    'Admin precisa ligar para clientes manualmente',
+                    'Último cancelamento ninguém fica sabendo',
+                    'Barbearia com 3 faltas/semana perde R$ 800+/mês',
+                  ].map(t => (
+                    <div key={t} style={{ display:'flex', alignItems:'flex-start', gap:10, fontSize:14, color:'#7F1D1D' }}>
+                      <span style={{ flexShrink:0, marginTop:1, color:'#DC2626', fontWeight:700 }}>✕</span>
+                      {t}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Reveal>
+
+            {/* Coluna direita: solução */}
+            <Reveal from="right">
+              <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:20, padding:'28px 28px' }}>
+                <p style={{ fontSize:13, fontWeight:700, color:'#166534', textTransform:'uppercase' as const, letterSpacing:'1.5px', margin:'0 0 16px', display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ fontSize:18 }}>✅</span> Com lista de espera WorkAgenda
+                </p>
+                <div style={{ display:'flex', flexDirection:'column' as const, gap:12 }}>
+                  {[
+                    'Vaga preenchida em minutos automaticamente',
+                    'Fila organizada por ordem de chegada',
+                    'WhatsApp enviado sem você tocar no celular',
+                    'Limite de 5 avisos por cliente — sem spam',
+                  ].map(t => (
+                    <div key={t} style={{ display:'flex', alignItems:'flex-start', gap:10, fontSize:14, color:'#14532D' }}>
+                      <span style={{ flexShrink:0, marginTop:1, color:'#16A34A', fontWeight:700 }}>✓</span>
+                      {t}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Reveal>
+          </div>
+
+          {/* Destaque central */}
+          <Reveal style={{ marginTop:32 }}>
+            <div style={{ background:`linear-gradient(135deg, ${C.accent} 0%, ${C.purple} 100%)`, borderRadius:20, padding:'32px 40px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:24, flexWrap:'wrap' as const }}>
+              <div>
+                <p style={{ fontSize:'clamp(22px,3vw,30px)', fontWeight:900, color:'#fff', margin:'0 0 6px', letterSpacing:'-0.5px' }}>
+                  Cada horário cancelado pode render R$ 50–200
+                </p>
+                <p style={{ fontSize:15, color:'rgba(255,255,255,0.75)', margin:0 }}>
+                  A lista de espera recupera automaticamente esse valor. Com 4 cancelamentos/mês preenchidos, você já paga o plano anual.
+                </p>
+              </div>
+              <a href="/cadastro" style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'14px 28px', background:'#fff', color:C.accent, fontWeight:800, fontSize:15, borderRadius:14, textDecoration:'none', whiteSpace:'nowrap' as const, flexShrink:0, boxShadow:'0 4px 16px rgba(0,0,0,0.15)' }}>
+                Testar grátis por 7 dias →
+              </a>
+            </div>
+          </Reveal>
+
+        </div>
+      </section>
+
       {/* ── PREÇOS ───────────────────────────────────────────────────────────── */}
       <section id="precos" style={{ padding:`80px ${PX}` }}>
         <Reveal style={{ textAlign:'center', marginBottom:56 }}>

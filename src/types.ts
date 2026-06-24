@@ -22,12 +22,17 @@ export interface Tenant {
   businessDays?: string[];
   businessHoursByDay?: Record<string, string[]>;
   blockedDates?: string[]; // YYYY-MM-DD — férias, feriados, folgas
+  agendaMode?: 'auto_complete' | 'auto_cancel' | 'manual';
+  agendaTimeMinutes?: number;
+  timezone?: string;
+  reminderMinutes?: number;
   bookingPageConfig?: {
     primaryColor: string;
     showPhone: boolean;
     showAddress: boolean;
     showInstagram: boolean;
     mapsUrl?: string;
+    waitlistEnabled?: boolean;
   };
 }
 

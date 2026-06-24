@@ -138,7 +138,7 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
           <span style={{ margin: '0 5px', color: '#D1D5DB' }}>·</span>
           <span>{profName(e.professionalId)}</span>
           <span style={{ margin: '0 5px', color: '#D1D5DB' }}>·</span>
-          <span>{e.timePreference === 'qualquer' ? 'Qualquer horário' : e.timePreference}</span>
+          <span>{e.timePreference === 'qualquer' ? 'Qualquer horário' : e.timePreference.split(',').join(' · ')}</span>
         </div>
         <div style={{ fontSize: 11, color: '#9CA3AF', fontFamily: 'monospace' }}>{e.customerPhone}</div>
       </div>

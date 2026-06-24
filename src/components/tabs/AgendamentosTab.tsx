@@ -198,7 +198,7 @@ function loadFilters() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; }
 }
 
-export default function AgendamentosTab({ activeTenant, myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment }: Props) {
+export default function AgendamentosTab({ activeTenant, myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment, reminderMinutes = 60 }: Props & { reminderMinutes?: number }) {
   const [search,       setSearch]       = useState('');
   const [profFilter,   setProfFilter]   = useState<string[]>(() => loadFilters().profFilter   ?? []);
   const [statusFilter, setStatusFilter] = useState<string[]>(() => loadFilters().statusFilter ?? []);
@@ -284,6 +284,15 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
   };
 
   const btnLabel = (key: string) => ({ idle: '', sending: '⏳', done: '✓', error: '✕' }[sendStates[key] || 'idle']);
+
+  // Timestamp do último reenvio manual (persiste no localStorage via LS_SENT_PREFIX)
+  const getLastSentStr = (key: string): string | null => {
+    const raw = localStorage.getItem(LS_SENT_PREFIX + key);
+    if (!raw) return null;
+    const ts = parseInt(raw, 10);
+    if (!ts) return null;
+    return new Date(ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  };
 
   const connDotColor = { open: '#4ade80', close: '#ef4444', connecting: '#fbbf24', error: '#F1F5F9', checking: '#64748b' }[connState];
   const connLabel    = { open: 'Conectado', close: 'Desconectado', connecting: 'Aguardando…', error: 'Erro', checking: 'Verificando…' }[connState];
@@ -413,106 +422,120 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.97 }}
                 transition={{ duration: 0.18, delay: Math.min(i * 0.03, 0.15) }}
-                style={{ padding: '12px 14px', background: '#FFFFFF', border: `1px solid ${sm.border}`, borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 8, boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}
+                style={{ padding: '10px 14px', background: '#FFFFFF', border: `1px solid ${sm.border}`, borderRadius: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}
               >
-                {/* Row 1: info + status actions */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                  {/* Left: client info */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: sm.dot, flexShrink: 0, marginTop: 3 }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, color: '#111827', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {appt.customerName}
-                      </div>
-                      <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: '0 6px' }}>
-                        <span>{appt.date} · {appt.time}</span>
-                        {srv && <span>· {srv.name}</span>}
-                      </div>
-                    </div>
-                  </div>
+                {/* Dot */}
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: sm.dot, flexShrink: 0 }} />
 
-                  {/* Right: professional + status + action buttons */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    {prof && (
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' }}>
-                        {prof.name}
-                      </span>
-                    )}
-                    <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sm.bg, color: sm.text, border: `1px solid ${sm.border}`, whiteSpace: 'nowrap' }}>
-                      {sm.label}
-                    </span>
-                    <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#16A34A' }}>
-                      R$ {appt.price.toFixed(2)}
-                    </span>
-                    {active && (
-                      <>
-                        <button onClick={() => onCompleteAppointment(appt)} title="Concluir"
-                          style={{ width: 26, height: 26, borderRadius: 7, background: '#DCFCE7', border: '1px solid #86EFAC', color: '#166534', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Check size={11} />
-                        </button>
-                        <button onClick={() => { if (window.confirm(`Cancelar ${appt.customerName}?`)) onUpdateAppointmentStatus(appt.id, 'cancelled'); }} title="Cancelar"
-                          style={{ width: 26, height: 26, borderRadius: 7, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <X size={11} />
-                        </button>
-                      </>
-                    )}
+                {/* Info (flex: 1) */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: '#111827', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {appt.customerName}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#6B7280', display: 'flex', flexWrap: 'wrap', gap: '0 5px' }}>
+                    <span>{appt.date} · {appt.time}</span>
+                    {srv && <span>· {srv.name}</span>}
+                    {prof && <span>· {prof.name}</span>}
                   </div>
                 </div>
 
-                {/* Row 2: wpp sent badges + dispatch buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, paddingLeft: 18 }}>
-                  {/* Sent badges */}
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {appt.wppConfirmSent && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, background: '#DCFCE7', border: '1px solid #86EFAC', color: '#166534', fontSize: 9, fontWeight: 700 }}>
-                        <MessageSquare size={8} /> Confirmação
-                      </span>
-                    )}
-                    {active && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700,
-                        ...(appt.wppReminderSent
-                          ? { background: '#DCFCE7', border: '1px solid #86EFAC', color: '#166534' }
-                          : { background: '#FEF9C3', border: '1px solid #FCD34D', color: '#92400E' })
-                      }}>
-                        <Clock size={8} /> Lembrete
-                      </span>
-                    )}
-                  </div>
+                {/* Status + price */}
+                <span style={{ padding: '2px 7px', borderRadius: 20, fontSize: 9, fontWeight: 700, background: sm.bg, color: sm.text, border: `1px solid ${sm.border}`, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  {sm.label}
+                </span>
+                <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#16A34A', flexShrink: 0 }}>
+                  R$ {appt.price.toFixed(2)}
+                </span>
 
-                  {/* Dispatch buttons — only for active appointments */}
-                  {active && (
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {([
-                        { type: 'confirmation' as const, label: '✓ Confirmar' },
-                        { type: 'reminder'     as const, label: '⏰ Lembrete' },
-                        { type: 'cancellation' as const, label: '✕ Cancelar'  },
-                      ]).map(({ type, label }) => {
-                        const key      = `${appt.id}-${type}`;
-                        const state    = sendStates[key] || 'idle';
-                        const busy     = state === 'sending';
-                        const cooldown = btnCooldowns[key] ?? 0;
-                        const onCd     = cooldown > 0;
-                        const disabled = busy || onCd || connState !== 'open';
-                        const cdLabel  = btnCooldownLabel(key);
+                {/* WA pills + auto-action inline */}
+                {active && (() => {
+                  const apptPast   = new Date(`${appt.date}T${appt.time}`) <= new Date();
+                  const mode       = activeTenant.agendaMode;
+                  const bufMin     = activeTenant.agendaTimeMinutes ?? 30;
+                  const duration   = srv?.durationMinutes ?? 60;
+                  const [ah, am]   = appt.time.split(':').map(Number);
+                  const endMin     = ah * 60 + am + duration;
+                  const actMin     = endMin + bufMin;
+                  const actTime    = `${String(Math.floor(actMin / 60)).padStart(2,'0')}:${String(actMin % 60).padStart(2,'0')}`;
+                  const actPast    = new Date(`${appt.date}T${actTime}`) <= new Date();
+                  const isComplete = mode === 'auto_complete';
 
-                        const bg    = onCd ? '#F1F5F9' : state === 'done' ? '#DCFCE7' : state === 'error' ? '#FEE2E2' : state === 'sending' ? '#FEF9C3' : '#1E293B';
-                        const color = onCd ? '#9CA3AF' : state === 'done' ? '#166534' : state === 'error' ? '#DC2626' : state === 'sending' ? '#92400E' : '#FFFFFF';
+                  const mkPill = (type: 'confirmation' | 'reminder', icon: React.ReactNode, label: string, sent: boolean, scheduledInfo: string, failIfNotSent: boolean) => {
+                    const key      = `${appt.id}-${type}`;
+                    const state    = sendStates[key] || 'idle';
+                    const busy     = state === 'sending';
+                    const onCd     = (btnCooldowns[key] ?? 0) > 0;
+                    const cdLabel  = btnCooldownLabel(key);
+                    const lastSent = getLastSentStr(key);
 
-                        return (
+                    const isSent     = sent || state === 'done' || !!lastSent;
+                    const isFailed   = !isSent && failIfNotSent;
+                    const showResend = isFailed;
+                    const disabled   = busy || onCd || connState !== 'open';
+
+                    const sentText = lastSent ? `Reenviado ${lastSent}` : sent ? 'Auto' : state === 'done' ? 'Enviado' : scheduledInfo;
+                    const sentColor  = isSent ? '#166534' : isFailed ? '#DC2626' : '#92400E';
+                    const pillBg     = isSent ? '#F0FDF4' : isFailed ? '#FEF2F2' : '#FEFCE8';
+                    const pillBorder = isSent ? '#86EFAC' : isFailed ? '#FECACA' : '#FCD34D';
+
+                    return (
+                      <div key={type} style={{ display: 'flex', alignItems: 'center', background: pillBg, border: `1px solid ${pillBorder}`, borderRadius: 7, overflow: 'hidden', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', padding: '3px 7px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 700, color: sentColor, whiteSpace: 'nowrap' }}>
+                            {icon} {label}
+                          </div>
+                          <div style={{ fontSize: 8, color: sentColor, opacity: 0.8, whiteSpace: 'nowrap' }}>{sentText}</div>
+                        </div>
+                        {showResend && (
                           <button
-                            key={type}
                             disabled={disabled}
                             onClick={() => doSend(appt, type)}
-                            title={onCd ? `Aguarde ${cdLabel}` : label}
-                            style={{ padding: '4px 10px', borderRadius: 7, fontSize: 10, fontWeight: 700, border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s', background: bg, color, minWidth: onCd ? 56 : undefined }}
-                          >
-                            {busy ? '⏳' : onCd ? `⏱ ${cdLabel}` : state !== 'idle' ? btnLabel(key) : label}
+                            title={onCd ? `Aguarde ${cdLabel}` : `Reenviar ${label}`}
+                            style={{ alignSelf: 'stretch', padding: '0 8px', background: 'rgba(220,38,38,0.08)', border: 'none', borderLeft: `1px solid ${pillBorder}`, color: '#DC2626', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 9, fontWeight: 700, fontFamily: 'Outfit, sans-serif', display: 'flex', alignItems: 'center', gap: 3, opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                            {busy ? '⏳' : onCd ? `⏱ ${cdLabel}` : '↺ Reenviar'}
                           </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                        )}
+                      </div>
+                    );
+                  };
+
+                  // Horário previsto do lembrete
+                  const remMin  = ah * 60 + am - reminderMinutes;
+                  const remTime = remMin >= 0
+                    ? `${String(Math.floor(remMin/60)).padStart(2,'0')}:${String(remMin%60).padStart(2,'0')}`
+                    : null;
+
+                  return (
+                    <>
+                      {/* WA pills */}
+                      {mkPill('confirmation', <MessageSquare size={8} />, 'Confirm.', appt.wppConfirmSent, 'Não enviada', true)}
+                      {mkPill('reminder', <Clock size={8} />, remTime ? `Lemb. ${remTime}` : 'Lembrete', appt.wppReminderSent, remTime ? `Previsto ${remTime}` : 'Auto', apptPast)}
+
+                      {/* Badge de automação */}
+                      {!actPast && mode && mode !== 'manual' && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 20, fontSize: 9, fontWeight: 700, flexShrink: 0,
+                          background: isComplete ? '#F0FDF4' : '#FEF3C7',
+                          color:      isComplete ? '#166534' : '#92400E',
+                          border:     `1px solid ${isComplete ? '#86EFAC' : '#FCD34D'}` }}>
+                          {isComplete ? '⚡' : '⚠️'} {isComplete ? `Auto-concluir ${actTime}` : `Auto-cancelar ${actTime}`}
+                        </span>
+                      )}
+
+                      {/* Botões de ação */}
+                      <button onClick={() => onCompleteAppointment(appt)} title="Concluir atendimento"
+                        style={{ height: 24, padding: '0 8px', borderRadius: 7, background: '#DCFCE7', border: '1px solid #86EFAC', color: '#166534', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        <Check size={10} /> Concluir
+                      </button>
+                      <button
+                        onClick={() => { if (window.confirm(`Cancelar o agendamento de ${appt.customerName}?\n\nUma mensagem de cancelamento será enviada via WhatsApp automaticamente.`)) onUpdateAppointmentStatus(appt.id, 'cancelled'); }}
+                        title="Cancelar e notificar via WhatsApp"
+                        style={{ height: 24, padding: '0 8px', borderRadius: 7, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        <X size={10} /> Cancelar
+                      </button>
+                    </>
+                  );
+                })()}
+
               </motion.div>
             );
           })}
