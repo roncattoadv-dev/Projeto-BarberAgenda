@@ -590,7 +590,6 @@ export default function TenantAdminPage() {
             setRecurringExpenses(prev => prev.filter(r => r.id !== id));
           }}
           waitlistFailedIds={waitlistFailedIds}
-          slotHistory={slotHistory}
           onAddCustomer={async c => {
             const created = c.phone
               ? await upsertCustomerByPhone(c.tenantId, c.phone, c.name, c.email)

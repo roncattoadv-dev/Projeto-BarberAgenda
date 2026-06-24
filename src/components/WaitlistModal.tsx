@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, MessageSquare, Trash2, RefreshCw, AlertCircle, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 import { WaitlistEntry, SlotHistory } from '../types';
-import { getWaitlistEntries, markWaitlistNotified, deleteWaitlistEntry } from '../lib/db';
+import { getWaitlistEntries, markWaitlistNotified, deleteWaitlistEntry, getSlotHistory } from '../lib/db';
 import { sendWhatsAppServer, buildWaitlistMsg } from '../services/whatsapp';
 import { supabase } from '../lib/supabase';
 
@@ -11,7 +11,6 @@ interface Props {
   tenantSlug: string;
   professionals: { id: string; name: string }[];
   failedIds: Set<string>;
-  slotHistory: SlotHistory[];
   onClose: () => void;
 }
 
@@ -23,12 +22,13 @@ function isToday(d: string) {
   return d === new Date().toISOString().split('T')[0];
 }
 
-export default function WaitlistModal({ tenantId, tenantName, tenantSlug, professionals, failedIds, slotHistory, onClose }: Props) {
-  const [entries,  setEntries]  = useState<WaitlistEntry[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [sending,  setSending]  = useState<Record<string, boolean>>({});
-  const [deleting, setDeleting] = useState<Record<string, boolean>>({});
-  const [authToken, setAuthToken] = useState('');
+export default function WaitlistModal({ tenantId, tenantName, tenantSlug, professionals, failedIds, onClose }: Props) {
+  const [entries,     setEntries]     = useState<WaitlistEntry[]>([]);
+  const [history,     setHistory]     = useState<SlotHistory[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [sending,     setSending]     = useState<Record<string, boolean>>({});
+  const [deleting,    setDeleting]    = useState<Record<string, boolean>>({});
+  const [authToken,   setAuthToken]   = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setAuthToken(session?.access_token || ''));
@@ -36,7 +36,14 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setEntries(await getWaitlistEntries(tenantId)); } catch {}
+    try {
+      const [e, h] = await Promise.all([
+        getWaitlistEntries(tenantId),
+        getSlotHistory(tenantId),
+      ]);
+      setEntries(e);
+      setHistory(h);
+    } catch {}
     setLoading(false);
   }, [tenantId]);
 
@@ -259,20 +266,20 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase' as const, letterSpacing: '1px' }}>
                   Histórico de Vagas
                 </span>
-                {slotHistory.length > 0 && (
+                {history.length > 0 && (
                   <span style={{ fontSize: 11, fontWeight: 700, background: '#EEF2FF', color: '#4338CA', borderRadius: 20, padding: '1px 8px' }}>
-                    {slotHistory.length}
+                    {history.length}
                   </span>
                 )}
               </div>
 
-              {slotHistory.length === 0 ? (
+              {history.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 20px', background: '#FFFFFF', borderRadius: 12, border: '1px dashed #E2E8F0' }}>
                   <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Nenhuma vaga cancelada ainda.<br />O histórico aparece quando um agendamento for cancelado.</p>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 16 }}>
-                  {slotHistory.map(h => {
+                  {history.map(h => {
                     const filled = !!h.filledCustomerName;
                     return (
                       <div key={h.id} style={{ background: '#FFFFFF', border: `1px solid ${filled ? '#BBF7D0' : '#E2E8F0'}`, borderRadius: 14, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
