@@ -35,6 +35,12 @@ const EVO_GLOBAL_KEY  = process.env.EVO_GLOBAL_KEY || process.env.EVO_APIKEY || 
 const SITE_URL        = (process.env.SITE_URL || process.env.CORS_ORIGIN || '').replace(/\/$/, '');
 const API_PUBLIC_URL  = (process.env.API_PUBLIC_URL || '').replace(/\/$/, '');
 
+// Modo Asaas — pode ser alternado em runtime via /api/admin/asaas-mode
+let asaasSandboxOverride: boolean | null = null;
+function isAsaasSandbox() {
+  return asaasSandboxOverride !== null ? asaasSandboxOverride : process.env.ASAAS_SANDBOX === 'true';
+}
+
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('[Server] SUPABASE_URL e SUPABASE_SERVICE_KEY são obrigatórios');
   process.exit(1);
@@ -1141,6 +1147,65 @@ async function verifyTenant(
   (req as any).verifiedTenantId = tenantId;
   next();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/integrations/status  — health de cada serviço externo
+// POST /api/admin/asaas-mode          — alterna sandbox/produção (in-memory)
+// ─────────────────────────────────────────────────────────────────────────────
+async function verifySuperAdmin(req: express.Request, res: express.Response, next: express.NextFunction): Promise<void> {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) { res.status(401).json({ error: 'Token não fornecido.' }); return; }
+  const { data: { user }, error } = await supabasePublic.auth.getUser(auth.slice(7));
+  if (error || !user) { res.status(401).json({ error: 'Token inválido.' }); return; }
+  const { data: profile } = await supabasePublic.from('profiles').select('role').eq('id', user.id).single();
+  if (profile?.role !== 'super_admin') { res.status(403).json({ error: 'Acesso negado.' }); return; }
+  next();
+}
+
+app.get('/api/admin/integrations/status', verifySuperAdmin, async (_req, res) => {
+  const checkedAt = new Date().toISOString();
+
+  // EvoGo
+  let evogo: { ok: boolean; message: string } = { ok: false, message: 'Não configurado' };
+  if (EVO_URL && EVO_GLOBAL_KEY) {
+    try {
+      const r = await fetch(`${EVO_URL}/instance/fetchInstances`, { headers: { 'apikey': EVO_GLOBAL_KEY }, signal: AbortSignal.timeout(5000) });
+      evogo = r.ok ? { ok: true, message: 'Conectado' } : { ok: false, message: `HTTP ${r.status}` };
+    } catch (e: any) { evogo = { ok: false, message: e.message ?? 'Timeout' }; }
+  }
+
+  // Asaas
+  let asaas: { ok: boolean; message: string; sandbox: boolean } = { ok: false, message: 'Não configurado', sandbox: isAsaasSandbox() };
+  const asaasKey = process.env.ASAAS_API_KEY || '';
+  const asaasUrl = isAsaasSandbox() ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/api/v3';
+  if (asaasKey) {
+    try {
+      const r = await fetch(`${asaasUrl}/customers?limit=1`, { headers: { 'access_token': asaasKey }, signal: AbortSignal.timeout(6000) });
+      asaas = r.ok ? { ok: true, message: isAsaasSandbox() ? 'Conectado (Sandbox)' : 'Conectado (Produção)', sandbox: isAsaasSandbox() }
+                   : { ok: false, message: `HTTP ${r.status}`, sandbox: isAsaasSandbox() };
+    } catch (e: any) { asaas = { ok: false, message: e.message ?? 'Timeout', sandbox: isAsaasSandbox() }; }
+  }
+
+  // Resend
+  let resend: { ok: boolean; message: string } = { ok: false, message: 'Não configurado' };
+  const resendKey = process.env.RESEND_API_KEY || '';
+  if (resendKey) {
+    try {
+      const r = await fetch('https://api.resend.com/domains', { headers: { 'Authorization': `Bearer ${resendKey}` }, signal: AbortSignal.timeout(5000) });
+      resend = r.ok ? { ok: true, message: 'Conectado' } : { ok: false, message: `HTTP ${r.status}` };
+    } catch (e: any) { resend = { ok: false, message: e.message ?? 'Timeout' }; }
+  }
+
+  res.json({ evogo, asaas, resend, checkedAt });
+});
+
+app.post('/api/admin/asaas-mode', verifySuperAdmin, async (req, res) => {
+  const { sandbox } = req.body as { sandbox: boolean };
+  if (typeof sandbox !== 'boolean') { res.status(400).json({ error: 'sandbox deve ser boolean.' }); return; }
+  asaasSandboxOverride = sandbox;
+  console.log(`[Admin] Asaas modo alterado para: ${sandbox ? 'SANDBOX' : 'PRODUÇÃO'}`);
+  res.json({ sandbox: asaasSandboxOverride });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/whatsapp/status?tenantId=xxx

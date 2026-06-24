@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tenant, Coupon, SupportTicket, AuditLog } from '../types';
 import {
@@ -8,8 +8,14 @@ import {
   DollarSign, Activity, Clock, ChevronDown, ChevronUp,
   ExternalLink, Phone, MapPin, Instagram, Mail,
   ArrowUpDown, ArrowUp, ArrowDown, CheckCircle, LogOut,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, RefreshCw, XCircle, FlaskConical, Globe,
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+
+function getApiUrl() {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  return (w.API_URL || '').replace(/\/$/, '');
+}
 
 interface SuperAdminPanelProps {
   tenants: Tenant[];
@@ -128,6 +134,44 @@ export default function SuperAdminPanel({
 
   const [activeTab,        setActiveTab]        = useState<Tab>('overview');
   const [collapsed,        setCollapsed]        = useState(false);
+
+  // ── Integrações: status e toggle ─────────────────────────────────────────
+  type SvcStatus = { ok: boolean; message: string; sandbox?: boolean } | null;
+  const [intStatus,    setIntStatus]    = useState<{ evogo: SvcStatus; asaas: SvcStatus & { sandbox?: boolean } | null; resend: SvcStatus; checkedAt: string | null }>({ evogo: null, asaas: null, resend: null, checkedAt: null });
+  const [intLoading,   setIntLoading]   = useState(false);
+  const [modeToggling, setModeToggling] = useState(false);
+
+  const fetchIntStatus = useCallback(async () => {
+    setIntLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? '';
+      const r = await fetch(`${getApiUrl()}/api/admin/integrations/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (r.ok) setIntStatus(await r.json());
+    } catch {}
+    setIntLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'integracoes') fetchIntStatus();
+  }, [activeTab, fetchIntStatus]);
+
+  const toggleAsaasMode = async (sandbox: boolean) => {
+    setModeToggling(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? '';
+      await fetch(`${getApiUrl()}/api/admin/asaas-mode`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sandbox }),
+      });
+      await fetchIntStatus();
+    } catch {}
+    setModeToggling(false);
+  };
   const [search,           setSearch]           = useState('');
   const [statusFilter,     setStatusFilter]     = useState<'all' | Tenant['status']>('all');
   const [expandedTenant,   setExpandedTenant]   = useState<string | null>(null);
@@ -204,6 +248,7 @@ export default function SuperAdminPanel({
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', fontFamily: 'Outfit, sans-serif', background: C.bg }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* ── SIDEBAR ───────────────────────────────────────────────────────────── */}
       <motion.aside
@@ -755,42 +800,125 @@ export default function SuperAdminPanel({
               )}
 
               {/* ══ INTEGRAÇÕES ══════════════════════════════════════════════ */}
-              {activeTab === 'integracoes' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  {[
-                    { name: 'Evolution Go', desc: 'WhatsApp API — instâncias por tenant',                         icon: <Zap size={18} color={C.green} />,     fields: [{ label: 'EVO_URL', key: 'EVO_URL', mask: false }, { label: 'Global API Key', key: 'EVO_GLOBAL_KEY', mask: true }] },
-                    { name: 'Asaas',        desc: 'Gateway de pagamento — assinaturas e cobranças',               icon: <DollarSign size={18} color={C.accent} />, fields: [{ label: 'API Key', key: 'ASAAS_API_KEY', mask: true }, { label: 'Webhook Secret', key: 'ASAAS_WEBHOOK_TOKEN', mask: true }, { label: 'Modo', key: 'ASAAS_SANDBOX', mask: false }] },
-                    { name: 'Resend',       desc: 'Emails transacionais — boas-vindas, pagamentos, agendamentos', icon: <Mail size={18} color={C.violet} />,    fields: [{ label: 'API Key', key: 'RESEND_API_KEY', mask: true }, { label: 'Remetente', key: 'FROM_EMAIL', mask: false }] },
-                  ].map(integration => (
-                    <div key={integration.name} style={card}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${C.border}` }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 12, background: C.bg, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{integration.icon}</div>
-                        <div>
-                          <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0 }}>{integration.name}</p>
-                          <p style={{ fontSize: 11, color: C.secondary, margin: 0 }}>{integration.desc}</p>
-                        </div>
-                        <span style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: C.greenBg, color: C.green, border: `1px solid ${C.greenBd}` }}>Configurado</span>
+              {activeTab === 'integracoes' && (() => {
+                const StatusChip = ({ s }: { s: SvcStatus }) => {
+                  if (!s) return <span style={{ fontSize: 11, color: C.muted }}>Verificando…</span>;
+                  return s.ok
+                    ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: C.greenBg, color: C.green, border: `1px solid ${C.greenBd}` }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: C.green }} className="animate-pulse" />{s.message}</span>
+                    : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: C.redBg, color: C.red, border: `1px solid ${C.redBd}` }}><XCircle size={11} />{s.message}</span>;
+                };
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Barra de ação */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <p style={{ fontSize: 13, color: C.secondary, margin: 0 }}>
+                          {intStatus.checkedAt ? `Última verificação: ${new Date(intStatus.checkedAt).toLocaleTimeString('pt-BR')}` : 'Verificando serviços…'}
+                        </p>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                        {integration.fields.map(({ label: lbl, key, mask }) => {
-                          const val = (window as any).__BARBER_CONFIG__?.[key] || '—';
-                          const display = mask && val !== '—' ? '••••••••' + val.slice(-4) : val;
-                          return (
-                            <div key={key}>
-                              <span style={sLbl}>{lbl}</span>
-                              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontFamily: 'monospace', fontSize: 12, color: mask ? C.muted : C.text }}>{display}</div>
-                            </div>
-                          );
-                        })}
+                      <button onClick={fetchIntStatus} disabled={intLoading}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 12, fontWeight: 600, color: C.secondary, cursor: intLoading ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                        <RefreshCw size={13} style={{ animation: intLoading ? 'spin 1s linear infinite' : 'none' }} />
+                        Verificar agora
+                      </button>
+                    </div>
+
+                    {/* Evolution Go */}
+                    <div style={card}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Zap size={20} color={C.green} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 2px' }}>Evolution Go</p>
+                          <p style={{ fontSize: 11, color: C.secondary, margin: 0 }}>WhatsApp API — instâncias por tenant</p>
+                        </div>
+                        <StatusChip s={intStatus.evogo} />
+                      </div>
+                      {intStatus.evogo && !intStatus.evogo.ok && (
+                        <div style={{ marginTop: 14, padding: '10px 14px', background: C.redBg, border: `1px solid ${C.redBd}`, borderRadius: 10, fontSize: 12, color: C.red, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <XCircle size={14} /> {intStatus.evogo.message}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Asaas */}
+                    <div style={card}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <DollarSign size={20} color={C.accent} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 2px' }}>Asaas</p>
+                          <p style={{ fontSize: 11, color: C.secondary, margin: 0 }}>Gateway de pagamento — assinaturas e cobranças</p>
+                        </div>
+                        <StatusChip s={intStatus.asaas} />
+                      </div>
+
+                      {/* Modo sandbox / produção */}
+                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          {intStatus.asaas?.sandbox
+                            ? <><FlaskConical size={15} color={C.amber} /><div><p style={{ fontSize: 13, fontWeight: 700, color: C.amber, margin: 0 }}>Modo Sandbox</p><p style={{ fontSize: 11, color: C.secondary, margin: 0 }}>Transações de teste — não cobra de verdade</p></div></>
+                            : <><Globe size={15} color={C.green} /><div><p style={{ fontSize: 13, fontWeight: 700, color: C.green, margin: 0 }}>Modo Produção</p><p style={{ fontSize: 11, color: C.secondary, margin: 0 }}>Transações reais — cobra clientes</p></div></>
+                          }
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            onClick={() => toggleAsaasMode(true)}
+                            disabled={modeToggling || intStatus.asaas?.sandbox === true}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, border: `1px solid ${C.amberBd}`, background: intStatus.asaas?.sandbox ? C.amberBg : C.surface, color: intStatus.asaas?.sandbox ? C.amber : C.secondary, cursor: (modeToggling || intStatus.asaas?.sandbox === true) ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif', opacity: intStatus.asaas?.sandbox === true ? 0.7 : 1 }}>
+                            <FlaskConical size={12} /> Sandbox
+                          </button>
+                          <button
+                            onClick={() => toggleAsaasMode(false)}
+                            disabled={modeToggling || intStatus.asaas?.sandbox === false}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, border: `1px solid ${C.greenBd}`, background: intStatus.asaas?.sandbox === false ? C.greenBg : C.surface, color: intStatus.asaas?.sandbox === false ? C.green : C.secondary, cursor: (modeToggling || intStatus.asaas?.sandbox === false) ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif', opacity: intStatus.asaas?.sandbox === false ? 0.7 : 1 }}>
+                            <Globe size={12} /> Produção
+                          </button>
+                        </div>
+                      </div>
+
+                      {intStatus.asaas && !intStatus.asaas.ok && (
+                        <div style={{ marginTop: 12, padding: '10px 14px', background: C.redBg, border: `1px solid ${C.redBd}`, borderRadius: 10, fontSize: 12, color: C.red, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <XCircle size={14} /> {intStatus.asaas.message}
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: 12, padding: '8px 12px', background: C.amberBg, border: `1px solid ${C.amberBd}`, borderRadius: 8, fontSize: 11, color: C.amber, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <AlertTriangle size={12} />
+                        A alternância de modo é temporária (reinicia com o servidor). Para tornar permanente, altere <code style={{ background: 'rgba(180,83,9,0.12)', padding: '1px 4px', borderRadius: 3 }}>ASAAS_SANDBOX</code> no EasyPanel.
                       </div>
                     </div>
-                  ))}
-                  <div style={{ padding: '12px 16px', borderRadius: 10, background: C.amberBg, border: `1px solid ${C.amberBd}`, fontSize: 12, color: C.amber, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <AlertTriangle size={14} />
-                    Para alterar credenciais, edite as variáveis de ambiente do serviço <code style={{ background: 'rgba(180,83,9,0.12)', padding: '1px 6px', borderRadius: 4 }}>api</code> no EasyPanel e faça redeploy.
+
+                    {/* Resend */}
+                    <div style={card}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 12, background: C.bg, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Mail size={20} color={C.violet} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 2px' }}>Resend</p>
+                          <p style={{ fontSize: 11, color: C.secondary, margin: 0 }}>Emails transacionais — boas-vindas, pagamentos, agendamentos</p>
+                        </div>
+                        <StatusChip s={intStatus.resend} />
+                      </div>
+                      {intStatus.resend && !intStatus.resend.ok && (
+                        <div style={{ marginTop: 14, padding: '10px 14px', background: C.redBg, border: `1px solid ${C.redBd}`, borderRadius: 10, fontSize: 12, color: C.red, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <XCircle size={14} /> {intStatus.resend.message}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Aviso geral */}
+                    <div style={{ padding: '12px 16px', borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`, fontSize: 12, color: C.secondary, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <ShieldCheck size={14} color={C.muted} />
+                      Para alterar credenciais, edite as variáveis de ambiente do serviço <code style={{ background: C.accentBg, padding: '1px 6px', borderRadius: 4, color: C.accent }}>api</code> no EasyPanel e faça redeploy.
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
             </motion.div>
           </AnimatePresence>
