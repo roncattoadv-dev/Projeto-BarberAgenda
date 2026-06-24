@@ -17,6 +17,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    mem_limit: 128m
     volumes:
       - redis_data:/data
     healthcheck:
@@ -35,11 +36,11 @@ services:
   app:
     image: barberflow-app:latest
     restart: unless-stopped
+    mem_limit: 256m
     environment:
       # URL pública — browser do usuário acessa de fora da rede Docker
       SUPABASE_URL: https://barberflow-supabase.i9inu5.easypanel.host
-      # Chave anon do Supabase instalado (demo key — trocar ao atualizar o Supabase)
-      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE
+      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgyMzMwNTI1LCJleHAiOjI0MTMwNTA1MjV9.Uc53YlcgAhrKRFlw824T-HBs4nDZaxhxTzub6aH77NU
       # URL pública da API Express
       API_URL: https://api.workagenda.org
       SITE_URL: https://workagenda.org
@@ -66,13 +67,13 @@ services:
   api:
     image: barberflow-api:latest
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       NODE_ENV: production
       SERVER_PORT: 4000
       # Kong interno — acesso servidor-para-servidor, não pelo browser
       SUPABASE_URL: http://kong:8000
-      # Service role key do Supabase instalado (demo key — trocar ao atualizar o Supabase)
-      SUPABASE_SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q
+      SUPABASE_SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3ODIzMzA1MjUsImV4cCI6MjQxMzA1MDUyNX0.3aqiwuVXh5UwDAY5Y3KyfSmPGVtN6C8Rj1hhl6-M86E
       ASAAS_API_KEY: ${ASAAS_API_KEY}
       ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_TOKEN}
       ASAAS_SANDBOX: ${ASAAS_SANDBOX:-false}
