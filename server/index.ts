@@ -1165,24 +1165,34 @@ async function verifySuperAdmin(req: express.Request, res: express.Response, nex
 app.get('/api/admin/integrations/status', verifySuperAdmin, async (_req, res) => {
   const checkedAt = new Date().toISOString();
 
-  // EvoGo
+  // EvoGo — endpoint correto: /instance/all
   let evogo: { ok: boolean; message: string } = { ok: false, message: 'Não configurado' };
   if (EVO_URL && EVO_GLOBAL_KEY) {
     try {
-      const r = await fetch(`${EVO_URL}/instance/fetchInstances`, { headers: { 'apikey': EVO_GLOBAL_KEY }, signal: AbortSignal.timeout(5000) });
-      evogo = r.ok ? { ok: true, message: 'Conectado' } : { ok: false, message: `HTTP ${r.status}` };
+      const r = await fetch(`${EVO_URL}/instance/all`, { headers: { 'apikey': EVO_GLOBAL_KEY }, signal: AbortSignal.timeout(5000) });
+      if (r.ok) {
+        const json = await r.json() as any;
+        const count = json?.data?.length ?? 0;
+        evogo = { ok: true, message: `Conectado · ${count} instância${count !== 1 ? 's' : ''}` };
+      } else {
+        evogo = { ok: false, message: `HTTP ${r.status}` };
+      }
     } catch (e: any) { evogo = { ok: false, message: e.message ?? 'Timeout' }; }
   }
 
-  // Asaas
+  // Asaas — URL correta: sem prefixo /api/
   let asaas: { ok: boolean; message: string; sandbox: boolean } = { ok: false, message: 'Não configurado', sandbox: isAsaasSandbox() };
   const asaasKey = process.env.ASAAS_API_KEY || '';
-  const asaasUrl = isAsaasSandbox() ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/api/v3';
+  const asaasUrl = isAsaasSandbox() ? 'https://sandbox.asaas.com/v3' : 'https://api.asaas.com/v3';
   if (asaasKey) {
     try {
       const r = await fetch(`${asaasUrl}/customers?limit=1`, { headers: { 'access_token': asaasKey }, signal: AbortSignal.timeout(6000) });
-      asaas = r.ok ? { ok: true, message: isAsaasSandbox() ? 'Conectado (Sandbox)' : 'Conectado (Produção)', sandbox: isAsaasSandbox() }
-                   : { ok: false, message: `HTTP ${r.status}`, sandbox: isAsaasSandbox() };
+      if (r.ok) {
+        const json = await r.json() as any;
+        asaas = { ok: true, message: `${isAsaasSandbox() ? 'Sandbox' : 'Produção'} · ${json?.totalCount ?? 0} clientes`, sandbox: isAsaasSandbox() };
+      } else {
+        asaas = { ok: false, message: `HTTP ${r.status}`, sandbox: isAsaasSandbox() };
+      }
     } catch (e: any) { asaas = { ok: false, message: e.message ?? 'Timeout', sandbox: isAsaasSandbox() }; }
   }
 
