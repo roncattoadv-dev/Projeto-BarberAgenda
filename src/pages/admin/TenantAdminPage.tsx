@@ -282,9 +282,10 @@ import {
   syncProfessionalsHours, mapAppointment,
   getRecurringExpenses, createRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
   getWaitlistEntries, markWaitlistNotified,
+  getSlotHistory, createSlotHistory, updateSlotHistoryFilled,
 } from '../../lib/db';
 import { sendWhatsAppServer, buildWaitlistMsg } from '../../services/whatsapp';
-import type { Tenant, Service, Professional, Product, Customer, Appointment, Payment, RecurringExpense } from '../../types';
+import type { Tenant, Service, Professional, Product, Customer, Appointment, Payment, RecurringExpense, SlotHistory } from '../../types';
 import { useNotifications } from '../../hooks/useNotifications';
 
 export default function TenantAdminPage() {
@@ -304,13 +305,14 @@ export default function TenantAdminPage() {
   const [payments,            setPayments]            = useState<Payment[]>([]);
   const [recurringExpenses,   setRecurringExpenses]   = useState<RecurringExpense[]>([]);
   const [waitlistFailedIds,   setWaitlistFailedIds]   = useState<Set<string>>(new Set());
+  const [slotHistory,         setSlotHistory]         = useState<SlotHistory[]>([]);
   const [loading,             setLoading]             = useState(true);
   const [openSubscription,    setOpenSubscription]    = useState(false);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
     setLoading(true);
-    const [ts, svcs, profs, prods, custs, appts, pays, recExp] = await Promise.all([
+    const [ts, svcs, profs, prods, custs, appts, pays, recExp, hist] = await Promise.all([
       getTenants(),
       getServices(tenantId),
       getProfessionals(tenantId),
@@ -319,11 +321,12 @@ export default function TenantAdminPage() {
       getAppointments(tenantId),
       getPayments(tenantId),
       getRecurringExpenses(tenantId),
+      getSlotHistory(tenantId),
     ]);
     setTenant(ts.find(t => t.id === tenantId) ?? null);
     setServices(svcs); setProfessionals(profs); setProducts(prods);
     setCustomers(custs); setAppointments(appts); setPayments(pays);
-    setRecurringExpenses(recExp);
+    setRecurringExpenses(recExp); setSlotHistory(hist);
     setLoading(false);
   }, [tenantId]);
 
@@ -527,7 +530,19 @@ export default function TenantAdminPage() {
             if (status === 'cancelled') {
               const appt = appointments.find(a => a.id === id);
               if (!appt || !tenant) return;
+              const prof = professionals.find(p => p.id === appt.professionalId);
+              const svc  = services.find(s => s.id === appt.serviceId);
               try {
+                // Registra o cancelamento no histórico
+                const histEntry = await createSlotHistory({
+                  tenantId, slotDate: appt.date, slotTime: appt.time,
+                  professionalName: prof?.name ?? null, serviceName: svc?.name ?? null,
+                  cancelledCustomerName: appt.customerName, cancelledCustomerPhone: appt.customerPhone,
+                  filledCustomerName: null, filledCustomerPhone: null, filledAt: null,
+                });
+                setSlotHistory(prev => [histEntry, ...prev]);
+
+                // Tenta notificar o primeiro da lista de espera
                 const { data: { session } } = await (await import('../../lib/supabase')).supabase.auth.getSession();
                 const token = session?.access_token ?? '';
                 const pending = await getWaitlistEntries(tenantId, appt.date);
@@ -537,11 +552,17 @@ export default function TenantAdminPage() {
                 const result = await sendWhatsAppServer(tenantId, token, first.customerPhone, msg);
                 if (result === 'sent') {
                   await markWaitlistNotified(first.id).catch(() => {});
+                  await updateSlotHistoryFilled(histEntry.id, first.customerName, first.customerPhone).catch(() => {});
+                  setSlotHistory(prev => prev.map(h =>
+                    h.id === histEntry.id
+                      ? { ...h, filledCustomerName: first.customerName, filledCustomerPhone: first.customerPhone, filledAt: new Date().toISOString() }
+                      : h
+                  ));
                 } else {
                   setWaitlistFailedIds(prev => new Set([...prev, first.id]));
                 }
               } catch {
-                // falha silenciosa — botão manual aparecerá no modal
+                // falha silenciosa
               }
             }
           }}
@@ -569,6 +590,7 @@ export default function TenantAdminPage() {
             setRecurringExpenses(prev => prev.filter(r => r.id !== id));
           }}
           waitlistFailedIds={waitlistFailedIds}
+          slotHistory={slotHistory}
           onAddCustomer={async c => {
             const created = c.phone
               ? await upsertCustomerByPhone(c.tenantId, c.phone, c.name, c.email)

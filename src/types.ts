@@ -174,6 +174,21 @@ export interface Review {
   createdAt: string;
 }
 
+export interface SlotHistory {
+  id: string;
+  tenantId: string;
+  slotDate: string;       // YYYY-MM-DD
+  slotTime: string;       // HH:MM
+  professionalName: string | null;
+  serviceName: string | null;
+  cancelledCustomerName: string;
+  cancelledCustomerPhone: string | null;
+  filledCustomerName: string | null;
+  filledCustomerPhone: string | null;
+  filledAt: string | null;
+  createdAt: string;
+}
+
 export interface RecurringExpense {
   id: string;
   tenantId: string;

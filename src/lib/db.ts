@@ -3,7 +3,7 @@
 import { supabase } from './supabase';
 import type {
   Tenant, Service, Professional, Customer,
-  Appointment, Payment, Product, Coupon, AuditLog, SupportTicket, RecurringExpense,
+  Appointment, Payment, Product, Coupon, AuditLog, SupportTicket, RecurringExpense, SlotHistory,
 } from '../types';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -227,6 +227,43 @@ export async function createPayment(p: Omit<Payment, 'id'>): Promise<Payment> {
   const { data, error } = await supabase.from('payments').insert(dbPayment(p)).select().single();
   if (error) throw error;
   return mapPayment(data);
+}
+
+// ── SLOT HISTORY ───────────────────────────────────────────────────────────────
+function mapSlotHistory(r: any): SlotHistory {
+  return {
+    id: r.id, tenantId: r.tenant_id, slotDate: r.slot_date, slotTime: r.slot_time,
+    professionalName: r.professional_name, serviceName: r.service_name,
+    cancelledCustomerName: r.cancelled_customer_name, cancelledCustomerPhone: r.cancelled_customer_phone,
+    filledCustomerName: r.filled_customer_name, filledCustomerPhone: r.filled_customer_phone,
+    filledAt: r.filled_at, createdAt: r.created_at,
+  };
+}
+
+export async function getSlotHistory(tenantId: string, limit = 50): Promise<SlotHistory[]> {
+  const { data, error } = await supabase.from('slot_history')
+    .select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data ?? []).map(mapSlotHistory);
+}
+
+export async function createSlotHistory(h: Omit<SlotHistory, 'id' | 'createdAt'>): Promise<SlotHistory> {
+  const { data, error } = await supabase.from('slot_history').insert({
+    tenant_id: h.tenantId, slot_date: h.slotDate, slot_time: h.slotTime,
+    professional_name: h.professionalName, service_name: h.serviceName,
+    cancelled_customer_name: h.cancelledCustomerName, cancelled_customer_phone: h.cancelledCustomerPhone,
+    filled_customer_name: h.filledCustomerName, filled_customer_phone: h.filledCustomerPhone,
+    filled_at: h.filledAt,
+  }).select().single();
+  if (error) throw error;
+  return mapSlotHistory(data);
+}
+
+export async function updateSlotHistoryFilled(id: string, filledCustomerName: string, filledCustomerPhone: string): Promise<void> {
+  const { error } = await supabase.from('slot_history')
+    .update({ filled_customer_name: filledCustomerName, filled_customer_phone: filledCustomerPhone, filled_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
 }
 
 // ── RECURRING EXPENSES ─────────────────────────────────────────────────────────
