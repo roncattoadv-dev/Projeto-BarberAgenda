@@ -40,6 +40,14 @@ let asaasSandboxOverride: boolean | null = null;
 function isAsaasSandbox() {
   return asaasSandboxOverride !== null ? asaasSandboxOverride : process.env.ASAAS_SANDBOX === 'true';
 }
+function getAsaasKey() {
+  return isAsaasSandbox()
+    ? (process.env.ASAAS_SANDBOX_KEY || process.env.ASAAS_API_KEY || '')
+    : (process.env.ASAAS_API_KEY || '');
+}
+function getAsaasUrl() {
+  return isAsaasSandbox() ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3';
+}
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('[Server] SUPABASE_URL e SUPABASE_SERVICE_KEY são obrigatórios');
@@ -260,10 +268,8 @@ app.get('/api/billing/payment-link', async (req, res) => {
 
     if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
 
-    const asaasBase = process.env.ASAAS_SANDBOX === 'true'
-      ? 'https://sandbox.asaas.com/api/v3'
-      : 'https://api.asaas.com/v3';
-    const asaasKey = process.env.ASAAS_API_KEY || '';
+    const asaasBase = getAsaasUrl();
+    const asaasKey  = getAsaasKey();
 
     const getPixForPayment = async (paymentId: string) => {
       try {
@@ -656,10 +662,8 @@ app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
   }
 
   try {
-    const asaasUrl = process.env.ASAAS_SANDBOX === 'true'
-      ? 'https://sandbox.asaas.com/api/v3'
-      : 'https://api.asaas.com/v3';
-    const key = process.env.ASAAS_API_KEY || '';
+    const asaasUrl = getAsaasUrl();
+    const key = getAsaasKey();
 
     const [rSub, rCust] = await Promise.all([
       tenant.asaas_subscription_id
@@ -716,10 +720,8 @@ app.get('/api/billing/payment-link', verifyTenant, async (req, res) => {
   }
 
   try {
-    const asaasUrl = process.env.ASAAS_SANDBOX === 'true'
-      ? 'https://sandbox.asaas.com/api/v3'
-      : 'https://api.asaas.com/v3';
-    const key = process.env.ASAAS_API_KEY || '';
+    const asaasUrl = getAsaasUrl();
+    const key = getAsaasKey();
 
     const [rSub, rCust] = await Promise.all([
       tenant.asaas_subscription_id
@@ -1180,12 +1182,10 @@ app.get('/api/admin/integrations/status', verifySuperAdmin, async (_req, res) =>
     } catch (e: any) { evogo = { ok: false, message: e.message ?? 'Timeout' }; }
   }
 
-  // Asaas — sandbox usa /api/v3/, produção usa /v3/ (paths diferentes)
+  // Asaas — sandbox usa /api/v3/ com ASAAS_SANDBOX_KEY; produção usa /v3/ com ASAAS_API_KEY
   let asaas: { ok: boolean; message: string; sandbox: boolean } = { ok: false, message: 'Não configurado', sandbox: isAsaasSandbox() };
-  const asaasKey = process.env.ASAAS_API_KEY || '';
-  const asaasUrl = isAsaasSandbox()
-    ? 'https://sandbox.asaas.com/api/v3'
-    : 'https://api.asaas.com/v3';
+  const asaasKey = getAsaasKey();
+  const asaasUrl = getAsaasUrl();
   if (asaasKey) {
     try {
       const r = await fetch(`${asaasUrl}/customers?limit=1`, { headers: { 'access_token': asaasKey }, signal: AbortSignal.timeout(6000) });
