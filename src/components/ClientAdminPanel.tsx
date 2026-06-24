@@ -13,7 +13,7 @@ import {
   Mail, Lock, Clock, Shield, Trash2, LogOut,
 } from 'lucide-react';
 
-import { Tenant, Service, Professional, Product, Appointment, Payment, Customer } from '../types';
+import { Tenant, Service, Professional, Product, Appointment, Payment, Customer, RecurringExpense } from '../types';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../contexts/AuthContext';
 import { UseNotificationsReturn } from '../hooks/useNotifications';
@@ -53,6 +53,10 @@ interface Props {
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
   onAddPayment: (pay: Omit<Payment, 'id'>) => void;
+  recurringExpenses: RecurringExpense[];
+  onAddRecurringExpense: (r: Omit<RecurringExpense, 'id' | 'createdAt'>) => void;
+  onUpdateRecurringExpense: (id: string, updates: Partial<Pick<RecurringExpense, 'active' | 'nextDueDate'>>) => void;
+  onDeleteRecurringExpense: (id: string) => void;
   onAddCustomer: (c: Omit<Customer, 'id'>) => Promise<Customer>;
   onUpdateCustomer: (id: string, updates: { name?: string; phone?: string; email?: string }) => Promise<void>;
   onDeleteCustomer: (id: string) => Promise<void>;
@@ -95,6 +99,7 @@ export default function ClientAdminPanel({
   onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount, onSignOut,
   openSubscriptionTab, onSubscriptionTabOpened,
+  recurringExpenses, onAddRecurringExpense, onUpdateRecurringExpense, onDeleteRecurringExpense,
   notifications,
 }: Props) {
   const toast = useToast();
@@ -855,7 +860,7 @@ export default function ClientAdminPanel({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {activeTab === 'agendamentos' && (
                     <>
-                      <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                      <motion.button whileTap={{ scale: 0.97 }}
                         onClick={() => setShowWaitlistModal(true)}
                         title={!bookingWaitlistEnabled ? 'Lista de espera está desativada em Configurações → Agenda' : undefined}
                         style={{ padding: '9px 14px', background: bookingWaitlistEnabled ? '#FFFFFF' : '#F8FAFC', color: bookingWaitlistEnabled ? '#374151' : '#9CA3AF', fontWeight: 700, fontSize: 12, border: `1px solid ${bookingWaitlistEnabled ? '#E2E8F0' : '#E2E8F0'}`, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
@@ -865,20 +870,14 @@ export default function ClientAdminPanel({
                           <span style={{ fontSize: 9, fontWeight: 800, background: '#FEF3C7', color: '#92400E', borderRadius: 4, padding: '1px 5px', letterSpacing: '0.3px' }}>OFF</span>
                         )}
                       </motion.button>
-                      <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                      <motion.button whileTap={{ scale: 0.97 }}
                         onClick={() => { setApptCustId(''); setApptSrvId(''); setApptProfId(''); setApptDate(new Date().toISOString().split('T')[0]); setApptTime(''); setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setShowNewApptModal(true); }}
                         style={{ padding: '9px 18px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
                         <Plus size={13} /> Novo Agendamento
                       </motion.button>
                     </>
                   )}
-                  {activeTab === 'agenda' && (
-                    <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                      onClick={() => setShowApptForm(o => !o)}
-                      style={{ padding: '9px 18px', background: showApptForm ? '#1D4ED8' : '#FFFFFF', color: showApptForm ? '#FFFFFF' : '#374151', fontWeight: 700, fontSize: 12, border: `1px solid ${showApptForm ? '#1D4ED8' : '#E2E8F0'}`, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
-                      <Plus size={13} /> {showApptForm ? 'Fechar' : 'Agendar'}
-                    </motion.button>
-                  )}
+                  {activeTab === 'agenda' && null}
                 </div>
               </div>}
 
@@ -940,6 +939,8 @@ export default function ClientAdminPanel({
                       onResendReminder={apptId => remindAppointmentWhatsApp(activeTenant.id, apptId)}
                       onRescheduleAppointment={onRescheduleAppointment}
                       tenantId={activeTenant.id}
+                      onOpenWaitlist={() => setShowWaitlistModal(true)}
+                      waitlistEnabled={bookingWaitlistEnabled}
                     />
                   </div>
                 </div>
@@ -969,6 +970,10 @@ export default function ClientAdminPanel({
                   myAppointments={myAppointments}
                   myServices={myServices}
                   onAddPayment={onAddPayment}
+                  recurringExpenses={recurringExpenses}
+                  onAddRecurringExpense={onAddRecurringExpense}
+                  onUpdateRecurringExpense={onUpdateRecurringExpense}
+                  onDeleteRecurringExpense={onDeleteRecurringExpense}
                 />
               )}
 

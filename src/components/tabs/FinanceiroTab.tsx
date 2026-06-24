@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { Payment, Professional, Appointment, Service, Tenant } from '../../types';
+import { Payment, Professional, Appointment, Service, Tenant, RecurringExpense } from '../../types';
 import {
   TrendingUp, TrendingDown, DollarSign, Users,
   ShoppingBag, Trash2, RefreshCw, Calendar,
   ArrowUpRight, ArrowDownRight, Printer, LayoutDashboard, FileText,
+  Repeat, Plus, Pencil, AlertCircle, CheckCircle2,
 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import {
@@ -18,6 +19,10 @@ interface Props {
   myAppointments: Appointment[];
   myServices: Service[];
   onAddPayment: (payment: Omit<Payment, 'id'>) => void;
+  recurringExpenses: RecurringExpense[];
+  onAddRecurringExpense: (r: Omit<RecurringExpense, 'id' | 'createdAt'>) => void;
+  onUpdateRecurringExpense: (id: string, updates: Partial<Pick<RecurringExpense, 'active' | 'nextDueDate'>>) => void;
+  onDeleteRecurringExpense: (id: string) => void;
 }
 
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -60,10 +65,10 @@ function trendPct(cur: number, prev: number): number | null {
 }
 
 function TrendBadge({ pct, invertColor }: { pct: number | null; invertColor?: boolean }) {
-  if (pct === null) return <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>—</span>;
+  if (pct === null) return <span style={{ fontSize: 11, color: '#9CA3AF' }}>—</span>;
   const up = pct >= 0;
   const good = invertColor ? !up : up;
-  const color = good ? '#4ade80' : '#fca5a5';
+  const color = good ? '#16A34A' : '#DC2626';
   return (
     <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color }}>
       {up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
@@ -73,16 +78,17 @@ function TrendBadge({ pct, invertColor }: { pct: number | null; invertColor?: bo
 }
 
 const card: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.04)',
-  border: '1px solid rgba(255,255,255,0.09)',
+  background: '#FFFFFF',
+  border: '1px solid #E2E8F0',
   borderRadius: 16,
   padding: 24,
+  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
 };
 
 const sectionLabel: React.CSSProperties = {
   fontSize: 11,
   fontWeight: 700,
-  color: 'rgba(255,255,255,0.55)',
+  color: '#6B7280',
   textTransform: 'uppercase',
   letterSpacing: '1.5px',
   display: 'flex',
@@ -93,8 +99,8 @@ const sectionLabel: React.CSSProperties = {
 
 const subText: React.CSSProperties = {
   fontSize: 12,
-  color: 'rgba(255,255,255,0.38)',
-  borderBottom: '1px solid rgba(255,255,255,0.09)',
+  color: '#9CA3AF',
+  borderBottom: '1px solid #F1F5F9',
   paddingBottom: 14,
   marginBottom: 14,
 };
@@ -102,8 +108,8 @@ const subText: React.CSSProperties = {
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 14px', fontSize: 12 }}>
-      <p style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>{label}</p>
+    <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10, padding: '10px 14px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+      <p style={{ color: '#6B7280', marginBottom: 6 }}>{label}</p>
       {payload.map((p: any) => (
         <p key={p.name} style={{ color: p.color, fontWeight: 700 }}>
           {p.name}: {fmtCurrency(p.value)}
@@ -113,8 +119,22 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+const FREQ_LABEL: Record<RecurringExpense['frequency'], string> = {
+  semanal: 'Semanal', quinzenal: 'Quinzenal', mensal: 'Mensal', anual: 'Anual',
+};
+
+function nextDueAfter(current: string, freq: RecurringExpense['frequency']): string {
+  const d = new Date(current + 'T12:00:00');
+  if (freq === 'semanal')   d.setDate(d.getDate() + 7);
+  if (freq === 'quinzenal') d.setDate(d.getDate() + 14);
+  if (freq === 'mensal')    d.setMonth(d.getMonth() + 1);
+  if (freq === 'anual')     d.setFullYear(d.getFullYear() + 1);
+  return fmtDate(d);
+}
+
 export default function FinanceiroTab({
   activeTenant, myPayments, myProfessionals, myAppointments, myServices, onAddPayment,
+  recurringExpenses, onAddRecurringExpense, onUpdateRecurringExpense, onDeleteRecurringExpense,
 }: Props) {
   const toast = useToast();
   const now = new Date();
@@ -133,6 +153,35 @@ export default function FinanceiroTab({
   const [directSaleMethod, setDirectSaleMethod] = useState<'pix' | 'cash' | 'credit_card'>('pix');
   const [expenseAmount, setExpenseAmount] = useState(0);
   const [expenseDesc, setExpenseDesc] = useState('');
+
+  const [showRecurringForm, setShowRecurringForm] = useState(false);
+  const [recDesc, setRecDesc] = useState('');
+  const [recAmount, setRecAmount] = useState(0);
+  const [recFreq, setRecFreq] = useState<RecurringExpense['frequency']>('mensal');
+  const [recDueDate, setRecDueDate] = useState(() => fmtDate(new Date()));
+
+  const todayStr = fmtDate(new Date());
+
+  const handleLaunchRecurring = (re: RecurringExpense) => {
+    onAddPayment({
+      tenantId: activeTenant.id,
+      amount: re.amount,
+      method: 'cash',
+      status: 'refunded',
+      date: nowStr,
+      description: `Recorrente: ${re.description}`,
+    });
+    onUpdateRecurringExpense(re.id, { nextDueDate: nextDueAfter(re.nextDueDate, re.frequency) });
+    toast.success(`Despesa "${re.description}" lançada!`);
+  };
+
+  const handleAddRecurring = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recDesc.trim() || recAmount <= 0) { toast.error('Preencha descrição e valor.'); return; }
+    onAddRecurringExpense({ tenantId: activeTenant.id, description: recDesc.trim(), amount: recAmount, frequency: recFreq, nextDueDate: recDueDate, active: true });
+    toast.success('Despesa recorrente criada!');
+    setRecDesc(''); setRecAmount(0); setRecFreq('mensal'); setRecDueDate(fmtDate(new Date())); setShowRecurringForm(false);
+  };
 
   // ── Date ranges from period type ───────────────────────────────────────────
   const dateRange = useMemo((): { start: string; end: string } => {
@@ -441,9 +490,9 @@ export default function FinanceiroTab({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {/* Period type toggle */}
-          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 3, gap: 2 }}>
+          <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: 8, padding: 3, gap: 2 }}>
             {(['semana', 'mes', 'trimestre'] as const).map(t => (
-              <button key={t} onClick={() => setPeriodType(t)} style={{ padding: '5px 11px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: periodType === t ? 'rgba(255,255,255,0.14)' : 'transparent', color: periodType === t ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', transition: 'all 150ms', textTransform: 'capitalize' }}>
+              <button key={t} onClick={() => setPeriodType(t)} style={{ padding: '5px 11px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: periodType === t ? '#FFFFFF' : 'transparent', color: periodType === t ? '#111827' : '#6B7280', transition: 'all 150ms', textTransform: 'capitalize', boxShadow: periodType === t ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
                 {t === 'mes' ? 'Mês' : t === 'semana' ? 'Semana' : 'Trimestre'}
               </button>
             ))}
@@ -456,41 +505,41 @@ export default function FinanceiroTab({
               value={selectedWeek}
               onChange={e => e.target.value && setSelectedWeek(e.target.value)}
               className="navy-input"
-              style={{ maxWidth: 170, padding: '8px 12px', fontSize: 13 }}
+              style={{ maxWidth: 170, padding: '8px 12px', fontSize: 13, background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' }}
             />
           )}
 
           {/* Month + year selects */}
           {periodType === 'mes' && (<>
-            <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="navy-select" style={{ maxWidth: 130 }}>
+            <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="navy-select" style={{ maxWidth: 130, background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151' }}>
               {MONTHS_FULL.map((m, i) => <option key={i} value={i}>{m}</option>)}
             </select>
-            <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="navy-select" style={{ maxWidth: 100 }}>
+            <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="navy-select" style={{ maxWidth: 100, background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151' }}>
               {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </>)}
 
           {/* Quarter + year selects */}
           {periodType === 'trimestre' && (<>
-            <select value={selectedQuarter} onChange={e => setSelectedQuarter(Number(e.target.value))} className="navy-select" style={{ maxWidth: 100 }}>
+            <select value={selectedQuarter} onChange={e => setSelectedQuarter(Number(e.target.value))} className="navy-select" style={{ maxWidth: 100, background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151' }}>
               {[1, 2, 3, 4].map(q => <option key={q} value={q}>T{q}</option>)}
             </select>
-            <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="navy-select" style={{ maxWidth: 100 }}>
+            <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="navy-select" style={{ maxWidth: 100, background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151' }}>
               {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </>)}
 
           {/* Professional filter */}
           {myProfessionals.length > 0 && (
-            <select value={filterProfId} onChange={e => setFilterProfId(e.target.value)} className="navy-select" style={{ maxWidth: 190 }}>
+            <select value={filterProfId} onChange={e => setFilterProfId(e.target.value)} className="navy-select" style={{ maxWidth: 190, background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151' }}>
               <option value="">Todos os profissionais</option>
               {myProfessionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           )}
         </div>
-        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: 4, gap: 2 }}>
+        <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: 10, padding: 4, gap: 2 }}>
           {([['dashboard', LayoutDashboard, 'Dashboard'], ['relatorio', FileText, 'Relatório']] as const).map(([v, Icon, label]) => (
-            <button key={v} onClick={() => setView(v)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: 12, fontWeight: 600, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: view === v ? 'rgba(255,255,255,0.12)' : 'transparent', color: view === v ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', transition: 'all 150ms' }}>
+            <button key={v} onClick={() => setView(v)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: 12, fontWeight: 600, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: view === v ? '#FFFFFF' : 'transparent', color: view === v ? '#111827' : '#6B7280', transition: 'all 150ms', boxShadow: view === v ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
               <Icon size={13} /> {label}
             </button>
           ))}
@@ -502,13 +551,13 @@ export default function FinanceiroTab({
         <>
           {/* Print button */}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: '#38BDF8', color: '#0C1A26', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+            <button onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
               <Printer size={15} /> Imprimir / Exportar PDF
             </button>
           </div>
 
           {/* A4 report body */}
-          <div id="monthly-report" style={{ background: '#fff', color: '#0F172A', borderRadius: 16, padding: '40px 48px', maxWidth: 900, width: '100%', margin: '0 auto', fontFamily: 'Outfit, sans-serif', lineHeight: 1.5 }}>
+          <div id="monthly-report" style={{ background: '#fff', color: '#0F172A', borderRadius: 16, padding: '40px 48px', maxWidth: 900, width: '100%', margin: '0 auto', fontFamily: 'Outfit, sans-serif', lineHeight: 1.5, border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
 
             {/* Report header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, paddingBottom: 20, borderBottom: '2px solid #E2E8F0' }}>
@@ -665,12 +714,12 @@ export default function FinanceiroTab({
         {/* Faturamento Bruto */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>Faturamento Bruto</span>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(74,222,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <TrendingUp size={17} style={{ color: '#4ade80' }} />
+            <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Faturamento Bruto</span>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TrendingUp size={17} style={{ color: '#16A34A' }} />
             </div>
           </div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: 'rgba(255,255,255,0.9)', letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 26, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
             {fmtCurrency(totalRevenue)}
           </span>
           <TrendBadge pct={trendPct(totalRevenue, prevRevenue)} />
@@ -679,12 +728,12 @@ export default function FinanceiroTab({
         {/* Despesas */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>Despesas Totais</span>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(252,165,165,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <TrendingDown size={17} style={{ color: '#fca5a5' }} />
+            <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Despesas Totais</span>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TrendingDown size={17} style={{ color: '#DC2626' }} />
             </div>
           </div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: 'rgba(255,255,255,0.9)', letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 26, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
             {fmtCurrency(totalExpenses)}
           </span>
           <TrendBadge pct={trendPct(totalExpenses, prevExpenses)} invertColor />
@@ -693,12 +742,12 @@ export default function FinanceiroTab({
         {/* Lucro Líquido */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>Lucro Líquido</span>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(56,189,248,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <DollarSign size={17} style={{ color: '#38BDF8' }} />
+            <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Lucro Líquido</span>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <DollarSign size={17} style={{ color: '#3B82F6' }} />
             </div>
           </div>
-          <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.5px', fontFamily: 'monospace', color: netProfit >= 0 ? '#4ade80' : '#fca5a5' }}>
+          <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.5px', fontFamily: 'monospace', color: netProfit >= 0 ? '#16A34A' : '#DC2626' }}>
             {fmtCurrency(netProfit)}
           </span>
           <TrendBadge pct={trendPct(netProfit, prevRevenue - prevExpenses)} />
@@ -707,12 +756,12 @@ export default function FinanceiroTab({
         {/* Atendimentos */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>Atendimentos</span>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Users size={17} style={{ color: 'rgba(255,255,255,0.55)' }} />
+            <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Atendimentos</span>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Users size={17} style={{ color: '#6B7280' }} />
             </div>
           </div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: 'rgba(255,255,255,0.9)', letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 26, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
             {periodAtendimentos}
           </span>
           <TrendBadge pct={trendPct(periodAtendimentos, prevAtendimentos)} />
@@ -723,14 +772,14 @@ export default function FinanceiroTab({
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
         {/* Line chart */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Tendência — últimos 6 meses</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Tendência — últimos 6 meses</span>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.4)' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.4)' }} axisLine={false} tickLine={false} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} />
+              <CartesianGrid strokeDasharray="4 4" stroke="#E2E8F0" />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} />
               <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', paddingTop: 8 }} />
+              <Legend wrapperStyle={{ fontSize: 12, color: '#6B7280', paddingTop: 8 }} />
               <Line type="monotone" dataKey="Receitas" stroke="#38BDF8" strokeWidth={2.5} dot={{ r: 3, fill: '#38BDF8' }} activeDot={{ r: 5 }} />
               <Line type="monotone" dataKey="Despesas" stroke="#fca5a5" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: '#fca5a5' }} activeDot={{ r: 5 }} />
             </LineChart>
@@ -740,10 +789,10 @@ export default function FinanceiroTab({
         {/* Pie chart */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Faturamento</span>
-            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 3, gap: 2 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Faturamento</span>
+            <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: 8, padding: 3, gap: 2 }}>
               {(['servico', 'profissional'] as const).map(mode => (
-                <button key={mode} onClick={() => setPieMode(mode)} style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: pieMode === mode ? 'rgba(255,255,255,0.14)' : 'transparent', color: pieMode === mode ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', transition: 'all 150ms' }}>
+                <button key={mode} onClick={() => setPieMode(mode)} style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: pieMode === mode ? '#FFFFFF' : 'transparent', color: pieMode === mode ? '#111827' : '#6B7280', transition: 'all 150ms', boxShadow: pieMode === mode ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
                   {mode === 'servico' ? 'Serviço' : 'Profissional'}
                 </button>
               ))}
@@ -762,9 +811,9 @@ export default function FinanceiroTab({
                     </Pie>
                     <Tooltip
                       formatter={(v: number) => fmtCurrency(v)}
-                      contentStyle={{ background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, fontSize: 12 }}
-                      labelStyle={{ color: 'rgba(255,255,255,0.6)' }}
-                      itemStyle={{ color: '#fff' }}
+                      contentStyle={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                      labelStyle={{ color: '#6B7280' }}
+                      itemStyle={{ color: '#111827' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -773,9 +822,9 @@ export default function FinanceiroTab({
                     <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
-                        <span style={{ color: 'rgba(255,255,255,0.6)' }}>{d.name}</span>
+                        <span style={{ color: '#374151' }}>{d.name}</span>
                       </div>
-                      <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 700, fontFamily: 'monospace', fontSize: 11 }}>
+                      <span style={{ color: '#111827', fontWeight: 700, fontFamily: 'monospace', fontSize: 11 }}>
                         {fmtCurrency(d.value)}
                       </span>
                     </div>
@@ -783,7 +832,7 @@ export default function FinanceiroTab({
                 </div>
               </>
             ) : (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 13 }}>
                 Nenhum atendimento neste período.
               </div>
             );
@@ -796,29 +845,29 @@ export default function FinanceiroTab({
         {/* Receita Avulsa */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h3 style={sectionLabel}>
-            <ShoppingBag style={{ width: 14, height: 14, color: '#4ade80' }} /> Receita Avulsa
+            <ShoppingBag style={{ width: 14, height: 14, color: '#16A34A' }} /> Receita Avulsa
           </h3>
           <p style={subText}>Faturamento direto de balcão.</p>
           <form onSubmit={handleDirectSale} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
               <label className="navy-label">Descrição</label>
-              <input type="text" required placeholder="Ex: Venda de produto" value={directSaleDesc} onChange={e => setDirectSaleDesc(e.target.value)} className="navy-input" />
+              <input type="text" required placeholder="Ex: Venda de produto" value={directSaleDesc} onChange={e => setDirectSaleDesc(e.target.value)} className="navy-input" style={{ background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' }} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
                 <label className="navy-label">Valor (R$)</label>
-                <input type="number" required min={1} value={directSaleAmount || ''} onChange={e => setDirectSaleAmount(Number(e.target.value))} className="navy-input" />
+                <input type="number" required min={1} value={directSaleAmount || ''} onChange={e => setDirectSaleAmount(Number(e.target.value))} className="navy-input" style={{ background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' }} />
               </div>
               <div>
                 <label className="navy-label">Forma</label>
-                <select value={directSaleMethod} onChange={e => setDirectSaleMethod(e.target.value as any)} className="navy-select">
+                <select value={directSaleMethod} onChange={e => setDirectSaleMethod(e.target.value as any)} className="navy-select" style={{ background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151' }}>
                   <option value="pix">Pix</option>
                   <option value="cash">Dinheiro</option>
                   <option value="credit_card">Cartão</option>
                 </select>
               </div>
             </div>
-            <button type="submit" style={{ width: '100%', padding: '12px', background: '#E6F4EC', color: '#0A4A2C', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+            <button type="submit" style={{ width: '100%', padding: '12px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
               Lançar Receita
             </button>
           </form>
@@ -827,44 +876,141 @@ export default function FinanceiroTab({
         {/* Despesa */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h3 style={sectionLabel}>
-            <Trash2 style={{ width: 14, height: 14, color: '#fca5a5' }} /> Registrar Despesa
+            <Trash2 style={{ width: 14, height: 14, color: '#DC2626' }} /> Registrar Despesa
           </h3>
           <p style={subText}>Débito manual de pagamentos.</p>
           <form onSubmit={handleExpense} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
               <label className="navy-label">Valor (R$)</label>
-              <input type="number" required min={1} value={expenseAmount || ''} onChange={e => setExpenseAmount(Number(e.target.value))} className="navy-input" />
+              <input type="number" required min={1} value={expenseAmount || ''} onChange={e => setExpenseAmount(Number(e.target.value))} className="navy-input" style={{ background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' }} />
             </div>
             <div>
               <label className="navy-label">Descrição</label>
-              <input type="text" required placeholder="Ex: Lavanderia" value={expenseDesc} onChange={e => setExpenseDesc(e.target.value)} className="navy-input" />
+              <input type="text" required placeholder="Ex: Lavanderia" value={expenseDesc} onChange={e => setExpenseDesc(e.target.value)} className="navy-input" style={{ background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' }} />
             </div>
-            <button type="submit" style={{ width: '100%', padding: '12px', background: 'rgba(239,68,68,0.1)', color: '#fca5a5', fontWeight: 700, fontSize: 13, border: '1px solid rgba(239,68,68,0.25)', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+            <button type="submit" style={{ width: '100%', padding: '12px', background: '#FEE2E2', color: '#DC2626', fontWeight: 700, fontSize: 13, border: '1px solid #FCA5A5', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
               Confirmar Despesa
             </button>
           </form>
         </div>
 
+        {/* Despesas Recorrentes */}
+        <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h3 style={{ ...sectionLabel, marginBottom: 0 }}>
+              <Repeat style={{ width: 14, height: 14, color: '#7C3AED' }} /> Despesas Recorrentes
+            </h3>
+            <button
+              onClick={() => setShowRecurringForm(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: showRecurringForm ? '#F3F4F6' : '#EDE9FE', color: '#7C3AED', fontWeight: 700, fontSize: 11, border: '1px solid #DDD6FE', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+              <Plus size={11} /> Nova
+            </button>
+          </div>
+          <p style={subText}>Débitos fixos lançados manualmente.</p>
+
+          {/* Form nova recorrente */}
+          {showRecurringForm && (
+            <form onSubmit={handleAddRecurring} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: '#FAF5FF', border: '1px solid #EDE9FE', borderRadius: 12, padding: 14 }}>
+              <div>
+                <label className="navy-label">Descrição</label>
+                <input type="text" required placeholder="Ex: Aluguel, Internet…" value={recDesc} onChange={e => setRecDesc(e.target.value)} className="navy-input" style={{ background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label className="navy-label">Valor (R$)</label>
+                  <input type="number" required min={1} value={recAmount || ''} onChange={e => setRecAmount(Number(e.target.value))} className="navy-input" style={{ background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' }} />
+                </div>
+                <div>
+                  <label className="navy-label">Frequência</label>
+                  <select value={recFreq} onChange={e => setRecFreq(e.target.value as RecurringExpense['frequency'])} className="navy-select" style={{ background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151' }}>
+                    <option value="semanal">Semanal</option>
+                    <option value="quinzenal">Quinzenal</option>
+                    <option value="mensal">Mensal</option>
+                    <option value="anual">Anual</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="navy-label">Primeiro vencimento</label>
+                <input type="date" required value={recDueDate} onChange={e => setRecDueDate(e.target.value)} className="navy-input" style={{ background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="submit" style={{ flex: 1, padding: '10px', background: '#7C3AED', color: '#FFFFFF', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Salvar</button>
+                <button type="button" onClick={() => setShowRecurringForm(false)} style={{ padding: '10px 16px', background: '#F3F4F6', color: '#6B7280', fontWeight: 600, fontSize: 12, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+              </div>
+            </form>
+          )}
+
+          {/* Lista */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }} className="no-scrollbar">
+            {recurringExpenses.length === 0 ? (
+              <p style={{ color: '#9CA3AF', fontSize: 13 }}>Nenhuma despesa recorrente cadastrada.</p>
+            ) : recurringExpenses.map(re => {
+              const isDue = re.nextDueDate <= todayStr;
+              return (
+                <div key={re.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: isDue && re.active ? '#FEF2F2' : '#F8FAFC', border: `1px solid ${isDue && re.active ? '#FCA5A5' : '#E2E8F0'}` }}>
+                  {/* Toggle ativo */}
+                  <button
+                    onClick={() => onUpdateRecurringExpense(re.id, { active: !re.active })}
+                    title={re.active ? 'Desativar' : 'Ativar'}
+                    style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: re.active ? '#7C3AED' : '#D1D5DB' }}>
+                    <CheckCircle2 size={16} />
+                  </button>
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: re.active ? '#111827' : '#9CA3AF', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{re.description}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, background: '#EDE9FE', color: '#7C3AED', padding: '1px 6px', borderRadius: 4 }}>{FREQ_LABEL[re.frequency]}</span>
+                      <span style={{ fontSize: 11, color: isDue && re.active ? '#DC2626' : '#9CA3AF', display: 'flex', alignItems: 'center', gap: 3 }}>
+                        {isDue && re.active && <AlertCircle size={10} />}
+                        {re.nextDueDate.split('-').reverse().join('/')}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Valor */}
+                  <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 800, color: '#DC2626', flexShrink: 0 }}>{fmtCurrency(re.amount)}</span>
+                  {/* Lançar */}
+                  {re.active && (
+                    <button
+                      onClick={() => handleLaunchRecurring(re)}
+                      title="Lançar despesa agora"
+                      style={{ flexShrink: 0, padding: '5px 10px', background: isDue ? '#FEE2E2' : '#F3F4F6', color: isDue ? '#DC2626' : '#6B7280', fontWeight: 700, fontSize: 11, border: `1px solid ${isDue ? '#FCA5A5' : '#E2E8F0'}`, borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                      Lançar
+                    </button>
+                  )}
+                  {/* Deletar */}
+                  <button
+                    onClick={() => onDeleteRecurringExpense(re.id)}
+                    title="Remover"
+                    style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#D1D5DB' }}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Comissões */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h3 style={sectionLabel}>
-            <DollarSign style={{ width: 14, height: 14, color: 'rgba(255,255,255,0.55)' }} /> Comissões
+            <DollarSign style={{ width: 14, height: 14, color: '#6B7280' }} /> Comissões
           </h3>
           <p style={subText}>Repasse do período selecionado.</p>
           <div style={{ maxHeight: 210, overflowY: 'auto' }} className="no-scrollbar">
             {commissions.length > 0 ? commissions.map(c => (
-              <div key={c.id} style={{ padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div key={c.id} style={{ padding: '11px 0', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <p style={{ fontWeight: 700, color: 'rgba(255,255,255,0.88)', fontSize: 13, marginBottom: 2 }}>{c.name}</p>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>{c.closedCount} atend. · {c.commissionPct}%</span>
+                  <p style={{ fontWeight: 700, color: '#111827', fontSize: 13, marginBottom: 2 }}>{c.name}</p>
+                  <span style={{ fontSize: 11, color: '#9CA3AF' }}>{c.closedCount} atend. · {c.commissionPct}%</span>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ color: '#4ade80', fontWeight: 800, fontSize: 13, fontFamily: 'monospace' }}>{fmtCurrency(c.dueCommission)}</span>
-                  <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase' }}>Salão: {fmtCurrency(c.totalEarned - c.dueCommission)}</p>
+                  <span style={{ color: '#16A34A', fontWeight: 800, fontSize: 13, fontFamily: 'monospace' }}>{fmtCurrency(c.dueCommission)}</span>
+                  <p style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase' }}>Salão: {fmtCurrency(c.totalEarned - c.dueCommission)}</p>
                 </div>
               </div>
             )) : (
-              <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: 13, paddingTop: 8 }}>Sem atendimentos no período.</p>
+              <p style={{ color: '#9CA3AF', fontSize: 13, paddingTop: 8 }}>Sem atendimentos no período.</p>
             )}
           </div>
         </div>
@@ -872,22 +1018,22 @@ export default function FinanceiroTab({
 
       {/* Transaction table */}
       <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.09)', paddingBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', paddingBottom: 14 }}>
           <h3 style={{ ...sectionLabel, marginBottom: 0 }}>
             <RefreshCw style={{ width: 14, height: 14 }} /> Lançamentos do Período
           </h3>
           <div style={{ display: 'flex', gap: 16, fontSize: 12, fontFamily: 'monospace' }}>
-            <span style={{ color: '#4ade80', fontWeight: 700 }}>+ {fmtCurrency(totalRevenue)}</span>
-            <span style={{ color: '#fca5a5', fontWeight: 700 }}>− {fmtCurrency(totalExpenses)}</span>
-            <span style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 700 }}>= {fmtCurrency(netProfit)}</span>
+            <span style={{ color: '#16A34A', fontWeight: 700 }}>+ {fmtCurrency(totalRevenue)}</span>
+            <span style={{ color: '#DC2626', fontWeight: 700 }}>− {fmtCurrency(totalExpenses)}</span>
+            <span style={{ color: '#111827', fontWeight: 700 }}>= {fmtCurrency(netProfit)}</span>
           </div>
         </div>
         <div className="overflow-x-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr style={{ background: '#1E293B', borderBottom: '1px solid rgba(255,255,255,0.09)' }}>
+              <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #E2E8F0' }}>
                 {['Data', 'Descrição', 'Profissional', 'Método', 'Valor', 'Status'].map(h => (
-                  <th key={h} style={{ padding: '11px 14px', textAlign: h === 'Status' ? 'right' : 'left', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.38)', whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding: '11px 14px', textAlign: h === 'Status' ? 'right' : 'left', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#374151', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -896,22 +1042,22 @@ export default function FinanceiroTab({
                 const appt = p.appointmentId ? myAppointments.find(a => a.id === p.appointmentId) : undefined;
                 const prof = appt ? myProfessionals.find(pr => pr.id === appt.professionalId) : undefined;
                 return (
-                  <tr key={p.id} style={{ background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <td style={{ padding: '12px 14px', fontSize: 11, color: '#94A3B8', fontFamily: 'monospace' }}>{p.date.substring(0, 10)}</td>
-                    <td style={{ padding: '12px 14px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>{p.description}</td>
-                    <td style={{ padding: '12px 14px', fontSize: 12, color: prof ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.2)' }}>
+                  <tr key={p.id} style={{ background: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                    <td style={{ padding: '12px 14px', fontSize: 11, color: '#6B7280', fontFamily: 'monospace' }}>{p.date.substring(0, 10)}</td>
+                    <td style={{ padding: '12px 14px', fontWeight: 600, color: '#111827', fontSize: 13 }}>{p.description}</td>
+                    <td style={{ padding: '12px 14px', fontSize: 12, color: prof ? '#374151' : '#9CA3AF' }}>
                       {prof?.name ?? '—'}
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <span style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', fontFamily: 'monospace' }}>{methodLabel[p.method] ?? p.method}</span>
+                      <span style={{ background: '#F1F5F9', color: '#374151', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', fontFamily: 'monospace', border: '1px solid #E2E8F0' }}>{methodLabel[p.method] ?? p.method}</span>
                     </td>
                     <td style={{ padding: '12px 14px', fontWeight: 800, fontFamily: 'monospace' }}>
                       {p.status === 'refunded'
-                        ? <span style={{ color: '#fca5a5' }}>− {fmtCurrency(p.amount)}</span>
-                        : <span style={{ color: '#4ade80' }}>+ {fmtCurrency(p.amount)}</span>}
+                        ? <span style={{ color: '#DC2626' }}>− {fmtCurrency(p.amount)}</span>
+                        : <span style={{ color: '#16A34A' }}>+ {fmtCurrency(p.amount)}</span>}
                     </td>
                     <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', background: p.status === 'paid' ? 'rgba(74,222,128,0.12)' : 'rgba(252,165,165,0.12)', color: p.status === 'paid' ? '#4ade80' : '#fca5a5' }}>
+                      <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', background: p.status === 'paid' ? '#DCFCE7' : '#FEE2E2', color: p.status === 'paid' ? '#166534' : '#DC2626', border: `1px solid ${p.status === 'paid' ? '#86EFAC' : '#FCA5A5'}` }}>
                         {p.status === 'paid' ? 'Pago' : 'Saída'}
                       </span>
                     </td>
@@ -919,7 +1065,7 @@ export default function FinanceiroTab({
                 );
               }) : (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>Nenhuma transação em {periodLabel}.</td>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#9CA3AF', fontSize: 13 }}>Nenhuma transação em {periodLabel}.</td>
                 </tr>
               )}
             </tbody>

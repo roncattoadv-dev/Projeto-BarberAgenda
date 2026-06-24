@@ -174,6 +174,17 @@ export interface Review {
   createdAt: string;
 }
 
+export interface RecurringExpense {
+  id: string;
+  tenantId: string;
+  description: string;
+  amount: number;
+  frequency: 'semanal' | 'quinzenal' | 'mensal' | 'anual';
+  nextDueDate: string; // YYYY-MM-DD
+  active: boolean;
+  createdAt: string;
+}
+
 export interface WaitlistEntry {
   id: string;
   tenantId: string;

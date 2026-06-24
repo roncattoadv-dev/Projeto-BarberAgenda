@@ -280,8 +280,9 @@ import {
   updateProductStock, createAppointment, updateAppointmentStatus, rescheduleAppointment,
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours, mapAppointment,
+  getRecurringExpenses, createRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
 } from '../../lib/db';
-import type { Tenant, Service, Professional, Product, Customer, Appointment, Payment } from '../../types';
+import type { Tenant, Service, Professional, Product, Customer, Appointment, Payment, RecurringExpense } from '../../types';
 import { useNotifications } from '../../hooks/useNotifications';
 
 export default function TenantAdminPage() {
@@ -299,13 +300,14 @@ export default function TenantAdminPage() {
   const [customers,           setCustomers]           = useState<Customer[]>([]);
   const [appointments,        setAppointments]        = useState<Appointment[]>([]);
   const [payments,            setPayments]            = useState<Payment[]>([]);
+  const [recurringExpenses,   setRecurringExpenses]   = useState<RecurringExpense[]>([]);
   const [loading,             setLoading]             = useState(true);
   const [openSubscription,    setOpenSubscription]    = useState(false);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
     setLoading(true);
-    const [ts, svcs, profs, prods, custs, appts, pays] = await Promise.all([
+    const [ts, svcs, profs, prods, custs, appts, pays, recExp] = await Promise.all([
       getTenants(),
       getServices(tenantId),
       getProfessionals(tenantId),
@@ -313,10 +315,12 @@ export default function TenantAdminPage() {
       getCustomers(tenantId),
       getAppointments(tenantId),
       getPayments(tenantId),
+      getRecurringExpenses(tenantId),
     ]);
     setTenant(ts.find(t => t.id === tenantId) ?? null);
     setServices(svcs); setProfessionals(profs); setProducts(prods);
     setCustomers(custs); setAppointments(appts); setPayments(pays);
+    setRecurringExpenses(recExp);
     setLoading(false);
   }, [tenantId]);
 
@@ -436,17 +440,23 @@ export default function TenantAdminPage() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              border: '3px solid rgba(255,255,255,0.09)',
-              borderTopColor: 'rgba(255,255,255,0.65)',
-              borderRadius: '50%',
-            }}
-            className="animate-spin"
-          />
+        <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#F8FAFC 0%,#EFF6FF 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, fontFamily: 'Outfit, sans-serif' }}>
+          <style>{`
+            @keyframes wlFadeIn{from{opacity:0;transform:scale(0.92)}to{opacity:1;transform:scale(1)}}
+            @keyframes wlShimmer{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}
+            @keyframes wlBounce0{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-8px)}}
+            @keyframes wlBounce1{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-8px)}}
+            @keyframes wlBounce2{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-8px)}}
+          `}</style>
+          <img src={LOGO_URL} alt="WorkAgenda" style={{ height: 140, objectFit: 'contain', animation: 'wlFadeIn 0.6s ease-out both' }} />
+          <div style={{ position: 'relative', width: 200, height: 3, background: '#DBEAFE', borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg,transparent,#2563EB,transparent)', animation: 'wlShimmer 1.4s ease-in-out infinite' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[0,1,2].map(n => (
+              <div key={n} style={{ width: 7, height: 7, borderRadius: '50%', background: '#2563EB', opacity: 0.7, animation: `wlBounce${n} 1.2s ease-in-out ${n*0.18}s infinite` }} />
+            ))}
+          </div>
         </div>
       ) : tenant && (
         <ClientAdminPanel
@@ -520,6 +530,19 @@ export default function TenantAdminPage() {
           onAddPayment={async p => {
             const c = await createPayment(p);
             setPayments(prev => [c, ...prev]);
+          }}
+          recurringExpenses={recurringExpenses}
+          onAddRecurringExpense={async r => {
+            const c = await createRecurringExpense(r);
+            setRecurringExpenses(prev => [...prev, c]);
+          }}
+          onUpdateRecurringExpense={async (id, updates) => {
+            await updateRecurringExpense(id, updates);
+            setRecurringExpenses(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+          }}
+          onDeleteRecurringExpense={async id => {
+            await deleteRecurringExpense(id);
+            setRecurringExpenses(prev => prev.filter(r => r.id !== id));
           }}
           onAddCustomer={async c => {
             const created = c.phone

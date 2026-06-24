@@ -3,7 +3,7 @@
 import { supabase } from './supabase';
 import type {
   Tenant, Service, Professional, Customer,
-  Appointment, Payment, Product, Coupon, AuditLog, SupportTicket,
+  Appointment, Payment, Product, Coupon, AuditLog, SupportTicket, RecurringExpense,
 } from '../types';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -229,6 +229,35 @@ export async function createPayment(p: Omit<Payment, 'id'>): Promise<Payment> {
   return mapPayment(data);
 }
 
+// ── RECURRING EXPENSES ─────────────────────────────────────────────────────────
+export async function getRecurringExpenses(tenantId: string): Promise<RecurringExpense[]> {
+  const { data, error } = await supabase.from('recurring_expenses')
+    .select('*').eq('tenant_id', tenantId).order('next_due_date');
+  if (error) throw error;
+  return (data ?? []).map(mapRecurringExpense);
+}
+
+export async function createRecurringExpense(r: Omit<RecurringExpense, 'id' | 'createdAt'>): Promise<RecurringExpense> {
+  const { data, error } = await supabase.from('recurring_expenses')
+    .insert({ tenant_id: r.tenantId, description: r.description, amount: r.amount, frequency: r.frequency, next_due_date: r.nextDueDate, active: r.active })
+    .select().single();
+  if (error) throw error;
+  return mapRecurringExpense(data);
+}
+
+export async function updateRecurringExpense(id: string, updates: Partial<Pick<RecurringExpense, 'active' | 'nextDueDate'>>): Promise<void> {
+  const payload: any = {};
+  if (updates.active      !== undefined) payload.active        = updates.active;
+  if (updates.nextDueDate !== undefined) payload.next_due_date = updates.nextDueDate;
+  const { error } = await supabase.from('recurring_expenses').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteRecurringExpense(id: string): Promise<void> {
+  const { error } = await supabase.from('recurring_expenses').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // ── PRODUCTS ───────────────────────────────────────────────────────────────────
 export async function getProducts(tenantId: string): Promise<Product[]> {
   const { data, error } = await supabase.from('products')
@@ -322,6 +351,9 @@ export function mapAppointment(r: any): Appointment {
 }
 function mapPayment(r: any): Payment {
   return { id: r.id, tenantId: r.tenant_id, appointmentId: r.appointment_id, amount: Number(r.amount), method: r.method, status: r.status, date: r.paid_at, description: r.description ?? '' };
+}
+function mapRecurringExpense(r: any): RecurringExpense {
+  return { id: r.id, tenantId: r.tenant_id, description: r.description, amount: Number(r.amount), frequency: r.frequency, nextDueDate: r.next_due_date, active: r.active, createdAt: r.created_at };
 }
 function mapProduct(r: any): Product {
   return { id: r.id, tenantId: r.tenant_id, name: r.name, price: Number(r.price), costPrice: Number(r.cost_price ?? 0), stock: r.stock, minStock: r.min_stock, category: r.category };
