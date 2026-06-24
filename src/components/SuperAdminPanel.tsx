@@ -262,13 +262,12 @@ export default function SuperAdminPanel({
             {!collapsed && (
               <motion.div initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.18 }}
                 style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: C.accentBg, border: `1px solid ${C.accentBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <ShieldCheck size={18} style={{ color: C.accent }} />
-                </div>
-                <div style={{ whiteSpace: 'nowrap' }}>
-                  <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>WorkAgenda</p>
-                  <p style={{ fontSize: 10, color: C.muted, margin: 0 }}>Super Admin</p>
-                </div>
+                <img
+                  src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2019%20de%20jun.%20de%202026,%2014_46_16.png"
+                  alt="WorkAgenda"
+                  style={{ height: 36, objectFit: 'contain', filter: 'brightness(0)', flexShrink: 0 }}
+                />
+                <p style={{ fontSize: 10, color: C.muted, margin: 0, whiteSpace: 'nowrap' }}>Super Admin</p>
               </motion.div>
             )}
           </AnimatePresence>
