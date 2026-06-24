@@ -8,6 +8,8 @@
 
 import express from 'express';
 import cors    from 'cors';
+import helmet  from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import { createClient } from '@supabase/supabase-js';
 import {
   createAsaasCustomer,
@@ -53,6 +55,8 @@ const CORS_ORIGINS = [
   'https://workagenda.org',
 ].filter(Boolean) as string[];
 
+app.use(helmet({ contentSecurityPolicy: false }));
+
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin || CORS_ORIGINS.includes(origin)) return cb(null, true);
@@ -63,6 +67,30 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
 app.use(express.json());
+
+// Rate limiting — público (registro, booking, cancelamento, emails)
+const publicLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitas requisições. Tente novamente em 15 minutos.' },
+});
+
+// Rate limiting restrito — endpoints que disparam WhatsApp/email
+const strictLimit = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hora
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Limite de envios atingido. Tente novamente em 1 hora.' },
+});
+
+app.use('/api/register',          publicLimit);
+app.use('/api/booking',           publicLimit);
+app.use('/api/appointments',      publicLimit);
+app.use('/api/whatsapp/remind',   strictLimit);
+app.use('/api/whatsapp/notify',   strictLimit);
 app.use((req, _res, next) => {
   if (req.path.startsWith('/api/whatsapp')) {
     console.log(`[HTTP] ${req.method} ${req.path} auth=${req.headers.authorization?.slice(0,20)}...`);
