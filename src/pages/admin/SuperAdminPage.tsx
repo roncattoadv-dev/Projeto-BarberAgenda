@@ -53,63 +53,31 @@ export default function SuperAdminPage() {
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#0F172A', fontFamily: 'Outfit, sans-serif' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#F8FAFC', fontFamily: 'Outfit, sans-serif' }}>
       {/* Top bar */}
-      <div
-        style={{
-          backgroundColor: '#1E293B',
-          borderBottom: '1px solid rgba(255,255,255,0.09)',
-          padding: '12px 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
+      <div style={{ backgroundColor: '#FFFFFF', borderBottom: '1px solid #E2E8F0', padding: '12px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <img
-            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%209%20de%20jun.%20de%202026,%2000_00_23%20(1).png"
+            src="https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2019%20de%20jun.%20de%202026,%2014_46_16.png"
             alt="WorkAgenda"
-            style={{ height: 40, objectFit: 'contain' }}
+            style={{ height: 48, objectFit: 'contain', filter: 'brightness(0)' }}
           />
-          <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.18)' }} />
-          <ShieldCheck style={{ width: 16, height: 16, color: 'rgba(255,255,255,0.65)' }} />
-          <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, fontWeight: 500 }}>Super Admin Console</span>
+          <span style={{ width: 1, height: 20, background: '#E2E8F0' }} />
+          <ShieldCheck style={{ width: 15, height: 15, color: '#2563EB' }} />
+          <span style={{ color: '#475569', fontSize: 13, fontWeight: 600 }}>Super Admin</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          <span style={{ color: 'rgba(255,255,255,0.38)', fontSize: 13 }}>{profile?.name}</span>
-          <button
-            onClick={signOut}
-            style={{
-              color: 'rgba(255,255,255,0.65)',
-              background: 'none',
-              border: '1px solid rgba(255,255,255,0.18)',
-              borderRadius: 8,
-              padding: '5px 14px',
-              fontSize: 12,
-              cursor: 'pointer',
-              fontFamily: 'Outfit, sans-serif',
-              fontWeight: 600,
-              transition: 'color 0.15s',
-            }}
-          >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span style={{ color: '#9CA3AF', fontSize: 13 }}>{profile?.name}</span>
+          <button onClick={signOut} style={{ color: '#475569', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '6px 16px', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', fontWeight: 600 }}>
             Sair
           </button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-8">
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div
-              style={{
-                width: 36,
-                height: 144,
-                border: '3px solid rgba(255,255,255,0.09)',
-                borderTopColor: 'rgba(255,255,255,0.65)',
-                borderRadius: '50%',
-              }}
-              className="animate-spin"
-            />
+            <div style={{ width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: '#2563EB', borderRadius: '50%' }} className="animate-spin" />
           </div>
         ) : (
           <SuperAdminPanel
