@@ -1180,16 +1180,25 @@ app.get('/api/admin/integrations/status', verifySuperAdmin, async (_req, res) =>
     } catch (e: any) { evogo = { ok: false, message: e.message ?? 'Timeout' }; }
   }
 
-  // Asaas — URL correta: sem prefixo /api/
+  // Asaas — sandbox usa /api/v3/, produção usa /v3/ (paths diferentes)
   let asaas: { ok: boolean; message: string; sandbox: boolean } = { ok: false, message: 'Não configurado', sandbox: isAsaasSandbox() };
   const asaasKey = process.env.ASAAS_API_KEY || '';
-  const asaasUrl = isAsaasSandbox() ? 'https://sandbox.asaas.com/v3' : 'https://api.asaas.com/v3';
+  const asaasUrl = isAsaasSandbox()
+    ? 'https://sandbox.asaas.com/api/v3'
+    : 'https://api.asaas.com/v3';
   if (asaasKey) {
     try {
       const r = await fetch(`${asaasUrl}/customers?limit=1`, { headers: { 'access_token': asaasKey }, signal: AbortSignal.timeout(6000) });
+      const text = await r.text();
       if (r.ok) {
-        const json = await r.json() as any;
-        asaas = { ok: true, message: `${isAsaasSandbox() ? 'Sandbox' : 'Produção'} · ${json?.totalCount ?? 0} clientes`, sandbox: isAsaasSandbox() };
+        try {
+          const json = JSON.parse(text) as any;
+          asaas = { ok: true, message: `${isAsaasSandbox() ? 'Sandbox' : 'Produção'} · ${json?.totalCount ?? 0} clientes`, sandbox: isAsaasSandbox() };
+        } catch {
+          asaas = { ok: false, message: 'Resposta inválida (não JSON)', sandbox: isAsaasSandbox() };
+        }
+      } else if (r.status === 401) {
+        asaas = { ok: false, message: isAsaasSandbox() ? 'Sandbox: chave de produção não é válida no ambiente sandbox' : 'Chave inválida (401)', sandbox: isAsaasSandbox() };
       } else {
         asaas = { ok: false, message: `HTTP ${r.status}`, sandbox: isAsaasSandbox() };
       }
