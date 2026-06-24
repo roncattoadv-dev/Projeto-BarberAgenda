@@ -280,8 +280,12 @@ export default function CustomerBookingFlow({
     setSubmitError(null);
 
     try {
-      // Check / Add Customer records
-      let matchedCustomer = customers.find(c => c.tenantId === activeTenant.id && c.phone === clientPhone.trim());
+      // Check / Add Customer records — identifica por phone + name (mesmo número, nomes diferentes = clientes distintos)
+      let matchedCustomer = customers.find(c =>
+        c.tenantId === activeTenant.id &&
+        c.phone === clientPhone.trim() &&
+        c.name.toLowerCase() === clientName.trim().toLowerCase()
+      );
 
       if (!matchedCustomer) {
         onAddCustomer({
