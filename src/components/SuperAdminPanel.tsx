@@ -353,72 +353,183 @@ export default function SuperAdminPanel({
               {/* ══ VISÃO GERAL ══════════════════════════════════════════════ */}
               {activeTab === 'overview' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
-                    <KpiCard label="MRR"            value={fmtBrl(mrr)} sub="Receita mensal recorrente"                             color={C.accent} icon={DollarSign}  />
-                    <KpiCard label="ARR"            value={fmtBrl(arr)} sub="Run rate anualizado"                                   color={C.text}   icon={TrendingUp}  />
-                    <KpiCard label="ARPU"           value={fmtBrl(arpu)} sub="Por cliente ativo"                                   color={C.text}   icon={Activity}    />
-                    <KpiCard label="Clientes Ativos" value={String(active.length)} sub={`${convRate.toFixed(0)}% conversão`}        color={C.green}  icon={Users}       />
-                    <KpiCard label="Em Trial"       value={String(trial.length)}                                                    color={C.amber}  icon={Clock}       />
-                    <KpiCard label="Churn"          value={`${churnRate.toFixed(1)}%`} sub={`${blocked.length} bloqueado${blocked.length !== 1 ? 's' : ''}`} color={churnRate > 10 ? C.red : C.muted} icon={TrendingDown} />
+
+                  {/* ── KPIs financeiros ── */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+                    {[
+                      {
+                        label: 'MRR — Receita Mensal Recorrente',
+                        value: fmtBrl(mrr),
+                        desc: 'Total gerado mensalmente por todas as assinaturas ativas. Principal indicador de saúde financeira do SaaS.',
+                        color: C.accent, icon: DollarSign,
+                      },
+                      {
+                        label: 'ARR — Receita Anual Recorrente',
+                        value: fmtBrl(arr),
+                        desc: `Projeção anual baseada no MRR atual (MRR × 12). Representa o valor contratado para os próximos 12 meses.`,
+                        color: C.accent, icon: TrendingUp,
+                      },
+                      {
+                        label: 'ARPU — Receita Média por Usuário',
+                        value: fmtBrl(arpu),
+                        desc: 'Quanto cada assinante ativo gera em média por mês. Aumenta com upsell de planos maiores.',
+                        color: C.accent, icon: Activity,
+                      },
+                    ].map(k => (
+                      <div key={k.label} style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                          <p style={{ fontSize: 11, fontWeight: 700, color: C.secondary, margin: 0, lineHeight: 1.4 }}>{k.label}</p>
+                          <div style={{ width: 32, height: 32, borderRadius: 9, background: C.accentBg, border: `1px solid ${C.accentBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <k.icon style={{ width: 15, height: 15, color: C.accent }} />
+                          </div>
+                        </div>
+                        <p style={{ fontSize: 28, fontWeight: 900, color: k.color, fontFamily: 'monospace', letterSpacing: '-1px', margin: 0 }}>{k.value}</p>
+                        <p style={{ fontSize: 11, color: C.muted, margin: 0, lineHeight: 1.55 }}>{k.desc}</p>
+                      </div>
+                    ))}
                   </div>
 
+                  {/* ── KPIs de clientes ── */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+                    {[
+                      {
+                        label: 'Assinantes Ativos',
+                        value: String(active.length),
+                        badge: `${convRate.toFixed(0)}% de conversão`,
+                        badgeColor: C.accent, badgeBg: C.accentBg, badgeBd: C.accentBd,
+                        desc: 'Negócios com assinatura paga e em dia. São a base de receita real da plataforma.',
+                        color: C.accent, icon: Users,
+                      },
+                      {
+                        label: 'Em Período de Teste (Trial)',
+                        value: String(trial.length),
+                        badge: `${trial.length} potenciais clientes`,
+                        badgeColor: C.amber, badgeBg: C.amberBg, badgeBd: C.amberBd,
+                        desc: 'Negócios no trial gratuito de 7 dias. Ainda não converteram para assinatura paga.',
+                        color: C.amber, icon: Clock,
+                      },
+                      {
+                        label: 'Taxa de Cancelamento (Churn)',
+                        value: `${churnRate.toFixed(1)}%`,
+                        badge: `${blocked.length} bloqueado${blocked.length !== 1 ? 's' : ''}`,
+                        badgeColor: churnRate > 10 ? C.red : C.muted,
+                        badgeBg: churnRate > 10 ? C.redBg : C.bg,
+                        badgeBd: churnRate > 10 ? C.redBd : C.border,
+                        desc: 'Percentual de clientes cancelados ou bloqueados sobre o total. Saudável abaixo de 5%.',
+                        color: churnRate > 10 ? C.red : C.muted, icon: TrendingDown,
+                      },
+                    ].map(k => (
+                      <div key={k.label} style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                          <p style={{ fontSize: 11, fontWeight: 700, color: C.secondary, margin: 0, lineHeight: 1.4 }}>{k.label}</p>
+                          <div style={{ width: 32, height: 32, borderRadius: 9, background: C.accentBg, border: `1px solid ${C.accentBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <k.icon style={{ width: 15, height: 15, color: C.accent }} />
+                          </div>
+                        </div>
+                        <p style={{ fontSize: 32, fontWeight: 900, color: k.color, fontFamily: 'monospace', letterSpacing: '-1px', margin: 0 }}>{k.value}</p>
+                        <span style={{ display: 'inline-flex', alignSelf: 'flex-start', padding: '2px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: k.badgeBg, color: k.badgeColor, border: `1px solid ${k.badgeBd}` }}>{k.badge}</span>
+                        <p style={{ fontSize: 11, color: C.muted, margin: 0, lineHeight: 1.55 }}>{k.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ── Gráficos de distribuição e vencimentos ── */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+
+                    {/* Distribuição — barras azuis com tonalidades */}
                     <div style={card}>
-                      <p style={sLbl}>Distribuição de Status</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 8 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: '0 0 4px' }}>Distribuição de Assinantes</p>
+                      <p style={{ fontSize: 11, color: C.muted, margin: '0 0 16px', lineHeight: 1.5 }}>Proporção de clientes por status. Ideal: maior fatia em Ativos, menor em Bloqueados.</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                         {[
-                          { key: 'Ativos',     count: active.length,  color: C.green },
-                          { key: 'Trial',      count: trial.length,   color: C.amber },
-                          { key: 'Bloqueados', count: blocked.length, color: C.red   },
+                          { key: 'Assinantes Ativos',          count: active.length,  bar: C.accent,   label: 'Pagando e com acesso completo' },
+                          { key: 'Em Trial (teste gratuito)',   count: trial.length,   bar: '#60A5FA',  label: 'Dentro do período experimental' },
+                          { key: 'Bloqueados (inadimplentes)',  count: blocked.length, bar: '#93C5FD',  label: 'Acesso suspenso por falta de pagamento' },
                         ].map(row => {
                           const pct = tenants.length ? (row.count / tenants.length) * 100 : 0;
                           return (
                             <div key={row.key}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                                <span style={{ fontSize: 12, color: C.secondary }}>{row.key}</span>
-                                <span style={{ fontSize: 12, fontWeight: 800, color: row.color, fontFamily: 'monospace' }}>{row.count}</span>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 5 }}>
+                                <div>
+                                  <p style={{ fontSize: 12, fontWeight: 600, color: C.text, margin: 0 }}>{row.key}</p>
+                                  <p style={{ fontSize: 10, color: C.muted, margin: 0 }}>{row.label}</p>
+                                </div>
+                                <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 8 }}>
+                                  <span style={{ fontSize: 16, fontWeight: 900, color: row.bar, fontFamily: 'monospace' }}>{row.count}</span>
+                                  <span style={{ fontSize: 10, color: C.muted, marginLeft: 4 }}>{pct.toFixed(0)}%</span>
+                                </div>
                               </div>
-                              <div style={{ height: 6, borderRadius: 4, background: C.bg, overflow: 'hidden', border: `1px solid ${C.border}` }}>
-                                <div style={{ height: '100%', width: `${pct}%`, background: row.color, borderRadius: 4, transition: 'width 0.5s' }} />
+                              <div style={{ height: 8, borderRadius: 6, background: C.bg, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                                <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, ${row.bar}, ${row.bar}cc)`, borderRadius: 6, transition: 'width 0.6s ease' }} />
                               </div>
                             </div>
                           );
                         })}
                       </div>
+
+                      {/* Barra total empilhada */}
+                      {tenants.length > 0 && (
+                        <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
+                          <p style={{ fontSize: 10, color: C.muted, margin: '0 0 6px' }}>Visão consolidada — {tenants.length} assinantes total</p>
+                          <div style={{ height: 10, borderRadius: 6, display: 'flex', overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                            {[
+                              { count: active.length,  color: C.accent  },
+                              { count: trial.length,   color: '#60A5FA' },
+                              { count: blocked.length, color: '#93C5FD' },
+                            ].map((seg, i) => (
+                              <div key={i} style={{ width: `${(seg.count / tenants.length) * 100}%`, background: seg.color, transition: 'width 0.6s ease' }} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
+                    {/* Vencimentos próximos */}
                     <div style={card}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: '0 0 4px' }}>Vencimentos nos Próximos 7 Dias</p>
+                      <p style={{ fontSize: 11, color: C.muted, margin: '0 0 14px', lineHeight: 1.5 }}>Assinantes com trial ou assinatura expirando em breve. Atenção para converter ou renovar.</p>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                        <AlertTriangle style={{ width: 14, height: 14, color: C.amber }} />
-                        <p style={{ ...sLbl, margin: 0 }}>Vencem em 7 dias</p>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: C.amber, fontFamily: 'monospace', background: C.amberBg, padding: '1px 8px', borderRadius: 20, border: `1px solid ${C.amberBd}` }}>{soon.length}</span>
+                        <AlertTriangle style={{ width: 13, height: 13, color: C.amber }} />
+                        <span style={{ fontSize: 12, color: C.secondary }}>{soon.length === 0 ? 'Nenhum vencimento próximo' : `${soon.length} assinante${soon.length !== 1 ? 's' : ''} a vencer`}</span>
+                        {soon.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: C.amber, fontFamily: 'monospace', background: C.amberBg, padding: '2px 10px', borderRadius: 20, border: `1px solid ${C.amberBd}` }}>{soon.length}</span>}
                       </div>
                       {soon.length === 0 ? (
-                        <p style={{ fontSize: 13, color: C.muted, textAlign: 'center', padding: '20px 0' }}>Nenhum vencimento próximo</p>
+                        <div style={{ textAlign: 'center', padding: '24px 0', background: C.accentBg, borderRadius: 12, border: `1px solid ${C.accentBd}` }}>
+                          <CheckCircle2 style={{ width: 24, height: 24, color: C.accent, display: 'block', margin: '0 auto 6px' }} />
+                          <p style={{ fontSize: 12, color: C.accent, fontWeight: 600, margin: 0 }}>Sem vencimentos nos próximos 7 dias</p>
+                        </div>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          {soon.slice(0, 5).map(t => (
-                            <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: C.amberBg, border: `1px solid ${C.amberBd}` }}>
-                              <div>
-                                <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>{t.name}</p>
-                                <p style={{ fontSize: 10, color: C.amber, margin: 0 }}>{t.status === 'trial' ? 'trial' : 'assinatura'}</p>
+                          {soon.slice(0, 5).map(t => {
+                            const expDate = t.status === 'trial' ? t.trialEndsAt : t.subscriptionEndsAt;
+                            const d = daysUntil(expDate || '');
+                            return (
+                              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, background: C.bg, border: `1px solid ${C.border}` }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: C.amberBg, border: `1px solid ${C.amberBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13, fontWeight: 900, color: C.amber, fontFamily: 'monospace' }}>
+                                  {d}d
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</p>
+                                  <p style={{ fontSize: 10, color: C.secondary, margin: 0 }}>{t.status === 'trial' ? 'Trial expira em' : 'Assinatura expira em'} {expDate}</p>
+                                </div>
                               </div>
-                              <span style={{ fontSize: 11, fontFamily: 'monospace', color: C.amber, fontWeight: 700 }}>{t.status === 'trial' ? t.trialEndsAt : t.subscriptionEndsAt}</span>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
                   </div>
 
+                  {/* ── Atividade + Tickets ── */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                     <div style={card}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                        <p style={{ ...sLbl, margin: 0 }}>Atividade Recente</p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>Atividade Recente</p>
                         <button onClick={() => setActiveTab('logs')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.accent, fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'Outfit, sans-serif', fontWeight: 600 }}>
                           Ver tudo <ArrowUpRight style={{ width: 12, height: 12 }} />
                         </button>
                       </div>
+                      <p style={{ fontSize: 11, color: C.muted, margin: '0 0 14px' }}>Últimas ações registradas no audit log de administração.</p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {auditLogs.slice(0, 5).map(log => (
                           <div key={log.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, background: C.bg, border: `1px solid ${C.border}` }}>
@@ -436,22 +547,23 @@ export default function SuperAdminPanel({
                     </div>
 
                     <div style={card}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                        <p style={{ ...sLbl, margin: 0 }}>Tickets Abertos</p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>Chamados de Suporte Abertos</p>
                         <button onClick={() => setActiveTab('suporte')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.accent, fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'Outfit, sans-serif', fontWeight: 600 }}>
                           Ver tudo <ArrowUpRight style={{ width: 12, height: 12 }} />
                         </button>
                       </div>
+                      <p style={{ fontSize: 11, color: C.muted, margin: '0 0 14px' }}>Tickets enviados por assinantes aguardando resposta.</p>
                       {openTickets.length === 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0', gap: 8 }}>
-                          <CheckCircle2 style={{ width: 28, height: 28, color: C.green }} />
-                          <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>Tudo resolvido!</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0', gap: 8, background: C.accentBg, borderRadius: 12, border: `1px solid ${C.accentBd}` }}>
+                          <CheckCircle2 style={{ width: 28, height: 28, color: C.accent }} />
+                          <p style={{ fontSize: 13, color: C.accent, fontWeight: 600, margin: 0 }}>Nenhum chamado em aberto</p>
                         </div>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                           {openTickets.slice(0, 4).map(ticket => (
                             <div key={ticket.id} onClick={() => { setActiveTab('suporte'); setSelectedTicketId(ticket.id); }}
-                              style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${C.amberBd}`, background: C.amberBg, cursor: 'pointer' }}>
+                              style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${C.accentBd}`, background: C.accentBg, cursor: 'pointer' }}>
                               <p style={{ fontSize: 12, fontWeight: 700, color: C.text, margin: '0 0 2px' }}>{ticket.title}</p>
                               <p style={{ fontSize: 10, color: C.secondary, margin: 0 }}>{ticket.tenantName}</p>
                             </div>
