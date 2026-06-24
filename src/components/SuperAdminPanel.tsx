@@ -639,10 +639,6 @@ export default function SuperAdminPanel({
               {activeTab === 'tenants' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
-                      <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: C.muted, pointerEvents: 'none' }} />
-                      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome, slug ou telefone…" style={{ ...inp, paddingLeft: 30, fontSize: 12 }} />
-                    </div>
                     <MultiSelect
                       label="Status"
                       selected={statusFilter}
@@ -653,6 +649,10 @@ export default function SuperAdminPanel({
                         { value: 'blocked', label: 'Bloqueados', count: tenants.filter(t => t.status === 'blocked').length },
                       ]}
                     />
+                    <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+                      <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: C.muted, pointerEvents: 'none' }} />
+                      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome, slug ou telefone…" style={{ ...inp, paddingLeft: 30, fontSize: 12 }} />
+                    </div>
                   </div>
 
                   <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
