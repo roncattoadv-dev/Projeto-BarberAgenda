@@ -66,14 +66,17 @@ export async function createAsaasCustomer(data: {
   email: string;
   cpfCnpj?: string;
   phone?: string;
+  tenantId?: string;
 }): Promise<AsaasCustomer> {
   return asaasFetch('/customers', {
     method: 'POST',
     body: JSON.stringify({
-      name:     data.name,
-      email:    data.email,
-      cpfCnpj:  data.cpfCnpj  || undefined,
-      mobilePhone: data.phone || undefined,
+      name:              data.name,
+      email:             data.email,
+      cpfCnpj:           data.cpfCnpj     || undefined,
+      mobilePhone:       data.phone       || undefined,
+      externalReference: data.tenantId    || undefined,
+      observations:      data.tenantId ? `WorkAgenda SaaS · tenantId: ${data.tenantId}` : 'WorkAgenda SaaS',
       notificationDisabled: false,
     }),
   });

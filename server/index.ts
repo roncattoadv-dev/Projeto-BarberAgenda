@@ -201,7 +201,7 @@ app.post('/api/register', async (req, res) => {
     let asaasSubscriptionId = null;
 
     try {
-      const asaasCustomer = await createAsaasCustomer({ name, email, phone, cpfCnpj });
+      const asaasCustomer = await createAsaasCustomer({ name, email, phone, cpfCnpj, tenantId: tenant.id });
       asaasCustomerId     = asaasCustomer.id;
 
       const subscription    = await createSubscription(asaasCustomer.id, 10);
@@ -320,7 +320,7 @@ app.get('/api/billing/payment-link', async (req, res) => {
     // Cria ou atualiza cliente no Asaas
     let customerId = tenant.asaas_customer_id;
     if (!customerId) {
-      const customer = await createAsaasCustomer({ name: tenant.name, email: user.email!, cpfCnpj });
+      const customer = await createAsaasCustomer({ name: tenant.name, email: user.email!, cpfCnpj, tenantId: tenant.id });
       customerId = customer.id;
     } else if (cpfCnpj) {
       // Atualiza CPF no cliente existente (pode ter sido criado sem CPF)
@@ -484,7 +484,7 @@ app.post('/api/register-google', async (req, res) => {
     // Cria cliente e assinatura no Asaas (não bloqueia o cadastro se falhar)
     let asaasSubscriptionId = null;
     try {
-      const asaasCustomer   = await createAsaasCustomer({ name, email, phone });
+      const asaasCustomer   = await createAsaasCustomer({ name, email, phone, tenantId: tenant.id });
       const subscription    = await createSubscription(asaasCustomer.id, 10);
       asaasSubscriptionId   = subscription.id;
       await supabase.from('tenants').update({
