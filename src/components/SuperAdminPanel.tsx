@@ -133,7 +133,6 @@ export default function SuperAdminPanel({
 }: SuperAdminPanelProps) {
 
   const [activeTab,        setActiveTab]        = useState<Tab>('overview');
-  const [collapsed,        setCollapsed]        = useState(false);
 
   // ── Integrações: status e toggle ─────────────────────────────────────────
   type SvcStatus = { ok: boolean; message: string; sandbox?: boolean } | null;
@@ -252,14 +251,14 @@ export default function SuperAdminPanel({
 
       {/* ── SIDEBAR ───────────────────────────────────────────────────────────── */}
       <motion.aside
-        animate={{ width: collapsed ? SIDEBAR_W.closed : SIDEBAR_W.open }}
+        animate={{ width: SIDEBAR_W.open }}
         transition={{ duration: 0.22, ease: 'easeInOut' }}
         style={{ background: C.surface, borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0, boxShadow: '2px 0 8px rgba(0,0,0,0.04)', zIndex: 10 }}
       >
         {/* Logo + collapse toggle */}
-        <div style={{ padding: collapsed ? '18px 0' : '18px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between', flexShrink: 0, minHeight: 68 }}>
+        <div style={{ padding: '18px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, minHeight: 68 }}>
           <AnimatePresence>
-            {!collapsed && (
+            {true && (
               <motion.div initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.18 }}
                 style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 10 }}>
                 <img
@@ -271,10 +270,6 @@ export default function SuperAdminPanel({
               </motion.div>
             )}
           </AnimatePresence>
-          <button onClick={() => setCollapsed(c => !c)}
-            style={{ width: 28, height: 28, borderRadius: 8, background: C.bg, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, color: C.muted }}>
-            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
         </div>
 
         {/* Nav */}
@@ -285,20 +280,20 @@ export default function SuperAdminPanel({
             return (
               <motion.button key={id} onClick={() => setActiveTab(id)}
                 whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '10px 0' : '10px 12px', justifyContent: collapsed ? 'center' : 'flex-start', borderRadius: 10, cursor: 'pointer', border: isActive ? `1px solid ${C.accentBd}` : '1px solid transparent', background: isActive ? C.accentBg : 'transparent', color: isActive ? C.accent : C.secondary, fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: isActive ? 700 : 500, width: '100%', position: 'relative', transition: 'background 150ms, color 150ms' }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', justifyContent: 'flex-start', borderRadius: 10, cursor: 'pointer', border: isActive ? `1px solid ${C.accentBd}` : '1px solid transparent', background: isActive ? C.accentBg : 'transparent', color: isActive ? C.accent : C.secondary, fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: isActive ? 700 : 500, width: '100%', position: 'relative', transition: 'background 150ms, color 150ms' }}>
                 <Icon size={16} strokeWidth={isActive ? 2.5 : 2} style={{ flexShrink: 0 }} />
                 <AnimatePresence>
-                  {!collapsed && (
+                  {true && (
                     <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.18 }}
                       style={{ overflow: 'hidden', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' }}>
                       {label}
                     </motion.span>
                   )}
                 </AnimatePresence>
-                {badge > 0 && !collapsed && (
+                {badge > 0 && (
                   <span style={{ fontSize: 10, fontWeight: 700, background: id === 'suporte' ? C.amberBg : C.accentBg, color: id === 'suporte' ? C.amber : C.accent, padding: '1px 7px', borderRadius: 20, fontFamily: 'monospace', border: `1px solid ${id === 'suporte' ? C.amberBd : C.accentBd}` }}>{badge}</span>
                 )}
-                {badge > 0 && collapsed && (
+                {false && (
                   <span style={{ position: 'absolute', top: 6, right: 6, width: 7, height: 7, borderRadius: '50%', background: id === 'suporte' ? C.amber : C.accent }} />
                 )}
               </motion.button>
@@ -309,18 +304,18 @@ export default function SuperAdminPanel({
         {/* Footer */}
         <div style={{ borderTop: `1px solid ${C.border}`, padding: '8px 8px', display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
           <button onClick={onSignOut}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '9px 0' : '9px 12px', justifyContent: collapsed ? 'center' : 'flex-start', borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontFamily: 'Outfit, sans-serif', fontSize: 12, fontWeight: 500, width: '100%', transition: 'color 150ms' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', justifyContent: 'flex-start', borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontFamily: 'Outfit, sans-serif', fontSize: 12, fontWeight: 500, width: '100%', transition: 'color 150ms' }}
             onMouseEnter={e => (e.currentTarget.style.color = C.red)}
             onMouseLeave={e => (e.currentTarget.style.color = C.muted)}>
             <LogOut size={14} style={{ flexShrink: 0 }} />
             <AnimatePresence>
-              {!collapsed && (
+              {true && (
                 <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.18 }}
                   style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>Sair</motion.span>
               )}
             </AnimatePresence>
           </button>
-          {!collapsed && (
+          {true && (
             <p style={{ margin: 0, fontSize: 10, color: C.faint, padding: '4px 12px' }}>© WorkAgenda {new Date().getFullYear()}</p>
           )}
         </div>
