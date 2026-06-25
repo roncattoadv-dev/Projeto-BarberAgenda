@@ -1568,7 +1568,7 @@ async function sendConfirmations(): Promise<void> {
   const since = new Date(Date.now() - 10 * 60_000).toISOString();
   const { data: appts } = await supabase
     .from('appointments')
-    .select('*, tenants(id, name, slug, wpp_template_confirm, wpp_booking_url, contact_email, wpp_enabled, email_enabled), services(name), professionals(name)')
+    .select('*, tenants(id, name, slug, wpp_template_confirm, wpp_booking_url, contact_email, wpp_enabled, email_enabled, wpp_reminder_minutes), services(name), professionals(name)')
     .eq('wpp_confirm_sent', false)
     .neq('status', 'cancelled')
     .gte('created_at', since);
@@ -1606,6 +1606,19 @@ async function sendConfirmations(): Promise<void> {
         console.log(`[Confirm] Confirmação WPP enviada: ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time?.slice(0,5)})`);
       }
       await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appt.id);
+
+      // Se o agendamento foi feito com menos tempo que o lembrete configurado,
+      // o job sendReminders nunca alcançará esta janela — marca como tempo insuficiente.
+      const reminderMin = Number(tenant?.wpp_reminder_minutes ?? 60);
+      const apptDateTime = new Date(`${appt.scheduled_date}T${appt.scheduled_time?.slice(0,5) ?? '00:00'}`);
+      const minutesUntil = (apptDateTime.getTime() - Date.now()) / 60_000;
+      if (minutesUntil < reminderMin) {
+        await supabase.from('appointments')
+          .update({ wpp_reminder_status: 'tempo_insuficiente' })
+          .eq('id', appt.id)
+          .eq('wpp_reminder_status', 'pendente'); // só se ainda pendente
+        console.log(`[Confirm] Lembrete desabilitado (${minutesUntil.toFixed(0)}min < ${reminderMin}min): ${appt.customer_name}`);
+      }
 
       // Email de confirmação (se o cliente informou email, canal habilitado e ainda não foi enviado)
       if (appt.customer_email && !appt.email_confirm_sent && tenant.email_enabled !== false) {
@@ -1761,6 +1774,7 @@ async function sendReminders(): Promise<void> {
     .from('appointments')
     .select('*, tenants(id, name, slug, wpp_template_remind, wpp_booking_url, wpp_reminder_minutes, wpp_enabled), services(name), professionals(name)')
     .eq('wpp_reminder_sent', false)
+    .neq('wpp_reminder_status', 'tempo_insuficiente')
     .neq('status', 'cancelled')
     .gte('scheduled_date', todayBrasilia);
 
@@ -1814,7 +1828,9 @@ async function sendReminders(): Promise<void> {
         description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
       } : undefined);
 
-      await supabase.from('appointments').update({ wpp_reminder_sent: true }).eq('id', appt.id);
+      await supabase.from('appointments')
+        .update({ wpp_reminder_sent: true, wpp_reminder_status: 'enviado' })
+        .eq('id', appt.id);
       console.log(`[Reminder] Lembrete enviado: ${appt.customer_name} (${appt.scheduled_date} ${apptTime})`);
     } catch (err: any) {
       console.error(`[Reminder] Erro ao enviar para ${appt.customer_name}:`, err.message);

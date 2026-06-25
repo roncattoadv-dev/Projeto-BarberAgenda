@@ -505,11 +505,27 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                     ? `${String(Math.floor(remMin/60)).padStart(2,'0')}:${String(remMin%60).padStart(2,'0')}`
                     : null;
 
+                  // Lembrete suspenso: janela do lembrete já passou mas agendamento ainda não ocorreu
+                  const remDt        = new Date(`${appt.date}T${appt.time}`);
+                  remDt.setMinutes(remDt.getMinutes() - reminderMinutes);
+                  const reminderSuspenso = !appt.wppReminderSent && !apptPast && remDt <= new Date();
+
                   return (
                     <>
                       {/* WA pills */}
                       {mkPill('confirmation', <MessageSquare size={8} />, 'Confirm.', appt.wppConfirmSent, 'Não enviada', true)}
-                      {mkPill('reminder', <Clock size={8} />, remTime ? `Lemb. ${remTime}` : 'Lembrete', appt.wppReminderSent, remTime ? `Previsto ${remTime}` : 'Auto', apptPast)}
+                      {reminderSuspenso ? (
+                        <div style={{ display: 'flex', alignItems: 'center', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 7, padding: '3px 7px', flexShrink: 0 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 700, color: '#64748B', whiteSpace: 'nowrap' }}>
+                              <Clock size={8} /> {remTime ? `Lemb. ${remTime}` : 'Lembrete'}
+                            </div>
+                            <div style={{ fontSize: 8, color: '#94A3B8', whiteSpace: 'nowrap' }}>Suspenso</div>
+                          </div>
+                        </div>
+                      ) : (
+                        mkPill('reminder', <Clock size={8} />, remTime ? `Lemb. ${remTime}` : 'Lembrete', appt.wppReminderSent, remTime ? `Previsto ${remTime}` : 'Auto', apptPast)
+                      )}
 
                       {/* Badge de automação */}
                       {!actPast && mode && mode !== 'manual' && (
