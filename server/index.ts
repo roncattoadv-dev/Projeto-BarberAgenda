@@ -848,6 +848,21 @@ Gostaríamos de lembrar que caso não compareça no horário reservado, será co
 
 Para mais informações ou cancelar o agendamento: {link}`;
 
+const TPL_WAITLIST_DEFAULT = `Olá, *{cliente}*!
+
+Temos uma ótima notícia: surgiu uma disponibilidade na *{salao}* para o dia *{data}*.
+
+Para confirmar seu agendamento, acesse o link abaixo:
+
+🔗 {link_agendamento}
+
+A disponibilidade é limitada e poderá ser reservada a qualquer momento.
+
+Atenciosamente,
+
+*{salao}*
+*Enviado automaticamente pelo WorkAgenda.*`;
+
 const DAYS_PT   = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
 const MONTHS_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 
@@ -908,7 +923,7 @@ app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
     ok: true,
     confirm:         data?.wpp_template_confirm   ?? TPL_CONFIRM_DEFAULT,
     remind:          data?.wpp_template_remind    ?? TPL_REMIND_DEFAULT,
-    waitlist:        data?.wpp_template_waitlist  ?? '',
+    waitlist:        data?.wpp_template_waitlist  ?? TPL_WAITLIST_DEFAULT,
     bookingUrl:      data?.wpp_booking_url        ?? '',
     reminderMinutes: data?.wpp_reminder_minutes   ?? 60,
     wppEnabled:      data?.wpp_enabled            ?? true,
@@ -1488,7 +1503,7 @@ app.post('/api/cancel', async (req, res) => {
           .select('wpp_template_waitlist')
           .eq('id', tenantId).maybeSingle();
         const TPL_WAITLIST = tplData?.wpp_template_waitlist ||
-          `🎉 Olá, *{cliente}*!\n\nUma vaga abriu na *{salao}* para o dia *{data}* que você estava aguardando!\n\n⚡ Corra antes que alguém reserve:\n{link_agendamento}\n\n_Caso não queira mais agendar, é só ignorar esta mensagem._\n💈 _WorkAgenda_`;
+          TPL_WAITLIST_DEFAULT;
 
         compatible.forEach((entry: any, idx: number) => {
           setTimeout(async () => {
@@ -1731,7 +1746,7 @@ async function processAutoActions(): Promise<void> {
             const { data: tplData } = await supabase.from('tenants')
               .select('wpp_template_waitlist').eq('id', tenant.id).maybeSingle();
             const TPL = tplData?.wpp_template_waitlist ||
-              `🎉 Olá, *{cliente}*!\n\nUma vaga abriu na *{salao}* para o dia *{data}* que você estava aguardando!\n\n⚡ Corra antes que alguém reserve:\n{link_agendamento}\n\n_Caso não queira mais agendar, é só ignorar esta mensagem._\n💈 _WorkAgenda_`;
+              TPL_WAITLIST_DEFAULT;
 
             const compatible = (allWl ?? []).filter((e: any) =>
               !e.notified &&

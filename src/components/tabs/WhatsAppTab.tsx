@@ -161,7 +161,7 @@ export default function WhatsAppTab({ activeTenant, onStatusChange, section }: P
     confirm:   'Olá {cliente}! Seu agendamento de {servico} com {profissional} no dia {data} às {hora} está CONFIRMADO. — {salao}',
     remind:    'Lembrete: {cliente}, amanhã ({data}) às {hora} você tem {servico} com {profissional}. Aguardamos você! — {salao}',
     cancel:    '{cliente}, seu agendamento de {servico} em {data} às {hora} foi cancelado. Para reagendar acesse: {link_agendamento} — {salao}',
-    waitlist:  '🎉 Olá, *{cliente}*!\n\nUma vaga abriu na *{salao}* para o dia *{data}* que você estava aguardando!\n\n⚡ Corra antes que alguém reserve:\n{link_agendamento}\n\n_Caso não queira mais agendar, é só ignorar esta mensagem._\n💈 _WorkAgenda_',
+    waitlist:  'Olá, *{cliente}*!\n\nTemos uma ótima notícia: surgiu uma disponibilidade na *{salao}* para o dia *{data}*.\n\nPara confirmar seu agendamento, acesse o link abaixo:\n\n🔗 {link_agendamento}\n\nA disponibilidade é limitada e poderá ser reservada a qualquer momento.\n\nAtenciosamente,\n\n*{salao}*\n*Enviado automaticamente pelo WorkAgenda.*',
   };
   const loadTpls = () => { try { const s = localStorage.getItem(LS_TPL); if (s) return { ...defaultTpls, ...JSON.parse(s) }; } catch {} return { ...defaultTpls }; };
   const [tpls,      setTpls]      = useState(loadTpls);
