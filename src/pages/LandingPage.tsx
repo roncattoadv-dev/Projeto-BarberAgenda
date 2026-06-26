@@ -173,7 +173,7 @@ function FAQItem({ q, a }: { q:string; a:string }) {
 // ── Floating card ─────────────────────────────────────────────────────────────
 function FloatCard({ children, style }: { children:React.ReactNode; style?:React.CSSProperties }) {
   return (
-    <div style={{ position:'absolute', background:'#fff', borderRadius:16, padding:'14px 18px', boxShadow:'0 8px 40px rgba(0,0,0,0.11), 0 2px 8px rgba(0,0,0,0.05)', border:`1px solid ${C.border}`, ...style }}>
+    <div style={{ position:'absolute', background:'#fff', borderRadius:10, padding:'7px 10px', boxShadow:'0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.05)', border:`1px solid ${C.border}`, ...style }}>
       {children}
     </div>
   );
@@ -320,7 +320,7 @@ export default function LandingPage() {
       )}
 
       {/* ── HERO ─────────────────────────────────────────────────────────────── */}
-      <section className="hero-s" style={{ padding:`140px ${PX} 80px`, position:'relative', overflow:'hidden', backgroundImage:`linear-gradient(rgba(248,250,252,0.78),rgba(248,250,252,0.78)),url('${BG2}')`, backgroundSize:'auto,cover', backgroundPosition:'0 0,center', backgroundRepeat:'no-repeat' }}>
+      <section className="hero-s" style={{ padding:`120px ${PX} 60px`, position:'relative', overflow:'hidden', backgroundImage:`linear-gradient(rgba(248,250,252,0.78),rgba(248,250,252,0.78)),url('${BG2}')`, backgroundSize:'auto,cover', backgroundPosition:'0 0,center', backgroundRepeat:'no-repeat' }}>
         {/* blobs */}
         <div style={{ position:'absolute', top:-80, right:'0%', width:700, height:700, borderRadius:'50%', background:'radial-gradient(circle, rgba(37,99,235,0.07) 0%, transparent 65%)', pointerEvents:'none' }} />
         <div style={{ position:'absolute', bottom:-60, left:'5%', width:500, height:500, borderRadius:'50%', background:'radial-gradient(circle, rgba(34,197,94,0.05) 0%, transparent 65%)', pointerEvents:'none' }} />
@@ -354,7 +354,7 @@ export default function LandingPage() {
             <p className="h4" style={{ fontSize:12, color:'#94a3b8', marginTop:18 }}>Sem cartão de crédito · Cancele quando quiser</p>
 
             {/* Micro-stats */}
-            <div className="h4 microstats" style={{ display:'flex', gap:36, marginTop:44, flexWrap:'wrap' }}>
+            <div className="h4 microstats" style={{ display:'flex', gap:28, marginTop:28, flexWrap:'wrap' }}>
               {[['200+','negócios ativos'],['12 mil+','agendamentos'],['99.9%','uptime']].map(([v,l])=>(
                 <div key={l}>
                   <p style={{ fontSize:22, fontWeight:800, color:C.text, margin:0, letterSpacing:'-0.5px' }}>{v}</p>
@@ -373,36 +373,35 @@ export default function LandingPage() {
               </div>
 
               {/* Card: novo agendamento — canto superior esquerdo */}
-              <FloatCard className="fb float-m" style={{ position:'absolute', top:20, left:-20, minWidth:230, zIndex:2 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                  <div style={{ width:38, height:38, borderRadius:10, background:'#EFF6FF', border:'1px solid #BFDBFE', display:'flex', alignItems:'center', justifyContent:'center', color:C.accent, flexShrink:0 }}>
-                    <Ico.Calendar />
+              <FloatCard className="fb float-m" style={{ position:'absolute', top:14, left:14, zIndex:2 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                  <div style={{ width:24, height:24, borderRadius:7, background:'#EFF6FF', border:'1px solid #BFDBFE', display:'flex', alignItems:'center', justifyContent:'center', color:C.accent, flexShrink:0 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                   </div>
                   <div>
-                    <p style={{ margin:0, fontSize:12, fontWeight:700, color:C.text }}>Novo agendamento</p>
-                    <p style={{ margin:0, fontSize:11, color:C.secondary }}>João Silva · Corte + Barba</p>
-                    <p style={{ margin:0, fontSize:10, color:'#94a3b8', marginTop:2 }}>Hoje às 14h00</p>
+                    <p style={{ margin:0, fontSize:10, fontWeight:700, color:C.text }}>Novo agendamento</p>
+                    <p style={{ margin:0, fontSize:9, color:C.secondary }}>João Silva · Corte + Barba</p>
                   </div>
                 </div>
               </FloatCard>
 
               {/* Card: receita — canto inferior esquerdo */}
-              <FloatCard className="fc float-m" style={{ position:'absolute', bottom:32, left:-28, zIndex:2 }}>
-                <p style={{ margin:'0 0 6px', fontSize:11, color:C.secondary, fontWeight:600 }}>Receita do mês</p>
-                <p style={{ margin:0, fontSize:24, fontWeight:900, color:C.text, letterSpacing:'-1px' }}>R$ 8.240</p>
-                <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:5 }}>
-                  <span style={{ color:C.success, display:'flex', alignItems:'center', gap:3 }}><Ico.TrendUp /><span style={{ fontSize:11, fontWeight:700 }}>+23%</span></span>
-                  <span style={{ fontSize:11, color:C.secondary }}>vs. mês anterior</span>
+              <FloatCard className="fc float-m" style={{ position:'absolute', bottom:20, left:14, zIndex:2 }}>
+                <p style={{ margin:'0 0 2px', fontSize:9, color:C.secondary, fontWeight:600 }}>Receita do mês</p>
+                <p style={{ margin:0, fontSize:15, fontWeight:900, color:C.text, letterSpacing:'-0.5px' }}>R$ 8.240</p>
+                <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:3 }}>
+                  <span style={{ color:C.success, display:'flex', alignItems:'center', gap:2 }}><Ico.TrendUp /><span style={{ fontSize:9, fontWeight:700 }}>+23%</span></span>
+                  <span style={{ fontSize:9, color:C.secondary }}>vs. anterior</span>
                 </div>
               </FloatCard>
 
               {/* Card: WhatsApp — canto inferior direito */}
-              <FloatCard className="fb float-m" style={{ position:'absolute', bottom:32, right:20, zIndex:2 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <FloatCard className="fb float-m" style={{ position:'absolute', bottom:20, right:14, zIndex:2 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                   <span className="blink" style={{ color:C.success }}><Ico.Dot /></span>
-                  <span style={{ fontSize:12, fontWeight:600, color:C.text }}>WhatsApp conectado</span>
+                  <span style={{ fontSize:10, fontWeight:600, color:C.text }}>WhatsApp ativo</span>
                 </div>
-                <p style={{ margin:'4px 0 0', fontSize:11, color:C.secondary }}>3 lembretes enviados hoje</p>
+                <p style={{ margin:'2px 0 0', fontSize:9, color:C.secondary }}>3 lembretes hoje</p>
               </FloatCard>
             </div>
           </div>
@@ -410,8 +409,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── STATS BAR ────────────────────────────────────────────────────────── */}
-      <Reveal style={{ padding:`clamp(24px,4vw,48px) ${PX} clamp(40px,6vw,72px)` }}>
-        <div className="stats-inner" style={{ background:'#fff', borderRadius:20, border:`1px solid ${C.border}`, padding:'28px 40px', display:'flex', alignItems:'center', justifyContent:'center', gap:'clamp(20px,6vw,80px)', flexWrap:'wrap', boxShadow:'0 2px 12px rgba(0,0,0,0.04)' }}>
+      <Reveal style={{ padding:`clamp(16px,3vw,32px) ${PX} clamp(24px,4vw,48px)` }}>
+        <div className="stats-inner" style={{ background:'#fff', borderRadius:20, border:`1px solid ${C.border}`, padding:'20px 32px', display:'flex', alignItems:'center', justifyContent:'center', gap:'clamp(16px,4vw,56px)', flexWrap:'wrap', boxShadow:'0 2px 12px rgba(0,0,0,0.04)' }}>
           {[['12000','Agendamentos realizados','+'],['45000','Mensagens WhatsApp/mês','+'],['200','Negócios ativos','+'],['99.9','Uptime garantido','%']].map(([v,l,s])=>(
             <div key={l} style={{ textAlign:'center' }}>
               <p style={{ fontSize:'clamp(22px,3vw,30px)', fontWeight:900, color:C.text, margin:0, letterSpacing:'-0.5px' }}>
@@ -424,8 +423,8 @@ export default function LandingPage() {
       </Reveal>
 
       {/* ── FUNCIONALIDADES ──────────────────────────────────────────────────── */}
-      <section id="features" style={{ padding:`80px ${PX}` }}>
-        <Reveal style={{ textAlign:'center', marginBottom:52 }}>
+      <section id="features" style={{ padding:`60px ${PX}` }}>
+        <Reveal style={{ textAlign:'center', marginBottom:36 }}>
           <Pill>Funcionalidades</Pill>
           <h2 style={{ fontSize:'clamp(28px,4vw,44px)', fontWeight:900, margin:'16px 0 14px', letterSpacing:'-1.2px', color:C.text }}>
             Tudo que seu negócio precisa
@@ -451,8 +450,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── PRODUTO: Agendamento ─────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
-        <div style={{ display:'flex', alignItems:'center', gap:72, flexWrap:'wrap' }} className="col-m gap-m-32">
+      <section style={{ padding:`60px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
+        <div style={{ display:'flex', alignItems:'center', gap:48, flexWrap:'wrap' }} className="col-m gap-m-32">
           <Reveal from="left" style={{ flex:'1 1 560px', minWidth:0 }} className="full-m">
             <Screenshot src={IMGS[1]} alt="Agendamento online" />
           </Reveal>
@@ -477,8 +476,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── PRODUTO: WhatsApp ────────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX}` }}>
-        <div style={{ display:'flex', alignItems:'center', gap:72, flexWrap:'wrap' }} className="col-m gap-m-32">
+      <section style={{ padding:`60px ${PX}` }}>
+        <div style={{ display:'flex', alignItems:'center', gap:48, flexWrap:'wrap' }} className="col-m gap-m-32">
           <Reveal from="left" style={{ flex:'1 1 320px', minWidth:0 }} className="full-m center-m">
             <Pill color="#25D366">WhatsApp Automático</Pill>
             <h2 style={{ fontSize:'clamp(26px,3.5vw,40px)', fontWeight:900, margin:'16px 0', lineHeight:1.15, letterSpacing:'-0.8px', color:C.text }}>
@@ -503,8 +502,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── PRODUTO: Financeiro ──────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
-        <div style={{ display:'flex', alignItems:'center', gap:72, flexWrap:'wrap' }} className="col-m gap-m-32">
+      <section style={{ padding:`60px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
+        <div style={{ display:'flex', alignItems:'center', gap:48, flexWrap:'wrap' }} className="col-m gap-m-32">
           <Reveal from="left" style={{ flex:'1 1 560px', minWidth:0 }} className="full-m">
             <Screenshot src={IMGS[3]} alt="Gestão financeira" />
           </Reveal>
@@ -529,8 +528,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── PARA QUEM É ──────────────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX}` }}>
-        <Reveal style={{ textAlign:'center', marginBottom:48 }}>
+      <section style={{ padding:`60px ${PX}` }}>
+        <Reveal style={{ textAlign:'center', marginBottom:32 }}>
           <Pill color={C.warning}>Para quem é</Pill>
           <h2 style={{ fontSize:'clamp(26px,4vw,40px)', fontWeight:900, margin:'16px 0 12px', letterSpacing:'-0.8px', color:C.text }}>
             Feito para quem trabalha com beleza
@@ -559,8 +558,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── DEPOIMENTOS ──────────────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
-        <Reveal style={{ textAlign:'center', marginBottom:48 }}>
+      <section style={{ padding:`60px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
+        <Reveal style={{ textAlign:'center', marginBottom:32 }}>
           <Pill color={C.warning}>Depoimentos</Pill>
           <h2 style={{ fontSize:'clamp(26px,4vw,40px)', fontWeight:900, margin:'16px 0', letterSpacing:'-0.8px', color:C.text }}>
             O que dizem nossos clientes
@@ -589,11 +588,11 @@ export default function LandingPage() {
       </section>
 
       {/* ── LISTA DE ESPERA ─────────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX}`, backgroundImage:`linear-gradient(rgba(248,250,252,0.82),rgba(248,250,252,0.82)),url('https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2025%20de%20jun.%20de%202026,%2016_12_48.png')`, backgroundSize:'auto,cover', backgroundPosition:'0 0,center', backgroundRepeat:'no-repeat', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
+      <section style={{ padding:`60px ${PX}`, backgroundImage:`linear-gradient(rgba(248,250,252,0.82),rgba(248,250,252,0.82)),url('https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2025%20de%20jun.%20de%202026,%2016_12_48.png')`, backgroundSize:'auto,cover', backgroundPosition:'0 0,center', backgroundRepeat:'no-repeat', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
         <div style={{ maxWidth:1020, margin:'0 auto' }}>
 
           {/* Header */}
-          <Reveal style={{ textAlign:'center', marginBottom:56 }}>
+          <Reveal style={{ textAlign:'center', marginBottom:40 }}>
             <Pill color={C.accent}>Lista de Espera</Pill>
             <h2 style={{ fontSize:'clamp(28px,4vw,44px)', fontWeight:900, margin:'16px 0 14px', letterSpacing:'-1.2px', color:C.text }}>
               Pare de perder faturamento com cancelamentos
@@ -604,7 +603,7 @@ export default function LandingPage() {
           </Reveal>
 
           {/* Como funciona — 4 passos */}
-          <Reveal style={{ marginBottom:48 }}>
+          <Reveal style={{ marginBottom:32 }}>
             <div className="step-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', background:C.surface, borderRadius:20, border:`1px solid ${C.border}`, overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
               {([
                 { step:'1', Icon:Ico.Phone,    title:'Cliente entra na fila',    desc:'Quando o dia está lotado, o cliente adiciona nome e telefone na lista de espera diretamente pela página de agendamento.' },
@@ -706,8 +705,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── PREÇOS ───────────────────────────────────────────────────────────── */}
-      <section id="precos" style={{ padding:`80px ${PX}` }}>
-        <Reveal style={{ textAlign:'center', marginBottom:56 }}>
+      <section id="precos" style={{ padding:`60px ${PX}` }}>
+        <Reveal style={{ textAlign:'center', marginBottom:40 }}>
           <Pill color={C.purple}>Preços</Pill>
           <h2 style={{ fontSize:'clamp(28px,4vw,44px)', fontWeight:900, margin:'16px 0 14px', letterSpacing:'-1.2px', color:C.text }}>
             Simples e transparente
@@ -753,9 +752,9 @@ export default function LandingPage() {
       </section>
 
       {/* ── FAQ ──────────────────────────────────────────────────────────────── */}
-      <section id="faq" style={{ padding:`80px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
+      <section id="faq" style={{ padding:`60px ${PX}`, background:'#fff', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
         <div style={{ maxWidth:700, margin:'0 auto' }}>
-          <Reveal style={{ textAlign:'center', marginBottom:48 }}>
+          <Reveal style={{ textAlign:'center', marginBottom:32 }}>
             <Pill color={C.success}>Dúvidas frequentes</Pill>
             <h2 style={{ fontSize:'clamp(26px,4vw,40px)', fontWeight:900, margin:'16px 0 0', letterSpacing:'-0.8px', color:C.text }}>
               Tem alguma dúvida?
@@ -770,9 +769,9 @@ export default function LandingPage() {
       </section>
 
       {/* ── CTA FINAL ────────────────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX} 96px`, position:'relative', overflow:'hidden', backgroundImage:`url('${BG2}')`, backgroundSize:'cover', backgroundPosition:'center', backgroundRepeat:'no-repeat' }}>
+      <section style={{ padding:`60px ${PX} 72px`, position:'relative', overflow:'hidden', backgroundImage:`url('${BG2}')`, backgroundSize:'cover', backgroundPosition:'center', backgroundRepeat:'no-repeat' }}>
         <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 30%, rgba(37,99,235,0.07) 0%, transparent 60%)', pointerEvents:'none' }} />
-        <Reveal from="bottom" style={{ position:'relative', background:'#fff', border:`1px solid ${C.border}`, borderRadius:32, padding:'clamp(32px,5vw,64px) clamp(24px,5vw,64px)', maxWidth:1040, margin:'0 auto', boxShadow:'0 8px 48px rgba(0,0,0,0.07)' }}>
+        <Reveal from="bottom" style={{ position:'relative', background:'#fff', border:`1px solid ${C.border}`, borderRadius:32, padding:'clamp(24px,4vw,48px) clamp(20px,4vw,48px)', maxWidth:1040, margin:'0 auto', boxShadow:'0 8px 48px rgba(0,0,0,0.07)' }}>
           {/* Barra decorativa no topo */}
           <div style={{ position:'absolute', top:0, left:'15%', right:'15%', height:3, background:`linear-gradient(90deg, transparent, ${C.accent}, transparent)`, borderRadius:99 }} />
 
