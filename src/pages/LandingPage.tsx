@@ -257,16 +257,26 @@ export default function LandingPage() {
         @media(max-width:768px){
           .hide-m{display:none!important}
           .col-m{flex-direction:column!important}
-          .full-m{width:100%!important;min-width:0!important}
-          .center-m{text-align:center!important;align-items:center!important}
+          .full-m{width:100%!important;min-width:0!important;max-width:100%!important}
+          .center-m{text-align:center!important;align-items:center!important;justify-content:center!important}
           .show-m{display:flex!important}
           .float-m{display:none!important}
           section{padding-top:48px!important;padding-bottom:48px!important}
-          .hero-s{padding-top:96px!important;padding-bottom:32px!important}
-          .stats-inner{padding:20px 18px!important;gap:20px!important}
+          .hero-s{padding-top:96px!important;padding-bottom:40px!important}
+          .stats-inner{padding:16px!important;display:grid!important;grid-template-columns:1fr 1fr!important;gap:0!important}
+          .stats-inner > div{padding:14px 8px!important;border-right:1px solid #E2E8F0;border-bottom:1px solid #E2E8F0}
+          .stats-inner > div:nth-child(2n){border-right:none!important}
+          .stats-inner > div:nth-last-child(-n+2){border-bottom:none!important}
           .footer-row{flex-direction:column!important;align-items:center!important;text-align:center!important;gap:16px!important}
           .footer-links{justify-content:center!important}
           .col-m.gap-m-32{gap:32px!important}
+          .col-m.gap-m-16{gap:16px!important}
+          .btn-row-m{justify-content:center!important;flex-wrap:wrap!important}
+          .microstats{gap:16px!important;margin-top:28px!important;flex-wrap:wrap!important}
+          .grid-col-m{grid-template-columns:1fr!important;gap:12px!important}
+          .step-grid > div{border-right:none!important;border-bottom:1px solid #E2E8F0!important}
+          .step-grid > div:last-child{border-bottom:none!important}
+          .no-scale-m{transform:none!important;margin-top:0!important}
         }
         @media(min-width:769px){.show-m{display:none!important}}
       `}</style>
@@ -329,7 +339,7 @@ export default function LandingPage() {
             <p className="h3" style={{ fontSize:'clamp(15px,1.8vw,18px)', color:C.secondary, maxWidth:460, lineHeight:1.72, margin:'0 0 36px' }}>
               Agendamento online, confirmações automáticas no WhatsApp e gestão financeira — numa plataforma feita para barbearias e salões.
             </p>
-            <div className="h4" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+            <div className="h4 btn-row-m" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
               <Link to="/cadastro" style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:15, fontWeight:700, color:'#fff', textDecoration:'none', padding:'14px 30px', background:C.accent, borderRadius:12, boxShadow:'0 4px 20px rgba(37,99,235,0.40)', transition:'all 0.22s' }}
                 onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow='0 10px 32px rgba(37,99,235,0.50)'}}
                 onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 4px 20px rgba(37,99,235,0.40)'}}>
@@ -344,7 +354,7 @@ export default function LandingPage() {
             <p className="h4" style={{ fontSize:12, color:'#94a3b8', marginTop:18 }}>Sem cartão de crédito · Cancele quando quiser</p>
 
             {/* Micro-stats */}
-            <div className="h4" style={{ display:'flex', gap:36, marginTop:44, flexWrap:'wrap' }}>
+            <div className="h4 microstats" style={{ display:'flex', gap:36, marginTop:44, flexWrap:'wrap' }}>
               {[['200+','negócios ativos'],['12 mil+','agendamentos'],['99.9%','uptime']].map(([v,l])=>(
                 <div key={l}>
                   <p style={{ fontSize:22, fontWeight:800, color:C.text, margin:0, letterSpacing:'-0.5px' }}>{v}</p>
@@ -595,7 +605,7 @@ export default function LandingPage() {
 
           {/* Como funciona — 4 passos */}
           <Reveal style={{ marginBottom:48 }}>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', background:C.surface, borderRadius:20, border:`1px solid ${C.border}`, overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div className="step-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', background:C.surface, borderRadius:20, border:`1px solid ${C.border}`, overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
               {([
                 { step:'1', Icon:Ico.Phone,    title:'Cliente entra na fila',    desc:'Quando o dia está lotado, o cliente adiciona nome e telefone na lista de espera diretamente pela página de agendamento.' },
                 { step:'2', Icon:Ico.Calendar, title:'Horário é cancelado',      desc:'Outro cliente cancela pelo link ou o responsável cancela no painel. O sistema detecta a vaga disponível imediatamente.' },
@@ -617,7 +627,7 @@ export default function LandingPage() {
           </Reveal>
 
           {/* Comparação */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }} className="col-m gap-m-16">
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }} className="grid-col-m">
 
             {/* Sem lista de espera */}
             <Reveal from="left">
@@ -710,7 +720,7 @@ export default function LandingPage() {
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))', gap:20, maxWidth:960, margin:'0 auto' }}>
           {PLANS.map((plan, i) => (
             <Reveal key={plan.id} delay={i * 0.09}>
-              <div style={{ background:plan.hot ? C.accent : '#fff', border:`1px solid ${plan.hot ? C.accent : C.border}`, borderRadius:28, padding:'36px 30px', position:'relative', display:'flex', flexDirection:'column', boxShadow:plan.hot?'0 20px 56px rgba(37,99,235,0.28)':'0 2px 12px rgba(0,0,0,0.05)', transform:plan.hot?'scale(1.03)':'none', zIndex:plan.hot?1:0, height:'100%' }}>
+              <div className={plan.hot ? 'no-scale-m' : ''} style={{ background:plan.hot ? C.accent : '#fff', border:`1px solid ${plan.hot ? C.accent : C.border}`, borderRadius:28, padding:'36px 30px', position:'relative', display:'flex', flexDirection:'column', boxShadow:plan.hot?'0 20px 56px rgba(37,99,235,0.28)':'0 2px 12px rgba(0,0,0,0.05)', transform:plan.hot?'scale(1.03)':'none', zIndex:plan.hot?1:0, height:'100%' }}>
                 {plan.badge && (
                   <div style={{ position:'absolute', top:-14, left:'50%', transform:'translateX(-50%)', whiteSpace:'nowrap' }}>
                     <span style={{ background:plan.hot?'#fff':C.accent, color:plan.hot?C.accent:'#fff', fontSize:11, fontWeight:800, padding:'5px 16px', borderRadius:99, boxShadow:'0 2px 8px rgba(0,0,0,0.12)' }}>{plan.badge}</span>
