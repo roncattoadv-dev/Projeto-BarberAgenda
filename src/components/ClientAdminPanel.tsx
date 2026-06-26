@@ -2100,13 +2100,18 @@ export default function ClientAdminPanel({
                           setAgendaSaving(false);
                         };
 
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        const CARD: React.CSSProperties = { background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
+                        const LABEL: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 4px' };
+                        const HINT: React.CSSProperties  = { fontSize: 12, color: '#9CA3AF', margin: '0 0 12px' };
 
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                            {/* ── Modo de conclusão ── */}
+                            <div style={{ ...CARD, display: 'flex', flexDirection: 'column', gap: 16 }}>
                               <div>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 4px' }}>Modo de conclusão de atendimentos</p>
-                                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 16px' }}>Define o que acontece quando o horário de um atendimento passa.</p>
+                                <p style={LABEL}>Modo de conclusão de atendimentos</p>
+                                <p style={{ ...HINT, margin: '0 0 16px' }}>Define o que acontece quando o horário de um atendimento passa.</p>
                                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
                                   {MODES.map(m => {
                                     const sel = agendaMode === m.id;
@@ -2147,7 +2152,7 @@ export default function ClientAdminPanel({
                                   ? `Ex: serviço das 14:00 (30 min) → fim às 14:30 → se não concluído, cancelado automaticamente ${agendaTimeMinutes} min depois, às ${actTime}`
                                   : 'Ex: sem automação — o status de cada atendimento deve ser definido manualmente pelo painel.';
                                 return (
-                                  <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 20 }}>
+                                  <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 16 }}>
                                     {agendaMode !== 'manual' && (
                                       <>
                                         <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 12px' }}>Tempo de espera após fim do atendimento</p>
@@ -2169,156 +2174,153 @@ export default function ClientAdminPanel({
                                   </div>
                                 );
                               })()}
-
-                              {/* Fuso horário */}
-                              <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 20 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 6px' }}>Fuso Horário</p>
-                                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 12px' }}>
-                                  Define o horário local usado nos agendamentos e nas automações.
-                                </p>
-                                <select value={agendaTimezone} onChange={e => setAgendaTimezone(e.target.value)}
-                                  style={{ width: '100%', padding: '10px 14px', background: '#FFFFFF', border: '1px solid #D1D5DB', borderRadius: 10, fontSize: 13, color: '#111827', outline: 'none', fontFamily: 'Outfit, sans-serif', cursor: 'pointer' }}>
-                                  <optgroup label="Brasil">
-                                    <option value="America/Sao_Paulo">Brasília / São Paulo / Rio de Janeiro (UTC-3)</option>
-                                    <option value="America/Fortaleza">Nordeste — CE, RN, PB, PI, MA, SE, AL (UTC-3)</option>
-                                    <option value="America/Belem">Pará / Amapá (UTC-3)</option>
-                                    <option value="America/Manaus">Amazonas / Mato Grosso (UTC-4)</option>
-                                    <option value="America/Porto_Velho">Rondônia (UTC-4)</option>
-                                    <option value="America/Boa_Vista">Roraima (UTC-4)</option>
-                                    <option value="America/Rio_Branco">Acre (UTC-5)</option>
-                                    <option value="America/Noronha">Fernando de Noronha (UTC-2)</option>
-                                    <option value="America/Cuiaba">Mato Grosso do Sul (UTC-4)</option>
-                                  </optgroup>
-                                  <optgroup label="América do Norte">
-                                    <option value="America/New_York">Nova York / Miami (UTC-5/-4)</option>
-                                    <option value="America/Chicago">Chicago / Houston (UTC-6/-5)</option>
-                                    <option value="America/Denver">Denver (UTC-7/-6)</option>
-                                    <option value="America/Los_Angeles">Los Angeles / Seattle (UTC-8/-7)</option>
-                                    <option value="America/Toronto">Toronto / Ottawa (UTC-5/-4)</option>
-                                  </optgroup>
-                                  <optgroup label="Europa">
-                                    <option value="Europe/Lisbon">Lisboa (UTC+0/+1)</option>
-                                    <option value="Europe/London">Londres (UTC+0/+1)</option>
-                                    <option value="Europe/Madrid">Madri / Paris / Roma (UTC+1/+2)</option>
-                                    <option value="Europe/Berlin">Berlim / Amsterdã (UTC+1/+2)</option>
-                                  </optgroup>
-                                  <optgroup label="Outros">
-                                    <option value="UTC">UTC / GMT (sem offset)</option>
-                                    <option value="America/Buenos_Aires">Buenos Aires (UTC-3)</option>
-                                    <option value="America/Santiago">Santiago (UTC-4/-3)</option>
-                                    <option value="America/Bogota">Bogotá / Lima (UTC-5)</option>
-                                    <option value="America/Mexico_City">Cidade do México (UTC-6/-5)</option>
-                                  </optgroup>
-                                </select>
-                                {(() => {
-                                  try {
-                                    const nowLocal = new Date().toLocaleTimeString('pt-BR', { timeZone: agendaTimezone, hour: '2-digit', minute: '2-digit', hour12: false });
-                                    return <p style={{ fontSize: 11, color: '#6B7280', margin: '8px 0 0' }}>🕐 Horário atual neste fuso: <strong>{nowLocal}</strong></p>;
-                                  } catch { return null; }
-                                })()}
-                              </div>
-
-                              {/* Lista de Espera */}
-                              <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 20 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 12px' }}>Lista de Espera</p>
-                                <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '14px 16px', display: 'flex', gap: 14 }}>
-                                  <div style={{ flex: 1 }}>
-                                    <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>Ativar lista de espera no link de agendamento</p>
-                                    <p style={{ fontSize: 12, color: '#6B7280', margin: 0, lineHeight: 1.5 }}>
-                                      Quando ativa, clientes podem entrar em uma fila ao selecionar um dia sem horários disponíveis. Ao cancelar qualquer agendamento, o sistema avisa automaticamente os candidatos compatíveis na fila.
-                                    </p>
-                                  </div>
-                                  <button type="button" onClick={() => setBookingWaitlistEnabled(v => !v)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', flexShrink: 0, alignSelf: 'center', transition: 'all 0.15s',
-                                      background: bookingWaitlistEnabled ? '#DCFCE7' : '#F1F5F9',
-                                      color:      bookingWaitlistEnabled ? '#166534'  : '#6B7280',
-                                      border:     `1px solid ${bookingWaitlistEnabled ? '#86EFAC' : '#E2E8F0'}` }}>
-                                    {bookingWaitlistEnabled ? <><CheckCheck size={13} /> Ativada</> : <><EyeOff size={13} /> Desativada</>}
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* Método de pagamento padrão */}
-                              <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 20 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 6px' }}>Método de Pagamento Padrão</p>
-                                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 12px' }}>
-                                  Forma de pagamento registrada automaticamente ao concluir um atendimento.
-                                </p>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                  {([
-                                    { id: 'pix',         label: '💠 Pix' },
-                                    { id: 'cash',        label: '💵 Dinheiro' },
-                                    { id: 'credit_card', label: '💳 Cartão' },
-                                  ] as { id: 'pix' | 'cash' | 'credit_card'; label: string }[]).map(opt => {
-                                    const sel = defaultPaymentMethod === opt.id;
-                                    return (
-                                      <button key={opt.id} type="button" onClick={() => setDefaultPaymentMethod(opt.id)}
-                                        style={{ flex: 1, padding: '10px 8px', borderRadius: 10, border: `2px solid ${sel ? '#2563EB' : '#E2E8F0'}`, background: sel ? '#EFF6FF' : '#FAFAFA', fontSize: 12, fontWeight: 700, color: sel ? '#1E40AF' : '#374151', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}>
-                                        {opt.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-
-                              {/* Horário de exibição da agenda */}
-                              <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 20 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 4px' }}>Exibição visual da agenda</p>
-                                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 14px' }}>Define o intervalo de horas mostrado na agenda. Horários fora desse range ficam ocultos.</p>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                  <div style={{ flex: 1 }}>
-                                    <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1px', display: 'block', marginBottom: 6 }}>Início</label>
-                                    <select value={agendaDisplayStart} onChange={e => setAgendaDisplayStart(Number(e.target.value))}
-                                      className="navy-input" style={{ width: '100%' }}>
-                                      {Array.from({ length: 24 }, (_, i) => (
-                                        <option key={i} value={i} disabled={i >= agendaDisplayEnd}>{String(i).padStart(2, '0')}:00</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <span style={{ fontSize: 18, color: '#D1D5DB', paddingTop: 18 }}>→</span>
-                                  <div style={{ flex: 1 }}>
-                                    <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1px', display: 'block', marginBottom: 6 }}>Fim</label>
-                                    <select value={agendaDisplayEnd} onChange={e => setAgendaDisplayEnd(Number(e.target.value))}
-                                      className="navy-input" style={{ width: '100%' }}>
-                                      {Array.from({ length: 24 }, (_, i) => (
-                                        <option key={i} value={i} disabled={i <= agendaDisplayStart}>{String(i).padStart(2, '0')}:00</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div style={{ flexShrink: 0, paddingTop: 18 }}>
-                                    <div style={{ padding: '8px 14px', borderRadius: 8, background: '#EFF6FF', border: '1px solid #BFDBFE', fontSize: 12, fontWeight: 700, color: '#1D4ED8', fontVariantNumeric: 'tabular-nums' }}>
-                                      {agendaDisplayEnd - agendaDisplayStart}h
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Boas práticas */}
-                              <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 20 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  💡 Boas práticas para melhor desempenho
-                                </p>
-                                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
-                                  {[
-                                    { icon: '📲', text: 'Instrua os clientes a cancelarem pelo link de cancelamento recebido no WhatsApp caso não possam comparecer — isso libera a vaga automaticamente e ativa a lista de espera.' },
-                                    { icon: '⏰', text: 'Configure um lembrete automático em Automações → Templates para reforçar o pedido de cancelamento antecipado com antecedência de 12 a 24 horas.' },
-                                    { icon: '📋', text: 'Adicione no template de confirmação: "Não conseguirá comparecer? Cancele pelo link abaixo para liberar a vaga para outro cliente."' },
-                                    { icon: '🔄', text: 'Com a Conclusão Automática ativa, você só precisa atender — o sistema registra e conclui. Reserve a ação de cancelar para faltas reais.' },
-                                    { icon: '🎯', text: 'Com a lista de espera ativa, cada cancelamento vira uma oportunidade de faturamento — o sistema notifica automaticamente quem estava esperando.' },
-                                  ].map(({ icon, text }) => (
-                                    <div key={icon} style={{ display: 'flex', gap: 10, fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
-                                      <span style={{ flexShrink: 0 }}>{icon}</span>
-                                      <span>{text}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <button type="button" onClick={handleSave} disabled={agendaSaving}
-                                style={{ padding: 13, background: agendaSaving ? '#93C5FD' : '#2563EB', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: agendaSaving ? 'wait' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                                {agendaSaving ? 'Salvando…' : 'Salvar Configurações da Agenda'}
-                              </button>
                             </div>
+
+                            {/* ── Exibição visual da agenda ── */}
+                            <div style={CARD}>
+                              <p style={LABEL}>Exibição visual da agenda</p>
+                              <p style={{ ...HINT, margin: '0 0 14px' }}>Define o intervalo de horas mostrado na agenda. Horários fora desse range ficam ocultos.</p>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ flex: 1 }}>
+                                  <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1px', display: 'block', marginBottom: 6 }}>Início</label>
+                                  <select value={agendaDisplayStart} onChange={e => setAgendaDisplayStart(Number(e.target.value))}
+                                    className="navy-input" style={{ width: '100%' }}>
+                                    {Array.from({ length: 24 }, (_, i) => (
+                                      <option key={i} value={i} disabled={i >= agendaDisplayEnd}>{String(i).padStart(2, '0')}:00</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <span style={{ fontSize: 18, color: '#D1D5DB', paddingTop: 18 }}>→</span>
+                                <div style={{ flex: 1 }}>
+                                  <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1px', display: 'block', marginBottom: 6 }}>Fim</label>
+                                  <select value={agendaDisplayEnd} onChange={e => setAgendaDisplayEnd(Number(e.target.value))}
+                                    className="navy-input" style={{ width: '100%' }}>
+                                    {Array.from({ length: 24 }, (_, i) => (
+                                      <option key={i} value={i} disabled={i <= agendaDisplayStart}>{String(i).padStart(2, '0')}:00</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div style={{ flexShrink: 0, paddingTop: 18 }}>
+                                  <div style={{ padding: '8px 14px', borderRadius: 8, background: '#EFF6FF', border: '1px solid #BFDBFE', fontSize: 12, fontWeight: 700, color: '#1D4ED8', fontVariantNumeric: 'tabular-nums' }}>
+                                    {agendaDisplayEnd - agendaDisplayStart}h
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* ── Fuso Horário ── */}
+                            <div style={CARD}>
+                              <p style={LABEL}>Fuso Horário</p>
+                              <p style={HINT}>Define o horário local usado nos agendamentos e nas automações.</p>
+                              <select value={agendaTimezone} onChange={e => setAgendaTimezone(e.target.value)}
+                                style={{ width: '100%', padding: '10px 14px', background: '#FFFFFF', border: '1px solid #D1D5DB', borderRadius: 10, fontSize: 13, color: '#111827', outline: 'none', fontFamily: 'Outfit, sans-serif', cursor: 'pointer' }}>
+                                <optgroup label="Brasil">
+                                  <option value="America/Sao_Paulo">Brasília / São Paulo / Rio de Janeiro (UTC-3)</option>
+                                  <option value="America/Fortaleza">Nordeste — CE, RN, PB, PI, MA, SE, AL (UTC-3)</option>
+                                  <option value="America/Belem">Pará / Amapá (UTC-3)</option>
+                                  <option value="America/Manaus">Amazonas / Mato Grosso (UTC-4)</option>
+                                  <option value="America/Porto_Velho">Rondônia (UTC-4)</option>
+                                  <option value="America/Boa_Vista">Roraima (UTC-4)</option>
+                                  <option value="America/Rio_Branco">Acre (UTC-5)</option>
+                                  <option value="America/Noronha">Fernando de Noronha (UTC-2)</option>
+                                  <option value="America/Cuiaba">Mato Grosso do Sul (UTC-4)</option>
+                                </optgroup>
+                                <optgroup label="América do Norte">
+                                  <option value="America/New_York">Nova York / Miami (UTC-5/-4)</option>
+                                  <option value="America/Chicago">Chicago / Houston (UTC-6/-5)</option>
+                                  <option value="America/Denver">Denver (UTC-7/-6)</option>
+                                  <option value="America/Los_Angeles">Los Angeles / Seattle (UTC-8/-7)</option>
+                                  <option value="America/Toronto">Toronto / Ottawa (UTC-5/-4)</option>
+                                </optgroup>
+                                <optgroup label="Europa">
+                                  <option value="Europe/Lisbon">Lisboa (UTC+0/+1)</option>
+                                  <option value="Europe/London">Londres (UTC+0/+1)</option>
+                                  <option value="Europe/Madrid">Madri / Paris / Roma (UTC+1/+2)</option>
+                                  <option value="Europe/Berlin">Berlim / Amsterdã (UTC+1/+2)</option>
+                                </optgroup>
+                                <optgroup label="Outros">
+                                  <option value="UTC">UTC / GMT (sem offset)</option>
+                                  <option value="America/Buenos_Aires">Buenos Aires (UTC-3)</option>
+                                  <option value="America/Santiago">Santiago (UTC-4/-3)</option>
+                                  <option value="America/Bogota">Bogotá / Lima (UTC-5)</option>
+                                  <option value="America/Mexico_City">Cidade do México (UTC-6/-5)</option>
+                                </optgroup>
+                              </select>
+                              {(() => {
+                                try {
+                                  const nowLocal = new Date().toLocaleTimeString('pt-BR', { timeZone: agendaTimezone, hour: '2-digit', minute: '2-digit', hour12: false });
+                                  return <p style={{ fontSize: 11, color: '#6B7280', margin: '8px 0 0' }}>🕐 Horário atual neste fuso: <strong>{nowLocal}</strong></p>;
+                                } catch { return null; }
+                              })()}
+                            </div>
+
+                            {/* ── Lista de Espera ── */}
+                            <div style={CARD}>
+                              <p style={{ ...LABEL, margin: '0 0 12px' }}>Lista de Espera</p>
+                              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '14px 16px', display: 'flex', gap: 14 }}>
+                                <div style={{ flex: 1 }}>
+                                  <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>Ativar lista de espera no link de agendamento</p>
+                                  <p style={{ fontSize: 12, color: '#6B7280', margin: 0, lineHeight: 1.5 }}>
+                                    Quando ativa, clientes podem entrar em uma fila ao selecionar um dia sem horários disponíveis. Ao cancelar qualquer agendamento, o sistema avisa automaticamente os candidatos compatíveis na fila.
+                                  </p>
+                                </div>
+                                <button type="button" onClick={() => setBookingWaitlistEnabled(v => !v)}
+                                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', flexShrink: 0, alignSelf: 'center', transition: 'all 0.15s',
+                                    background: bookingWaitlistEnabled ? '#DCFCE7' : '#F1F5F9',
+                                    color:      bookingWaitlistEnabled ? '#166534'  : '#6B7280',
+                                    border:     `1px solid ${bookingWaitlistEnabled ? '#86EFAC' : '#E2E8F0'}` }}>
+                                  {bookingWaitlistEnabled ? <><CheckCheck size={13} /> Ativada</> : <><EyeOff size={13} /> Desativada</>}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* ── Método de Pagamento Padrão ── */}
+                            <div style={CARD}>
+                              <p style={LABEL}>Método de Pagamento Padrão</p>
+                              <p style={HINT}>Forma de pagamento registrada automaticamente ao concluir um atendimento.</p>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                {([
+                                  { id: 'pix',         label: '💠 Pix' },
+                                  { id: 'cash',        label: '💵 Dinheiro' },
+                                  { id: 'credit_card', label: '💳 Cartão' },
+                                ] as { id: 'pix' | 'cash' | 'credit_card'; label: string }[]).map(opt => {
+                                  const sel = defaultPaymentMethod === opt.id;
+                                  return (
+                                    <button key={opt.id} type="button" onClick={() => setDefaultPaymentMethod(opt.id)}
+                                      style={{ flex: 1, padding: '10px 8px', borderRadius: 10, border: `2px solid ${sel ? '#2563EB' : '#E2E8F0'}`, background: sel ? '#EFF6FF' : '#FAFAFA', fontSize: 12, fontWeight: 700, color: sel ? '#1E40AF' : '#374151', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}>
+                                      {opt.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* ── Boas práticas ── */}
+                            <div style={{ ...CARD, background: '#FAFBFF', border: '1px solid #E0E7FF' }}>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                💡 Boas práticas para melhor desempenho
+                              </p>
+                              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+                                {[
+                                  { icon: '📲', text: 'Instrua os clientes a cancelarem pelo link de cancelamento recebido no WhatsApp caso não possam comparecer — isso libera a vaga automaticamente e ativa a lista de espera.' },
+                                  { icon: '⏰', text: 'Configure um lembrete automático em Automações → Templates para reforçar o pedido de cancelamento antecipado com antecedência de 12 a 24 horas.' },
+                                  { icon: '📋', text: 'Adicione no template de confirmação: "Não conseguirá comparecer? Cancele pelo link abaixo para liberar a vaga para outro cliente."' },
+                                  { icon: '🔄', text: 'Com a Conclusão Automática ativa, você só precisa atender — o sistema registra e conclui. Reserve a ação de cancelar para faltas reais.' },
+                                  { icon: '🎯', text: 'Com a lista de espera ativa, cada cancelamento vira uma oportunidade de faturamento — o sistema notifica automaticamente quem estava esperando.' },
+                                ].map(({ icon, text }) => (
+                                  <div key={icon} style={{ display: 'flex', gap: 10, fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
+                                    <span style={{ flexShrink: 0 }}>{icon}</span>
+                                    <span>{text}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* ── Salvar ── */}
+                            <button type="button" onClick={handleSave} disabled={agendaSaving}
+                              style={{ padding: 13, background: agendaSaving ? '#93C5FD' : '#2563EB', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: agendaSaving ? 'wait' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                              {agendaSaving ? 'Salvando…' : 'Salvar Configurações da Agenda'}
+                            </button>
                           </div>
                         );
                       })()}
