@@ -16,6 +16,7 @@ import {
   createSubscription,
   cancelSubscription,
   getPendingPaymentLink,
+  PLAN_PRICES,
   type AsaasWebhookPayload,
 } from './asaas';
 import {
@@ -250,7 +251,7 @@ app.post('/api/register', async (req, res) => {
       // Salva customer_id imediatamente — evita criar duplicata se subscription falhar
       await supabase.from('tenants').update({ asaas_customer_id: asaasCustomerId }).eq('id', tenant.id);
 
-      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', 10);
+      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', 7);
       asaasSubscriptionId   = subscription.id;
 
       await supabase.from('tenants').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
@@ -337,21 +338,26 @@ app.get('/api/billing/payment-link', async (req, res) => {
     const plan    = (req.query.plan    as string) || 'mensal';
     const cpfCnpj = (req.query.cpfCnpj as string) || undefined;
 
-    // Se já tem assinatura UNDEFINED (multi-método), reutiliza
+    // Verifica assinatura existente — reutiliza somente se ciclo for o mesmo
     if (tenant.asaas_subscription_id) {
       try {
         const subRes = await fetch(`${asaasBase}/subscriptions/${tenant.asaas_subscription_id}`, {
           headers: { 'access_token': asaasKey },
         });
         const sub = subRes.ok ? await subRes.json() : null;
-        if (sub && sub.billingType === 'UNDEFINED') {
+        const requestedCycle = PLAN_PRICES[plan]?.cycle ?? 'MONTHLY';
+        const sameCycle = sub?.cycle === requestedCycle;
+
+        if (sub && sub.billingType === 'UNDEFINED' && sameCycle) {
+          // Mesmo plano — reutiliza cobrança pendente
           const payment = await getPendingPaymentId(tenant.asaas_subscription_id);
           if (payment) {
             const pix = await getPixForPayment(payment.id);
             return res.json({ url: payment.invoiceUrl || payment.bankSlipUrl, ...pix });
           }
-        } else {
-          // Assinatura antiga com tipo errado — cancela para recriar
+        } else if (sub) {
+          // Plano diferente ou tipo errado — cancela para recriar com o novo ciclo
+          console.log(`[PaymentLink] Trocando plano: ${sub.cycle} → ${requestedCycle}`);
           await fetch(`${asaasBase}/subscriptions/${tenant.asaas_subscription_id}`, {
             method: 'DELETE', headers: { 'access_token': asaasKey },
           }).catch(() => {});
@@ -392,6 +398,7 @@ app.get('/api/billing/payment-link', async (req, res) => {
     await supabase.from('tenants').update({
       asaas_customer_id:     customerId,
       asaas_subscription_id: subscription.id,
+      plan,
     }).eq('id', tenantId);
 
     const payment = await getPendingPaymentId(subscription.id);
@@ -557,7 +564,7 @@ app.post('/api/register-google', async (req, res) => {
       // Salva customer_id imediatamente — evita criar duplicata se subscription falhar
       await supabase.from('tenants').update({ asaas_customer_id: asaasCustomer.id }).eq('id', tenant.id);
 
-      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', 10);
+      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', 7);
       asaasSubscriptionId   = subscription.id;
       await supabase.from('tenants').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
     } catch (asaasErr) {
@@ -623,7 +630,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
     // Busca o tenant pelo asaas_subscription_id
     const { data: tenant } = await supabase
       .from('tenants')
-      .select('id, name, status, subscription_ends_at')
+      .select('id, name, status, plan, subscription_ends_at')
       .eq('asaas_subscription_id', subscriptionId)
       .maybeSingle();
 
@@ -639,18 +646,25 @@ app.post('/api/webhook/asaas', async (req, res) => {
     switch (event) {
       case 'PAYMENT_RECEIVED':
       case 'PAYMENT_CONFIRMED': {
+        // Determina quantos meses adicionar conforme o plano armazenado no tenant
+        const planInfo   = PLAN_PRICES[tenant.plan ?? ''] ?? PLAN_PRICES.mensal;
+        const planMonths = planInfo.months; // 1 = mensal, 3 = trimestral, 12 = anual
+        const planName   = tenant.plan && PLAN_PRICES[tenant.plan] ? tenant.plan : 'mensal';
+        const monthlyValue = planInfo.months > 0
+          ? parseFloat((payment?.value ?? 89.90) / planInfo.months).toFixed(2)
+          : 89.90;
+
         // Base = max(dias restantes do plano atual, dueDate do pagamento)
-        // Garante que dias restantes não são perdidos ao trocar/renovar plano
         const today     = new Date();
         const dueBase   = payment?.dueDate ? new Date(payment.dueDate + 'T12:00:00Z') : today;
         const currentEnd = tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at + 'T12:00:00Z') : today;
         const base = currentEnd > dueBase ? currentEnd : dueBase;
-        base.setMonth(base.getMonth() + 1);
+        base.setMonth(base.getMonth() + planMonths);
         const subscriptionEndsAt = base.toISOString().split('T')[0];
         await supabase.from('tenants').update({
           status: 'active',
-          plan:   'mensal',
-          mrr:    89.90,
+          plan:   planName,
+          mrr:    parseFloat(monthlyValue as string),
           subscription_ends_at: subscriptionEndsAt,
         }).eq('id', tenant.id);
         newStatus  = 'active';
