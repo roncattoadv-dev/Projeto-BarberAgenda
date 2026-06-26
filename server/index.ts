@@ -427,50 +427,61 @@ app.delete('/api/account', async (req, res) => {
   if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório.' });
 
   try {
-    // Verifica que o usuário é dono deste tenant
     const { data: tenant } = await supabase
-      .from('tenants').select('id, asaas_subscription_id').eq('id', tenantId).maybeSingle();
+      .from('tenants').select('id, slug, asaas_subscription_id').eq('id', tenantId).maybeSingle();
     if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
 
-    const { data: profile } = await supabasePublic
+    const { data: callerProfile } = await supabasePublic
       .from('profiles').select('tenant_id, role').eq('id', user.id).maybeSingle();
-
-    const isSuperAdmin = profile?.role === 'super_admin';
-
-    if (!isSuperAdmin && profile?.tenant_id !== tenantId) {
+    const isSuperAdmin = callerProfile?.role === 'super_admin';
+    if (!isSuperAdmin && callerProfile?.tenant_id !== tenantId) {
       return res.status(403).json({ error: 'Acesso negado.' });
     }
 
-    // Busca o usuário dono do tenant (para deletar o auth user)
-    const { data: tenantProfile } = await supabasePublic
-      .from('profiles').select('id').eq('tenant_id', tenantId).eq('role', 'tenant_admin').maybeSingle();
+    // Busca TODOS os profiles do tenant ANTES de deletar qualquer dado
+    const { data: allProfiles } = await supabasePublic
+      .from('profiles').select('id, role, email').eq('tenant_id', tenantId);
+
+    const adminProfile = allProfiles?.find(p => p.role === 'tenant_admin');
+    const adminEmail   = adminProfile
+      ? (await supabasePublic.auth.admin.getUserById(adminProfile.id).then(r => r.data.user?.email ?? '')).catch(() => '') ?? ''
+      : '';
 
     // Registra email em used_trials ANTES de deletar (impede abuso de trial)
-    const targetUserId = isSuperAdmin ? tenantProfile?.id : user.id;
-    const email = isSuperAdmin
-      ? (await supabasePublic.auth.admin.getUserById(targetUserId ?? '').then(r => r.data.user?.email ?? '')).catch?.(() => '') ?? ''
-      : user.email ?? '';
-    if (email) {
-      await supabasePublic.from('used_trials').upsert({ email, deleted_at: new Date().toISOString() });
+    if (adminEmail) {
+      await supabasePublic.from('used_trials').upsert({ email: adminEmail, deleted_at: new Date().toISOString() });
     }
 
-    // Cancela assinatura Asaas se existir
+    // 1. Cancela assinatura Asaas (non-fatal)
     if (tenant.asaas_subscription_id) {
       try { await cancelSubscription(tenant.asaas_subscription_id); } catch {}
     }
 
-    // Deleta tenant — CASCADE remove appointments, professionals, services, etc.
-    await supabase.from('tenants').delete().eq('id', tenantId);
-
-    // Deleta profiles do tenant
-    await supabasePublic.from('profiles').delete().eq('tenant_id', tenantId);
-
-    // Deleta usuário do auth
-    if (targetUserId) {
-      await supabasePublic.auth.admin.deleteUser(targetUserId);
+    // 2. Remove instância WhatsApp no EvoGo (non-fatal)
+    if (EVO_URL && EVO_GLOBAL_KEY && tenant.slug) {
+      try {
+        await fetch(`${EVO_URL}/instance/delete/${tenant.slug}`, {
+          method: 'DELETE',
+          headers: { apikey: EVO_GLOBAL_KEY },
+        });
+      } catch {}
     }
 
-    console.log(`[DeleteAccount] Conta excluída: tenant=${tenantId} user=${user.id} email=${email}`);
+    // 3. Deleta audit_logs (sem FK para tenant, precisa ser explícito)
+    await supabasePublic.from('audit_logs').delete().eq('tenant_id', tenantId);
+
+    // 4. Deleta tenant — CASCADE remove appointments, professionals, services, etc.
+    await supabase.from('tenants').delete().eq('id', tenantId);
+
+    // 5. Deleta profiles (podem ter sido cascadeados mas garante explicitamente)
+    await supabasePublic.from('profiles').delete().eq('tenant_id', tenantId);
+
+    // 6. Deleta TODOS os auth users do tenant (admin + profissionais)
+    for (const p of allProfiles ?? []) {
+      try { await supabasePublic.auth.admin.deleteUser(p.id); } catch {}
+    }
+
+    console.log(`[DeleteAccount] Tenant ${tenantId} (${tenant.slug}) excluído. Users: ${(allProfiles ?? []).length}`);
     return res.status(200).json({ ok: true });
 
   } catch (err: any) {
@@ -799,57 +810,6 @@ app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
 });
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DELETE /api/account
-// Exclui todos os dados do tenant (LGPD) — irreversível
-// ─────────────────────────────────────────────────────────────────────────────
-app.delete('/api/account', verifyTenant, async (req, res) => {
-  const tenantId = (req as any).verifiedTenantId as string;
-
-  try {
-    const { data: tenant } = await supabase
-      .from('tenants').select('id, slug, asaas_subscription_id').eq('id', tenantId).maybeSingle();
-
-    if (!tenant) return res.status(404).json({ error: 'Tenant não encontrado.' });
-
-    // 1. Cancela assinatura no Asaas (non-fatal)
-    if (tenant.asaas_subscription_id) {
-      try { await cancelSubscription(tenant.asaas_subscription_id); } catch {}
-    }
-
-    // 2. Remove instância WhatsApp no EvoGo (non-fatal)
-    if (EVO_URL && EVO_GLOBAL_KEY) {
-      try {
-        await fetch(`${EVO_URL}/instance/delete/${tenant.slug}`, {
-          method: 'DELETE',
-          headers: { apikey: EVO_GLOBAL_KEY },
-        });
-      } catch {}
-    }
-
-    // 3. Deleta dados do tenant em cascata (FK ON DELETE CASCADE cobre a maioria)
-    // Deleta explicitamente audit_logs (sem FK para tenant)
-    await supabasePublic.from('audit_logs').delete().eq('tenant_id', tenantId);
-
-    // 4. Deleta o tenant (cascade: appointments, customers, services, professionals, etc.)
-    await supabase.from('tenants').delete().eq('id', tenantId);
-
-    // 5. Deleta usuários do auth vinculados ao tenant
-    const { data: profiles } = await supabasePublic
-      .from('profiles').select('id').eq('tenant_id', tenantId);
-
-    for (const profile of profiles ?? []) {
-      try { await supabasePublic.auth.admin.deleteUser(profile.id); } catch {}
-    }
-
-    console.log(`[Account] Tenant ${tenantId} (${tenant.slug}) excluído por solicitação LGPD.`);
-    return res.json({ ok: true });
-
-  } catch (err: any) {
-    console.error('[Account] Delete error:', err);
-    return res.status(500).json({ error: err.message });
-  }
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Templates de notificação WhatsApp — padrões editáveis por tenant
