@@ -247,15 +247,13 @@ app.post('/api/register', async (req, res) => {
     try {
       const asaasCustomer = await createAsaasCustomer({ name, email, phone, cpfCnpj, tenantId: tenant.id });
       asaasCustomerId     = asaasCustomer.id;
+      // Salva customer_id imediatamente — evita criar duplicata se subscription falhar
+      await supabase.from('tenants').update({ asaas_customer_id: asaasCustomerId }).eq('id', tenant.id);
 
-      const subscription    = await createSubscription(asaasCustomer.id, 10);
+      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', 10);
       asaasSubscriptionId   = subscription.id;
 
-      // Salva os IDs do Asaas no tenant
-      await supabase.from('tenants').update({
-        asaas_customer_id:     asaasCustomerId,
-        asaas_subscription_id: asaasSubscriptionId,
-      }).eq('id', tenant.id);
+      await supabase.from('tenants').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
     } catch (asaasErr) {
       // Asaas falhou — não bloqueia o cadastro, apenas loga
       console.error('[Register] Asaas error (non-fatal):', asaasErr);
@@ -362,12 +360,26 @@ app.get('/api/billing/payment-link', async (req, res) => {
       } catch {}
     }
 
-    // Cria ou atualiza cliente no Asaas
+    // Cria ou reutiliza cliente no Asaas
     let customerId = tenant.asaas_customer_id;
     if (!customerId) {
-      const customer = await createAsaasCustomer({ name: tenant.name, email: user.email!, cpfCnpj, tenantId: tenant.id });
-      customerId = customer.id;
-    } else if (cpfCnpj) {
+      // Verifica se já existe cliente com externalReference = tenantId (evita duplicata)
+      const existingRes = await fetch(`${asaasBase}/customers?externalReference=${tenant.id}&limit=1`, {
+        headers: { 'access_token': asaasKey },
+      });
+      const existingData = existingRes.ok ? await existingRes.json() : null;
+      const existing = existingData?.data?.[0];
+      if (existing) {
+        customerId = existing.id;
+      } else {
+        const customer = await createAsaasCustomer({ name: tenant.name, email: user.email!, cpfCnpj, tenantId: tenant.id });
+        customerId = customer.id;
+      }
+      // Salva imediatamente — evita criar duplicata se a subscription falhar a seguir
+      await supabase.from('tenants').update({ asaas_customer_id: customerId }).eq('id', tenantId);
+    }
+
+    if (cpfCnpj) {
       // Atualiza CPF no cliente existente (pode ter sido criado sem CPF)
       await fetch(`${asaasBase}/customers/${customerId}`, {
         method: 'PUT',
@@ -542,12 +554,12 @@ app.post('/api/register-google', async (req, res) => {
     let asaasSubscriptionId = null;
     try {
       const asaasCustomer   = await createAsaasCustomer({ name, email, phone, tenantId: tenant.id });
-      const subscription    = await createSubscription(asaasCustomer.id, 10);
+      // Salva customer_id imediatamente — evita criar duplicata se subscription falhar
+      await supabase.from('tenants').update({ asaas_customer_id: asaasCustomer.id }).eq('id', tenant.id);
+
+      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', 10);
       asaasSubscriptionId   = subscription.id;
-      await supabase.from('tenants').update({
-        asaas_customer_id:     asaasCustomer.id,
-        asaas_subscription_id: asaasSubscriptionId,
-      }).eq('id', tenant.id);
+      await supabase.from('tenants').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
     } catch (asaasErr) {
       console.error('[RegisterGoogle] Asaas error (non-fatal):', asaasErr);
     }
@@ -763,49 +775,6 @@ app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/billing/payment-link
-// Retorna o link de pagamento da cobrança pendente/vencida do tenant
-// ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/billing/payment-link', verifyTenant, async (req, res) => {
-  const tenantId = (req as any).verifiedTenantId as string;
-  const { data: tenant } = await supabase
-    .from('tenants').select('asaas_subscription_id, asaas_customer_id, plan').eq('id', tenantId).maybeSingle();
-
-  if (!tenant?.asaas_subscription_id && !tenant?.asaas_customer_id) {
-    return res.status(404).json({ error: 'Assinatura não encontrada.' });
-  }
-
-  try {
-    const asaasUrl = getAsaasUrl();
-    const key = getAsaasKey();
-
-    const [rSub, rCust] = await Promise.all([
-      tenant.asaas_subscription_id
-        ? fetch(`${asaasUrl}/payments?subscription=${tenant.asaas_subscription_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json())
-        : { data: [] },
-      tenant.asaas_customer_id
-        ? fetch(`${asaasUrl}/payments?customer=${tenant.asaas_customer_id}&limit=10`, { headers: { 'access_token': key } }).then(r => r.json())
-        : { data: [] },
-    ]);
-
-    const allPayments = [...(rSub?.data ?? []), ...(rCust?.data ?? [])];
-    const seen = new Set();
-    const unique = allPayments.filter((p: any) => !seen.has(p.id) && seen.add(p.id));
-
-    const priority = ['OVERDUE', 'PENDING'];
-    let payment = unique.find((p: any) => priority.includes(p.status));
-    if (!payment) {
-      payment = unique.sort((a: any, b: any) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())[0];
-    }
-
-    if (!payment?.invoiceUrl) return res.status(404).json({ error: 'Nenhuma cobrança encontrada.' });
-
-    return res.json({ url: payment.invoiceUrl, dueDate: payment.dueDate, value: payment.value });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/account
