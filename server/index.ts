@@ -738,7 +738,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
 app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { data: tenant } = await supabase
-    .from('tenants').select('asaas_subscription_id, asaas_customer_id, status, subscription_ends_at').eq('id', tenantId).maybeSingle();
+    .from('tenants').select('asaas_subscription_id, asaas_customer_id, status, plan, subscription_ends_at').eq('id', tenantId).maybeSingle();
 
   if (!tenant?.asaas_customer_id && !tenant?.asaas_subscription_id) {
     return res.status(404).json({ error: 'Assinatura não encontrada.' });
@@ -760,27 +760,36 @@ app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
     const allPayments = [...(rSub?.data ?? []), ...(rCust?.data ?? [])];
     const seen = new Set();
     const unique = allPayments.filter((p: any) => !seen.has(p.id) && seen.add(p.id));
-    const confirmed = unique.find((p: any) => p.status === 'RECEIVED' || p.status === 'CONFIRMED');
+    // Ordena por dueDate desc para pegar o pagamento mais recente confirmado
+    const confirmed = unique
+      .filter((p: any) => p.status === 'RECEIVED' || p.status === 'CONFIRMED')
+      .sort((a: any, b: any) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())[0];
 
     if (!confirmed) {
       return res.json({ activated: false, message: 'Nenhum pagamento confirmado encontrado.' });
     }
 
+    const planInfo   = PLAN_PRICES[tenant.plan ?? ''] ?? PLAN_PRICES.mensal;
+    const planMonths = planInfo.months;
+    const planName   = tenant.plan && PLAN_PRICES[tenant.plan] ? tenant.plan : 'mensal';
+    const mrr        = parseFloat(((confirmed.value ?? 89.90) / planMonths).toFixed(2));
+
     const today2      = new Date();
     const dueBase2    = confirmed.dueDate ? new Date(confirmed.dueDate + 'T12:00:00Z') : today2;
     const currentEnd2 = tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at + 'T12:00:00Z') : today2;
     const base2 = currentEnd2 > dueBase2 ? currentEnd2 : dueBase2;
-    base2.setMonth(base2.getMonth() + 1);
+    base2.setMonth(base2.getMonth() + planMonths);
     const subscriptionEndsAt = base2.toISOString().split('T')[0];
+
     await supabase.from('tenants').update({
-      status: 'active', plan: 'mensal', mrr: 89.90,
+      status: 'active', plan: planName, mrr,
       subscription_ends_at: subscriptionEndsAt,
     }).eq('id', tenantId);
 
     await supabase.from('audit_logs').insert({
       tenant_id: tenantId, user_name: 'Billing Verify',
       action: 'Pagamento verificado manualmente',
-      details: `Payment ${confirmed.id} — R$ ${confirmed.value?.toFixed(2)}. Tenant ativado até ${subscriptionEndsAt}.`,
+      details: `Payment ${confirmed.id} — R$ ${confirmed.value?.toFixed(2)} (${planName}, ${planMonths}m). Tenant ativado até ${subscriptionEndsAt}.`,
     });
 
     return res.json({ activated: true });
