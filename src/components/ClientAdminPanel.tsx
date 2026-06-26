@@ -10,7 +10,7 @@ import {
   Check, X, RefreshCw, Scissors, CreditCard, Package,
   Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck, Pencil,
   Palette, Phone, MapPin, Instagram, Eye, EyeOff,
-  Mail, Lock, Clock, Shield, Trash2, LogOut,
+  Mail, Lock, Clock, Shield, Trash2, LogOut, Eraser,
 } from 'lucide-react';
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer, RecurringExpense } from '../types';
@@ -52,6 +52,7 @@ interface Props {
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
+  onDeleteAppointment: (id: string) => void;
   onAddPayment: (pay: Omit<Payment, 'id'>) => void;
   recurringExpenses: RecurringExpense[];
   onAddRecurringExpense: (r: Omit<RecurringExpense, 'id' | 'createdAt'>) => void;
@@ -97,7 +98,7 @@ export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
   onAddProfessional, onUpdateProfessional, onDeleteProfessional, onSetServiceProfessionals, onAddProduct, onUpdateProductStock,
-  onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
+  onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onDeleteAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount, onSignOut,
   openSubscriptionTab, onSubscriptionTabOpened,
   recurringExpenses, onAddRecurringExpense, onUpdateRecurringExpense, onDeleteRecurringExpense,
@@ -140,7 +141,8 @@ export default function ClientAdminPanel({
   const myAppointments  = appointments.filter(a => a.tenantId === activeTenant.id);
   const myPayments      = payments.filter(p => p.tenantId === activeTenant.id);
 
-  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const todayAppts = myAppointments.filter(a => a.date === today && a.status !== 'cancelled');
   const pendingCount = myAppointments.filter(a => a.status === 'pending').length;
 
@@ -344,12 +346,15 @@ export default function ClientAdminPanel({
   const [bookingShowInstagram,   setBookingShowInstagram]   = useState(activeTenant.bookingPageConfig?.showInstagram   ?? true);
   const [bookingMapsUrl,         setBookingMapsUrl]         = useState(activeTenant.bookingPageConfig?.mapsUrl         ?? '');
   const [bookingWaitlistEnabled, setBookingWaitlistEnabled] = useState(activeTenant.bookingPageConfig?.waitlistEnabled ?? true);
+  const [defaultPaymentMethod, setDefaultPaymentMethod] = useState<'pix' | 'cash' | 'credit_card'>(activeTenant.defaultPaymentMethod ?? 'pix');
 
   // Configurações da agenda
-  const [agendaMode,        setAgendaMode]        = useState<'auto_complete' | 'auto_cancel' | 'manual'>(activeTenant.agendaMode ?? 'auto_complete');
-  const [agendaTimeMinutes, setAgendaTimeMinutes] = useState(activeTenant.agendaTimeMinutes ?? 30);
-  const [agendaTimezone,    setAgendaTimezone]    = useState(activeTenant.timezone ?? 'America/Sao_Paulo');
-  const [agendaSaving,      setAgendaSaving]      = useState(false);
+  const [agendaMode,         setAgendaMode]         = useState<'auto_complete' | 'auto_cancel' | 'manual'>(activeTenant.agendaMode ?? 'auto_complete');
+  const [agendaTimeMinutes,  setAgendaTimeMinutes]  = useState(activeTenant.agendaTimeMinutes ?? 30);
+  const [agendaTimezone,     setAgendaTimezone]     = useState(activeTenant.timezone ?? 'America/Sao_Paulo');
+  const [agendaDisplayStart, setAgendaDisplayStart] = useState(activeTenant.agendaDisplayStart ?? 8);
+  const [agendaDisplayEnd,   setAgendaDisplayEnd]   = useState(activeTenant.agendaDisplayEnd   ?? 20);
+  const [agendaSaving,       setAgendaSaving]       = useState(false);
 
   // ── Slug / link editing ────────────────────────────────────────────────────
   const [slugInput,  setSlugInput]  = useState(activeTenant.slug);
@@ -490,7 +495,7 @@ export default function ClientAdminPanel({
 
   const handleCompleteAppointment = (appt: Appointment) => {
     onUpdateAppointmentStatus(appt.id, 'attended');
-    onAddPayment({ tenantId: activeTenant.id, appointmentId: appt.id, amount: appt.price, method: 'pix', status: 'paid', date: new Date().toISOString().replace('T', ' ').substring(0, 19), description: `Atendimento: ${appt.customerName}` });
+    onAddPayment({ tenantId: activeTenant.id, appointmentId: appt.id, amount: appt.price, method: defaultPaymentMethod, status: 'paid', date: new Date().toISOString().replace('T', ' ').substring(0, 19), description: `Atendimento: ${appt.customerName}` });
     toast.success(`${appt.customerName} concluído — R$ ${appt.price.toFixed(2)} registrado.`);
   };
 
@@ -736,7 +741,7 @@ export default function ClientAdminPanel({
               </div>
             ) : (
               <div onClick={() => setCollapsed(c => !c)} style={{ width: 44, height: 44, borderRadius: 12, background: '#E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}>
-                <Scissors size={18} style={{ color: '#64748B' }} />
+                <User size={18} style={{ color: '#9CA3AF' }} />
               </div>
             )}
             <AnimatePresence>
@@ -940,9 +945,12 @@ export default function ClientAdminPanel({
                       onCompleteAppointment={handleCompleteAppointment}
                       onResendReminder={apptId => remindAppointmentWhatsApp(activeTenant.id, apptId)}
                       onRescheduleAppointment={onRescheduleAppointment}
+                      onDeleteAppointment={onDeleteAppointment}
                       tenantId={activeTenant.id}
                       onOpenWaitlist={() => setShowWaitlistModal(true)}
                       waitlistEnabled={bookingWaitlistEnabled}
+                      displayStart={agendaDisplayStart}
+                      displayEnd={agendaDisplayEnd}
                     />
                   </div>
                 </div>
@@ -958,6 +966,7 @@ export default function ClientAdminPanel({
                     myProfessionals={myProfessionals}
                     onUpdateAppointmentStatus={handleCancelAndNotifyWaitlist}
                     onCompleteAppointment={handleCompleteAppointment}
+                    onDeleteAppointment={onDeleteAppointment}
                     reminderMinutes={activeTenant.reminderMinutes ?? 60}
                   />
                 </div>
@@ -1900,7 +1909,6 @@ export default function ClientAdminPanel({
                                 {/* Banner contextual */}
                                 {showAlert && (
                                   <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
                                     <p style={{ fontSize: 12, color: '#92400e', margin: 0, lineHeight: 1.5, fontWeight: 500 }}>
                                       {isTrial
                                         ? `Trial encerra em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Escolha um plano abaixo.`
@@ -2083,8 +2091,9 @@ export default function ClientAdminPanel({
                           setAgendaSaving(true);
                           try {
                             await onUpdateTenantDetails(activeTenant.id, {
-                              agendaMode, agendaTimeMinutes, timezone: agendaTimezone,
-                              bookingPageConfig: { ...activeTenant.bookingPageConfig, primaryColor: activeTenant.bookingPageConfig?.primaryColor ?? '#2563EB', showPhone: activeTenant.bookingPageConfig?.showPhone ?? true, showAddress: activeTenant.bookingPageConfig?.showAddress ?? true, showInstagram: activeTenant.bookingPageConfig?.showInstagram ?? true, waitlistEnabled: bookingWaitlistEnabled },
+                              agendaMode, agendaTimeMinutes, timezone: agendaTimezone, defaultPaymentMethod,
+                              agendaDisplayStart, agendaDisplayEnd,
+                              bookingPageConfig: { ...activeTenant.bookingPageConfig, primaryColor: activeTenant.bookingPageConfig?.primaryColor ?? '#2563EB', showPhone: activeTenant.bookingPageConfig?.showPhone ?? true, showAddress: activeTenant.bookingPageConfig?.showAddress ?? true, showInstagram: activeTenant.bookingPageConfig?.showInstagram ?? true, waitlistEnabled: bookingWaitlistEnabled, agendaDisplayStart, agendaDisplayEnd },
                             });
                             toast.success('Configurações da agenda salvas!');
                           } catch { toast.error('Erro ao salvar.'); }
@@ -2226,6 +2235,61 @@ export default function ClientAdminPanel({
                                       border:     `1px solid ${bookingWaitlistEnabled ? '#86EFAC' : '#E2E8F0'}` }}>
                                     {bookingWaitlistEnabled ? <><CheckCheck size={13} /> Ativada</> : <><EyeOff size={13} /> Desativada</>}
                                   </button>
+                                </div>
+                              </div>
+
+                              {/* Método de pagamento padrão */}
+                              <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 20 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 6px' }}>Método de Pagamento Padrão</p>
+                                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 12px' }}>
+                                  Forma de pagamento registrada automaticamente ao concluir um atendimento.
+                                </p>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  {([
+                                    { id: 'pix',         label: '💠 Pix' },
+                                    { id: 'cash',        label: '💵 Dinheiro' },
+                                    { id: 'credit_card', label: '💳 Cartão' },
+                                  ] as { id: 'pix' | 'cash' | 'credit_card'; label: string }[]).map(opt => {
+                                    const sel = defaultPaymentMethod === opt.id;
+                                    return (
+                                      <button key={opt.id} type="button" onClick={() => setDefaultPaymentMethod(opt.id)}
+                                        style={{ flex: 1, padding: '10px 8px', borderRadius: 10, border: `2px solid ${sel ? '#2563EB' : '#E2E8F0'}`, background: sel ? '#EFF6FF' : '#FAFAFA', fontSize: 12, fontWeight: 700, color: sel ? '#1E40AF' : '#374151', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}>
+                                        {opt.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Horário de exibição da agenda */}
+                              <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 20 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '2px', margin: '0 0 4px' }}>Exibição visual da agenda</p>
+                                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 14px' }}>Define o intervalo de horas mostrado na agenda. Horários fora desse range ficam ocultos.</p>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1px', display: 'block', marginBottom: 6 }}>Início</label>
+                                    <select value={agendaDisplayStart} onChange={e => setAgendaDisplayStart(Number(e.target.value))}
+                                      className="navy-input" style={{ width: '100%' }}>
+                                      {Array.from({ length: 24 }, (_, i) => (
+                                        <option key={i} value={i} disabled={i >= agendaDisplayEnd}>{String(i).padStart(2, '0')}:00</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <span style={{ fontSize: 18, color: '#D1D5DB', paddingTop: 18 }}>→</span>
+                                  <div style={{ flex: 1 }}>
+                                    <label style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1px', display: 'block', marginBottom: 6 }}>Fim</label>
+                                    <select value={agendaDisplayEnd} onChange={e => setAgendaDisplayEnd(Number(e.target.value))}
+                                      className="navy-input" style={{ width: '100%' }}>
+                                      {Array.from({ length: 24 }, (_, i) => (
+                                        <option key={i} value={i} disabled={i <= agendaDisplayStart}>{String(i).padStart(2, '0')}:00</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div style={{ flexShrink: 0, paddingTop: 18 }}>
+                                    <div style={{ padding: '8px 14px', borderRadius: 8, background: '#EFF6FF', border: '1px solid #BFDBFE', fontSize: 12, fontWeight: 700, color: '#1D4ED8', fontVariantNumeric: 'tabular-nums' }}>
+                                      {agendaDisplayEnd - agendaDisplayStart}h
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
 
@@ -2925,63 +2989,82 @@ export default function ClientAdminPanel({
                   <label className="navy-label">Comissão %</label>
                   <input type="number" min={0} max={100} value={profCommission} onChange={e => setProfCommission(Number(e.target.value))} className="navy-input" />
                 </div>
-                {/* Horários */}
+                {/* Horários — todos os dias em linhas */}
                 <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 14 }}>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 10px' }}>Horários de Atendimento</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
-                    {ALL_DAYS.map(d => {
-                      const active = profSelectedDay === d;
-                      const open   = profDays.includes(d);
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Horários de Atendimento</p>
+                    <button type="button"
+                      onClick={() => setProfHoursByDay(Object.fromEntries(ALL_DAYS.map(d => [d, profDays.includes(d) ? [...DEFAULT_HOURS] : []])))}
+                      style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, padding: '3px 9px', cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                      Resetar padrão
+                    </button>
+                  </div>
+                  {(() => {
+                    const DAY_LBL: Record<string, string> = { seg: 'Seg', ter: 'Ter', qua: 'Qua', qui: 'Qui', sex: 'Sex', sab: 'Sáb', dom: 'Dom' };
+                    return ALL_DAYS.map(d => {
+                      const isOpen = profDays.includes(d);
+                      const hours  = profHoursByDay[d] || [];
+                      const pickerActive = profPickerOpen && profSelectedDay === d;
                       return (
-                        <button key={d} type="button" onClick={() => setProfSelectedDay(d)}
-                          style={{ padding: '4px 10px', borderRadius: 7, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: active ? '#1D4ED8' : '#F8FAFC', color: active ? '#FFFFFF' : open ? '#374151' : '#9CA3AF', border: `1px solid ${active ? '#1D4ED8' : '#E2E8F0'}`, opacity: open ? 1 : 0.55 }}>
-                          {d}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, padding: '7px 12px', background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0' }}>
-                    <span style={{ fontSize: 12, color: '#374151', textTransform: 'capitalize' }}>{profSelectedDay} — {profDayOpen ? `${profCurHours.length} horários` : 'Folga'}</span>
-                    <button type="button" onClick={() => setProfDays(prev => prev.includes(profSelectedDay) ? prev.filter(d => d !== profSelectedDay) : [...prev, profSelectedDay])}
-                      style={{ padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', background: profDayOpen ? '#DCFCE7' : '#FEE2E2', color: profDayOpen ? '#166534' : '#DC2626', border: `1px solid ${profDayOpen ? '#86EFAC' : '#FCA5A5'}` }}>
-                      {profDayOpen ? 'Trabalha' : 'Folga'}
-                    </button>
-                  </div>
-                  {profCurHours.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
-                      {profCurHours.map(h => (
-                        <span key={h} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '4px 9px', borderRadius: 7, fontSize: 11, fontFamily: 'monospace', fontWeight: 700, background: '#F1F5F9', border: '1px solid #E2E8F0', color: '#374151' }}>
-                          {h}
-                          <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: (prev[profSelectedDay] || []).filter(x => x !== h) }))} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 0 0 2px' }}>×</button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div style={{ position: 'relative', marginBottom: 8 }}>
-                    <button type="button" onClick={() => { setProfNewHourInput(''); setProfPickerOpen(o => !o); }}
-                      style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, color: '#FFFFFF', background: '#1D4ED8', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-                      + Adicionar Horário
-                    </button>
-                    {profPickerOpen && (
-                      <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 60, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 14, padding: 16, boxShadow: '0 12px 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 210 }}>
-                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Novo horário — {profSelectedDay}</p>
-                        <input type="time" value={profNewHourInput} onChange={e => setProfNewHourInput(e.target.value)} autoFocus className="navy-input" style={{ fontSize: 22, fontFamily: 'monospace', textAlign: 'center', letterSpacing: 2 }} />
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button type="button" onClick={() => { if (profNewHourInput) setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: Array.from(new Set([...(prev[profSelectedDay] || []), profNewHourInput])).sort() })); setProfPickerOpen(false); setProfNewHourInput(''); }}
-                            style={{ flex: 1, padding: '9px 0', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 800, fontSize: 13, border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>OK</button>
-                          <button type="button" onClick={() => { setProfPickerOpen(false); setProfNewHourInput(''); }}
-                            style={{ padding: '9px 14px', background: '#F1F5F9', color: '#6B7280', fontWeight: 600, fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                        <div key={d} style={{ borderTop: '1px solid #F1F5F9', padding: '7px 0' }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                            {/* Rótulo do dia */}
+                            <span style={{ width: 34, flexShrink: 0, paddingTop: 4, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', color: isOpen ? '#1D4ED8' : '#CBD5E1' }}>{DAY_LBL[d]}</span>
+                            {/* Toggle Aberto/Folga */}
+                            <button type="button"
+                              onClick={() => setProfDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])}
+                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(0.92)'; (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.04)'; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = ''; (e.currentTarget as HTMLButtonElement).style.transform = ''; }}
+                              style={{ flexShrink: 0, padding: '4px 10px', borderRadius: 7, fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', minWidth: 56, textAlign: 'center' as const, transition: 'all 150ms', background: isOpen ? '#DCFCE7' : '#F3F4F6', color: isOpen ? '#166534' : '#9CA3AF', border: `1px solid ${isOpen ? '#86EFAC' : '#E5E7EB'}` }}>
+                              {isOpen ? 'Aberto' : 'Folga'}
+                            </button>
+                            {/* Chips de horário */}
+                            <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 4, minWidth: 0 }}>
+                              {isOpen && hours.length === 0 && <span style={{ fontSize: 11, color: '#CBD5E1', paddingTop: 3 }}>Sem horários</span>}
+                              {isOpen && hours.map(h => (
+                                <span key={h} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '2px 7px', borderRadius: 6, fontSize: 10, fontFamily: 'monospace', fontWeight: 700, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1D4ED8' }}>
+                                  {h}
+                                  <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [d]: (prev[d] || []).filter(x => x !== h) }))} style={{ background: 'none', border: 'none', color: '#93C5FD', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 0 0 1px', display: 'flex', alignItems: 'center' }}>×</button>
+                                </span>
+                              ))}
+                            </div>
+                            {/* Botões + e lixeira */}
+                            {isOpen && (
+                              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                <button type="button"
+                                  onClick={() => { if (profPickerOpen && profSelectedDay === d) { setProfPickerOpen(false); } else { setProfSelectedDay(d); setProfNewHourInput(''); setProfPickerOpen(true); } }}
+                                  style={{ width: 26, height: 26, borderRadius: 7, background: pickerActive ? '#1D4ED8' : '#EFF6FF', border: `1px solid ${pickerActive ? '#1D4ED8' : '#BFDBFE'}`, color: pickerActive ? '#FFFFFF' : '#1D4ED8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700, lineHeight: 1 }}>
+                                  +
+                                </button>
+                                <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [d]: [] }))}
+                                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#E2E8F0'; }}
+                                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#F1F5F9'; }}
+                                  style={{ width: 26, height: 26, borderRadius: 7, background: '#F1F5F9', border: '1px solid #E2E8F0', color: '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 150ms' }}>
+                                  <Eraser size={11} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          {/* Picker inline do dia */}
+                          {pickerActive && (
+                            <div style={{ marginTop: 6, marginLeft: 42, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: '#F8FAFC', border: '1px solid #BFDBFE', borderRadius: 10 }}>
+                              <input type="time" value={profNewHourInput} onChange={e => setProfNewHourInput(e.target.value)} autoFocus className="navy-input" style={{ fontSize: 16, fontFamily: 'monospace', textAlign: 'center', letterSpacing: 1, minWidth: 130, width: 'auto' }} />
+                              <button type="button" onClick={() => { if (profNewHourInput) setProfHoursByDay(prev => ({ ...prev, [d]: Array.from(new Set([...(prev[d] || []), profNewHourInput])).sort() })); setProfPickerOpen(false); setProfNewHourInput(''); }}
+                                style={{ padding: '6px 14px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 800, fontSize: 12, border: 'none', borderRadius: 7, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Adicionar</button>
+                              <button type="button" onClick={() => { setProfPickerOpen(false); setProfNewHourInput(''); }}
+                                style={{ padding: '6px 10px', background: '#F1F5F9', color: '#6B7280', fontWeight: 600, fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 7, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>✕</button>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button type="button" onClick={() => { const h = profHoursByDay[profSelectedDay] || []; setProfHoursByDay(Object.fromEntries(ALL_DAYS.map(d => [d, profDays.includes(d) ? [...h] : []]))); toast.info('Horários copiados para todos os dias de trabalho.'); }}
-                      style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#6B7280', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Copiar p/ todos</button>
-                    <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: [...DEFAULT_HOURS] }))}
-                      style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#6B7280', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Resetar padrão</button>
-                    <button type="button" onClick={() => setProfHoursByDay(prev => ({ ...prev, [profSelectedDay]: [] }))}
-                      style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, color: '#DC2626', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Limpar dia</button>
+                      );
+                    });
+                  })()}
+                  <div style={{ paddingTop: 8, borderTop: '1px solid #F1F5F9', marginTop: 2 }}>
+                    <button type="button"
+                      onClick={() => { const first = profDays[0]; if (!first) return; const h = profHoursByDay[first] || []; setProfHoursByDay(prev => Object.fromEntries(ALL_DAYS.map(d => [d, profDays.includes(d) ? [...h] : (prev[d] || [])]))); toast.info(`Horários de ${first} copiados para os dias de trabalho.`); }}
+                      style={{ width: '100%', padding: '7px 0', fontSize: 11, fontWeight: 600, color: '#6B7280', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                      Copiar 1º dia para todos os dias de trabalho
+                    </button>
                   </div>
                 </div>
                 {/* Ações */}

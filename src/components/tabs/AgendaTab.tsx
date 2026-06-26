@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Bell, BellOff, RefreshCw, Clock, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Bell, BellOff, RefreshCw, Clock, ChevronDown, Trash2 } from 'lucide-react';
 import { Appointment, Service, Professional, Customer } from '../../types';
 import { useToast } from '../../hooks/useToast';
+import DeleteConfirmDialog from '../DeleteConfirmDialog';
 
 interface Props {
   myAppointments: Appointment[];
@@ -15,9 +16,12 @@ interface Props {
   onCompleteAppointment: (appt: Appointment) => void;
   onResendReminder: (apptId: string) => Promise<void>;
   onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
+  onDeleteAppointment: (id: string) => void;
   tenantId: string;
   onOpenWaitlist?: () => void;
   waitlistEnabled?: boolean;
+  displayStart?: number;
+  displayEnd?: number;
 }
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -193,7 +197,11 @@ function MultiSelect({ label, options, selected, onChange }: {
   );
 }
 
-export default function AgendaTab({ myAppointments, myServices, myProfessionals, myCustomers, onUpdateAppointmentStatus, onAddAppointment, onAddCustomer, onCompleteAppointment, onResendReminder, onRescheduleAppointment, tenantId, onOpenWaitlist, waitlistEnabled = true }: Props) {
+export default function AgendaTab({ myAppointments, myServices, myProfessionals, myCustomers, onUpdateAppointmentStatus, onAddAppointment, onAddCustomer, onCompleteAppointment, onResendReminder, onRescheduleAppointment, onDeleteAppointment, tenantId, onOpenWaitlist, waitlistEnabled = true, displayStart, displayEnd }: Props) {
+  const firstHour = displayStart ?? 8;
+  const lastHour  = displayEnd   ?? 20;
+  const hours = Array.from({ length: Math.max(2, lastHour - firstHour + 1) }, (_, i) => `${String(i + firstHour).padStart(2, '0')}:00`);
+
   const [view, setView] = useState<ViewMode>(() => {
     const s = localStorage.getItem('bf_agenda_view');
     return (s === 'day' || s === 'week' || s === 'month') ? s : 'day';
@@ -206,6 +214,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
   const [now, setNow] = useState(new Date());
   const [resendingIds, setResendingIds] = useState<Set<string>>(new Set());
   const [remindedIds,  setRemindedIds]  = useState<Set<string>>(new Set());
+  const [deletingAppt, setDeletingAppt] = useState<{ id: string; name: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
@@ -239,8 +248,8 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
     const relY  = e.clientY - rect.top;
-    const hourF = FIRST_HOUR + relY / HOUR_HEIGHT;
-    const h     = Math.min(Math.max(FIRST_HOUR, Math.floor(hourF)), FIRST_HOUR + HOURS.length - 1);
+    const hourF = firstHour + relY / HOUR_HEIGHT;
+    const h     = Math.min(Math.max(firstHour, Math.floor(hourF)), firstHour + hours.length - 1);
     const m     = Math.round(((hourF - Math.floor(hourF)) * 2)) * 30;
     const time  = `${String(h).padStart(2,'0')}:${String(m >= 60 ? 0 : m).padStart(2,'0')}`;
     const px = Math.min(e.clientX + 12, window.innerWidth  - 300);
@@ -327,14 +336,14 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
   useEffect(() => {
     if (view === 'month') return;
     const h = now.getHours(), m = now.getMinutes();
-    if (h < FIRST_HOUR || h >= FIRST_HOUR + HOURS.length) return;
-    scrollRef.current?.scrollTo({ top: Math.max(0, ((h - FIRST_HOUR) + m / 60) * HOUR_HEIGHT - 120), behavior: 'smooth' });
+    if (h < firstHour || h >= firstHour + hours.length) return;
+    scrollRef.current?.scrollTo({ top: Math.max(0, ((h - firstHour) + m / 60) * HOUR_HEIGHT - 120), behavior: 'smooth' });
   }, [view]);
 
   const timeLineTop = (() => {
     const h = now.getHours(), m = now.getMinutes();
-    if (h < FIRST_HOUR || h >= FIRST_HOUR + HOURS.length) return null;
-    return ((h - FIRST_HOUR) + m / 60) * HOUR_HEIGHT;
+    if (h < firstHour || h >= firstHour + hours.length) return null;
+    return ((h - firstHour) + m / 60) * HOUR_HEIGHT;
   })();
 
   const navigate = (dir: number) => {
@@ -535,7 +544,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
 
             {/* Coluna de rótulos de hora */}
             <div>
-              {HOURS.map(hour => (
+              {hours.map(hour => (
                 <div key={hour} style={{ height: HOUR_HEIGHT, borderBottom: `1px solid ${C.borderLight}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', padding: '6px 8px 0 0', flexShrink: 0 }}>
                   <span style={{ fontSize: 11, fontFamily: 'monospace', color: C.textSm, fontWeight: 500 }}>{hour}</span>
                 </div>
@@ -549,13 +558,13 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
               const isCurrentDay = isTodayVisible && isToday;
               const dayAppts   = filteredAppointments.filter(a => a.date === dateKey && a.status !== 'cancelled');
               const laid       = layoutDay(dayAppts);
-              const totalH     = HOURS.length * HOUR_HEIGHT;
+              const totalH     = hours.length * HOUR_HEIGHT;
 
               return (
                 <div key={dateKey} onClick={e => handleSlotClick(e, dateKey)} style={{ position: 'relative', height: totalH, borderLeft: `1px solid ${C.borderLight}`, background: C.cellBg, cursor: 'crosshair' }}>
 
                   {/* Linhas de hora */}
-                  {HOURS.map((_, i) => (
+                  {hours.map((_, i) => (
                     <div key={i} style={{ position: 'absolute', top: (i + 1) * HOUR_HEIGHT, left: 0, right: 0, height: 1, background: C.borderLight }} />
                   ))}
 
@@ -570,7 +579,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                   {/* Agendamentos — posicionados por hora e com altura proporcional à duração */}
                   {laid.map(({ appt, col, totalCols }) => {
                     const [hh, mm] = appt.time.split(':').map(Number);
-                    const top    = ((hh - FIRST_HOUR) + mm / 60) * HOUR_HEIGHT;
+                    const top    = ((hh - firstHour) + mm / 60) * HOUR_HEIGHT;
                     const height = Math.max(24, ((appt.durationMinutes ?? 60) / 60) * HOUR_HEIGHT) - 3;
                     const colW   = 100 / totalCols;
                     const left   = `calc(${col * colW}% + 3px)`;
@@ -583,7 +592,10 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
 
                     const confirmSent  = appt.wppConfirmSent  === true;
                     const reminderSent = appt.wppReminderSent === true || remindedIds.has(appt.id);
-                    const reminderFailed  = !reminderSent && isPastAppt(appt.date, appt.time);
+                    const remDtCard    = new Date(`${appt.date}T${appt.time}`);
+                    remDtCard.setMinutes(remDtCard.getMinutes() - 60);
+                    const reminderTempoInsuficiente = !reminderSent && remDtCard <= new Date();
+                    const reminderFailed  = !reminderSent && isPastAppt(appt.date, appt.time) && !reminderTempoInsuficiente;
                     const isResending     = resendingIds.has(appt.id);
 
                     const showFooter = height >= 32;
@@ -649,6 +661,14 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                                 <Bell size={8} color="#fff" />
                                 <Check size={7} color="#fff" strokeWidth={3} />
                               </span>
+                            ) : reminderTempoInsuficiente ? (
+                              <span title="Tempo insuficiente para envio do lembrete"
+                                style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '1px 4px', borderRadius: 3,
+                                  background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.15)',
+                                }}>
+                                <BellOff size={8} color="rgba(255,255,255,0.45)" />
+                                <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontWeight: 600, whiteSpace: 'nowrap' }}>insuf.</span>
+                              </span>
                             ) : reminderFailed ? (
                               <button
                                 onClick={e => { e.stopPropagation(); if (!isResending) handleResend(appt.id); }}
@@ -679,25 +699,38 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                         )}
 
                         {/* Ações no hover — canto superior direito */}
-                        {isHov && appt.status !== 'attended' && appt.status !== 'cancelled' && (
+                        {isHov && (
                           <div
                             style={{ position: 'absolute', top: 3, right: 4, display: 'flex', gap: 3, zIndex: 5 }}
                             onClick={e => e.stopPropagation()}
                           >
-                            <button
-                              onClick={() => onCompleteAppointment(appt)}
-                              title="Concluir"
-                              style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.45)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                            >
-                              <Check size={9} />
-                            </button>
-                            <button
-                              onClick={() => { if (window.confirm(`Cancelar ${appt.customerName}?`)) onUpdateAppointmentStatus(appt.id, 'cancelled'); }}
-                              title="Cancelar"
-                              style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', color: 'rgba(255,255,255,0.85)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                            >
-                              <X size={9} />
-                            </button>
+                            {appt.status !== 'attended' && appt.status !== 'cancelled' && (
+                              <>
+                                <button
+                                  onClick={() => onCompleteAppointment(appt)}
+                                  title="Concluir"
+                                  style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.45)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                                >
+                                  <Check size={9} />
+                                </button>
+                                <button
+                                  onClick={() => { if (window.confirm(`Cancelar ${appt.customerName}?`)) onUpdateAppointmentStatus(appt.id, 'cancelled'); }}
+                                  title="Cancelar"
+                                  style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', color: 'rgba(255,255,255,0.85)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                                >
+                                  <X size={9} />
+                                </button>
+                              </>
+                            )}
+                            {(appt.status === 'attended' || appt.status === 'cancelled') && (
+                              <button
+                                onClick={() => setDeletingAppt({ id: appt.id, name: appt.customerName })}
+                                title="Apagar"
+                                style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                              >
+                                <Trash2 size={9} />
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -842,6 +875,9 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
       const remTime  = totalMin >= 0
         ? `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`
         : null;
+      const remDtPanel = new Date(`${apptPanel.date}T${apptPanel.time}`);
+      remDtPanel.setMinutes(remDtPanel.getMinutes() - reminderMinutes);
+      const panelTempoInsuficiente = !apptPanel.wppReminderSent && remDtPanel <= new Date();
       const hasPhone = !!apptPanel.customerPhone;
 
       return (
@@ -885,6 +921,13 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                       ✗ Cancelar
                     </button>
                   </div>
+                )}
+                {(apptPanel.status === 'attended' || apptPanel.status === 'cancelled') && (
+                  <button
+                    onClick={() => setDeletingAppt({ id: apptPanel.id, name: apptPanel.customerName })}
+                    style={{ padding: '8px 6px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                    <Trash2 size={12} /> Apagar agendamento
+                  </button>
                 )}
               </>
             ) : (
@@ -934,7 +977,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
 
                   {/* Lembrete */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ fontSize: 13, lineHeight: 1 }}>{apptPanel.wppReminderSent ? '✅' : '🕐'}</span>
+                    <span style={{ fontSize: 13, lineHeight: 1 }}>{apptPanel.wppReminderSent ? '✅' : panelTempoInsuficiente ? '⏱' : '🕐'}</span>
                     <div>
                       <span style={{ fontSize: 11, fontWeight: 600, color: apptPanel.wppReminderSent ? '#15803d' : '#64748b' }}>
                         Lembrete
@@ -942,9 +985,11 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                       <span style={{ fontSize: 10, color: '#94A3B8', marginLeft: 5 }}>
                         {apptPanel.wppReminderSent
                           ? 'enviado'
-                          : remTime
-                            ? `programado para ${remTime} (${apptPanel.date.slice(8)}/${apptPanel.date.slice(5, 7)})`
-                            : 'agendamento muito cedo para lembrete'}
+                          : panelTempoInsuficiente
+                            ? 'tempo insuficiente'
+                            : remTime
+                              ? `programado para ${remTime} (${apptPanel.date.slice(8)}/${apptPanel.date.slice(5, 7)})`
+                              : 'agendamento muito cedo para lembrete'}
                       </span>
                     </div>
                   </div>
@@ -955,6 +1000,14 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
         </div>
       );
     })()}
+
+    {deletingAppt && (
+      <DeleteConfirmDialog
+        name={deletingAppt.name}
+        onConfirm={() => { onDeleteAppointment(deletingAppt.id); setDeletingAppt(null); }}
+        onCancel={() => setDeletingAppt(null)}
+      />
+    )}
     </>
   );
 }

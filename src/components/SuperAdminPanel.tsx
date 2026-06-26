@@ -2,13 +2,14 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tenant, Coupon, SupportTicket, AuditLog } from '../types';
 import {
-  LayoutDashboard, Users, Ticket, HeartHandshake, ShieldCheck,
+  LayoutDashboard, Users, HeartHandshake, ShieldCheck,
   Plug, TrendingUp, TrendingDown, CheckCircle2, Ban, Plus, Send,
   Search, AlertTriangle, ArrowUpRight, Zap,
   DollarSign, Activity, Clock, ChevronDown, ChevronUp,
   ExternalLink, Phone, MapPin, Instagram, Mail,
   ArrowUpDown, ArrowUp, ArrowDown, CheckCircle, LogOut,
   ChevronLeft, ChevronRight, RefreshCw, XCircle, FlaskConical, Globe, Trash2,
+  Megaphone, Eye, CalendarCheck, User,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -31,24 +32,24 @@ interface SuperAdminPanelProps {
   onSignOut: () => void;
 }
 
-type Tab = 'overview' | 'tenants' | 'coupons' | 'suporte' | 'logs' | 'integracoes';
+type Tab = 'overview' | 'tenants' | 'suporte' | 'logs' | 'integracoes' | 'marketing';
 
 const NAV: { id: Tab; label: string; Icon: React.ElementType }[] = [
   { id: 'overview',    label: 'Visão Geral',  Icon: LayoutDashboard },
   { id: 'tenants',     label: 'Assinantes',   Icon: Users           },
-  { id: 'coupons',     label: 'Cupons',       Icon: Ticket          },
   { id: 'suporte',     label: 'Suporte',      Icon: HeartHandshake  },
   { id: 'logs',        label: 'Logs',         Icon: ShieldCheck     },
   { id: 'integracoes', label: 'Integrações',  Icon: Plug            },
+  { id: 'marketing',   label: 'Marketing',    Icon: Megaphone       },
 ];
 
 const PAGE_TITLES: Record<Tab, string> = {
   overview:    'Visão Geral',
   tenants:     'Assinantes',
-  coupons:     'Cupons',
   suporte:     'Suporte',
   logs:        'Audit Log',
   integracoes: 'Integrações',
+  marketing:   'Email Marketing',
 };
 
 const SIDEBAR_W = { open: 232, closed: 64 };
@@ -120,7 +121,7 @@ function KpiCard({ label: lbl, value, sub, color, icon: Icon }: { label: string;
         <span style={sLbl}>{lbl}</span>
         {Icon && <div style={{ width: 34, height: 34, borderRadius: 10, background: C.accentBg, border: `1px solid ${C.accentBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.accent }}><Icon style={{ width: 15, height: 15 }} /></div>}
       </div>
-      <p style={{ fontSize: 26, fontWeight: 800, color: color ?? C.text, fontFamily: 'monospace', letterSpacing: '-1px', margin: 0 }}>{value}</p>
+      <p style={{ fontSize: 26, fontWeight: 800, color: color ?? C.text, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.5px', margin: 0 }}>{value}</p>
       {sub && <p style={{ fontSize: 11, color: C.muted, margin: 0 }}>{sub}</p>}
     </div>
   );
@@ -236,9 +237,6 @@ export default function SuperAdminPanel({
   const [deleting,         setDeleting]         = useState(false);
   const [sortKey,          setSortKey]          = useState<'name' | 'mrr' | 'expiry'>('mrr');
   const [sortDir,          setSortDir]          = useState<'asc' | 'desc'>('desc');
-  const [newCode,          setNewCode]          = useState('');
-  const [newDiscount,      setNewDiscount]      = useState(15);
-  const [newExpiry,        setNewExpiry]        = useState('2026-12-31');
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [adminReply,       setAdminReply]       = useState('');
 
@@ -287,13 +285,6 @@ export default function SuperAdminPanel({
   const daysUntil = (dateStr: string) => !dateStr ? -999 : Math.ceil((new Date(dateStr + 'T12:00:00').getTime() - Date.now()) / 86400000);
   const expiryColor = (d: number) => d < 0 ? C.red : d <= 7 ? C.amber : d <= 14 ? '#D97706' : C.green;
 
-  const handleCreateCoupon = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCode.trim()) return;
-    onAddCoupon(newCode.trim().toUpperCase(), newDiscount, newExpiry);
-    setNewCode(''); setNewDiscount(15);
-  };
-
   const handleSendReply = () => {
     if (!selectedTicketId || !adminReply.trim()) return;
     onResolveTicket(selectedTicketId, adminReply.trim());
@@ -302,6 +293,95 @@ export default function SuperAdminPanel({
 
   const selectedTicket = supportTickets.find(t => t.id === selectedTicketId);
   const fmtBrl = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // ── Marketing ──────────────────────────────────────────────────────────────
+  type MktCampaign = {
+    id: string; name: string; campaign_type: string; subject: string;
+    filters: Record<string, any>; last_sent_at: string | null; last_sent_count: number | null; created_at: string;
+  };
+  const CAMPAIGN_PRESETS = [
+    { id: 'trial_welcome',    label: 'Boas-vindas Trial',      period: 'Ao criar conta',         filters: { status: ['trial'] } },
+    { id: 'trial_activation', label: 'Ativar WhatsApp',        period: 'Dia 2 do trial',          filters: { status: ['trial'] } },
+    { id: 'trial_expiring',   label: 'Trial expirando',        period: '2 dias antes de vencer',  filters: { status: ['trial'], trial_expiring_in_days: 2 } },
+    { id: 'trial_expired',    label: 'Trial expirado',         period: 'Após vencer',             filters: { status: ['blocked'] } },
+    { id: 'reactivation',     label: 'Reativação',             period: 'Mensal para bloqueados',  filters: { status: ['blocked'] } },
+    { id: 'annual_upgrade',   label: 'Upgrade Anual',          period: 'Trimestral para mensais', filters: { status: ['active'], plan: ['mensal'] } },
+    { id: 'newsletter',       label: 'Newsletter Mensal',      period: 'Todo dia 1º do mês',      filters: { status: ['active', 'trial'] } },
+    { id: 'nps',              label: 'Pesquisa NPS',           period: 'Trimestral 30d+',         filters: { status: ['active'], subscription_days_min: 30 } },
+  ];
+  const [mktCampaigns,   setMktCampaigns]   = useState<MktCampaign[]>([]);
+  const [mktLoading,     setMktLoading]     = useState(false);
+  const [mktForm,        setMktForm]        = useState<{ name: string; campaign_type: string; subject: string; filters: Record<string, any> } | null>(null);
+  const [mktPreview,     setMktPreview]     = useState<{ count: number; sample: { email: string; name: string }[]; html: string } | null>(null);
+  const [mktSending,     setMktSending]     = useState<string | null>(null);
+  const [mktResult,      setMktResult]      = useState<{ sent: number; skipped: number } | null>(null);
+  const [mktPreviewOpen, setMktPreviewOpen] = useState(false);
+
+  const fetchMktCampaigns = useCallback(async () => {
+    setMktLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch(`${getApiUrl()}/api/admin/marketing/campaigns`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      });
+      if (r.ok) setMktCampaigns(await r.json());
+    } catch {}
+    setMktLoading(false);
+  }, []);
+
+  useEffect(() => { if (activeTab === 'marketing') fetchMktCampaigns(); }, [activeTab, fetchMktCampaigns]);
+
+  const mktPreviewCampaign = async (form: typeof mktForm) => {
+    if (!form) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch(`${getApiUrl()}/api/admin/marketing/preview`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filters: form.filters, campaign_type: form.campaign_type }),
+      });
+      if (r.ok) { setMktPreview(await r.json()); setMktPreviewOpen(true); }
+    } catch {}
+  };
+
+  const mktSaveCampaign = async () => {
+    if (!mktForm) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch(`${getApiUrl()}/api/admin/marketing/campaigns`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(mktForm),
+      });
+      if (r.ok) { setMktForm(null); fetchMktCampaigns(); }
+    } catch {}
+  };
+
+  const mktDeleteCampaign = async (id: string) => {
+    if (!confirm('Apagar esta campanha?')) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch(`${getApiUrl()}/api/admin/marketing/campaigns/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      });
+      fetchMktCampaigns();
+    } catch {}
+  };
+
+  const mktSendCampaign = async (id: string) => {
+    if (!confirm('Disparar esta campanha agora? Os emails serão enviados para todos os destinatários filtrados.')) return;
+    setMktSending(id); setMktResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch(`${getApiUrl()}/api/admin/marketing/campaigns/${id}/send`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      });
+      if (r.ok) { setMktResult(await r.json()); fetchMktCampaigns(); }
+    } catch {}
+    setMktSending(null);
+  };
 
   const PAGE_TRANS = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: { duration: 0.2, ease: 'easeOut' } };
 
@@ -391,7 +471,6 @@ export default function SuperAdminPanel({
             <p style={{ fontSize: 12, color: C.muted, margin: '2px 0 0' }}>
               {activeTab === 'overview'    && `${tenants.length} tenants · ${active.length} ativos`}
               {activeTab === 'tenants'     && `${filteredTenants.length} de ${tenants.length} assinantes`}
-              {activeTab === 'coupons'     && `${coupons.length} cupons cadastrados`}
               {activeTab === 'suporte'     && `${openTickets.length} abertos · ${supportTickets.filter(t => t.status === 'resolved').length} resolvidos`}
               {activeTab === 'logs'        && `${auditLogs.length} registros`}
               {activeTab === 'integracoes' && 'Credenciais e serviços externos'}
@@ -443,7 +522,7 @@ export default function SuperAdminPanel({
                             <k.icon style={{ width: 15, height: 15, color: C.accent }} />
                           </div>
                         </div>
-                        <p style={{ fontSize: 28, fontWeight: 900, color: k.color, fontFamily: 'monospace', letterSpacing: '-1px', margin: 0 }}>{k.value}</p>
+                        <p style={{ fontSize: 28, fontWeight: 900, color: k.color, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.5px', margin: 0 }}>{k.value}</p>
                         <p style={{ fontSize: 11, color: C.muted, margin: 0, lineHeight: 1.55 }}>{k.desc}</p>
                       </div>
                     ))}
@@ -486,7 +565,7 @@ export default function SuperAdminPanel({
                             <k.icon style={{ width: 15, height: 15, color: C.accent }} />
                           </div>
                         </div>
-                        <p style={{ fontSize: 32, fontWeight: 900, color: k.color, fontFamily: 'monospace', letterSpacing: '-1px', margin: 0 }}>{k.value}</p>
+                        <p style={{ fontSize: 32, fontWeight: 900, color: k.color, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.5px', margin: 0 }}>{k.value}</p>
                         <span style={{ display: 'inline-flex', alignSelf: 'flex-start', padding: '2px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: k.badgeBg, color: k.badgeColor, border: `1px solid ${k.badgeBd}` }}>{k.badge}</span>
                         <p style={{ fontSize: 11, color: C.muted, margin: 0, lineHeight: 1.55 }}>{k.desc}</p>
                       </div>
@@ -515,7 +594,7 @@ export default function SuperAdminPanel({
                                   <p style={{ fontSize: 10, color: C.muted, margin: 0 }}>{row.label}</p>
                                 </div>
                                 <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 8 }}>
-                                  <span style={{ fontSize: 16, fontWeight: 900, color: row.bar, fontFamily: 'monospace' }}>{row.count}</span>
+                                  <span style={{ fontSize: 16, fontWeight: 900, color: row.bar, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>{row.count}</span>
                                   <span style={{ fontSize: 10, color: C.muted, marginLeft: 4 }}>{pct.toFixed(0)}%</span>
                                 </div>
                               </div>
@@ -565,7 +644,7 @@ export default function SuperAdminPanel({
                             const d = daysUntil(expDate || '');
                             return (
                               <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, background: C.bg, border: `1px solid ${C.border}` }}>
-                                <div style={{ width: 36, height: 36, borderRadius: 10, background: C.amberBg, border: `1px solid ${C.amberBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13, fontWeight: 900, color: C.amber, fontFamily: 'monospace' }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: C.amberBg, border: `1px solid ${C.amberBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13, fontWeight: 900, color: C.amber, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>
                                   {d}d
                                 </div>
                                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -698,10 +777,12 @@ export default function SuperAdminPanel({
                                 onMouseLeave={e => { if (!isExp) (e.currentTarget as HTMLElement).style.background = idx % 2 === 0 ? C.surface : C.bg; }}>
                                 <td style={{ padding: '13px 14px', maxWidth: 220 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
-                                    {t.logo.startsWith('data:') || t.logo.startsWith('http') ? (
+                                    {t.logo && (t.logo.startsWith('data:') || t.logo.startsWith('http')) ? (
                                       <img src={t.logo} alt={t.name} style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', border: `1px solid ${C.border}`, flexShrink: 0 }} />
                                     ) : (
-                                      <span style={{ fontSize: 20, background: C.bg, padding: '5px 6px', borderRadius: 8, border: `1px solid ${C.border}`, lineHeight: 1, display: 'block', flexShrink: 0 }}>{t.logo}</span>
+                                      <div style={{ width: 36, height: 36, borderRadius: 8, background: C.bg, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <User size={16} style={{ color: C.muted }} />
+                                      </div>
                                     )}
                                     <div style={{ minWidth: 0 }}>
                                       <p style={{ fontWeight: 700, color: C.text, fontSize: 13, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</p>
@@ -778,7 +859,7 @@ export default function SuperAdminPanel({
                                           )}
                                           {t.status === 'trial' && (
                                             <button onClick={e => { e.stopPropagation(); onExtendTrial(t.id); }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, background: C.amberBg, border: `1px solid ${C.amberBd}`, color: C.amber, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', width: '100%', boxSizing: 'border-box' }}>
-                                              <Clock style={{ width: 12, height: 12 }} /> Estender trial +10d
+                                              <Clock style={{ width: 12, height: 12 }} /> Estender trial +7d
                                             </button>
                                           )}
                                           {t.status !== 'blocked' && (
@@ -786,7 +867,7 @@ export default function SuperAdminPanel({
                                               <Ban style={{ width: 12, height: 12 }} /> Bloquear acesso
                                             </button>
                                           )}
-                                          {t.status === 'blocked' && (
+                                          {t.status !== 'trial' && (
                                             <button onClick={e => { e.stopPropagation(); onUpdateTenantStatus(t.id, 'trial'); }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`, color: C.secondary, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', width: '100%', boxSizing: 'border-box' }}>
                                               <Clock style={{ width: 12, height: 12 }} /> Recolocar em trial
                                             </button>
@@ -814,55 +895,6 @@ export default function SuperAdminPanel({
                       Exibindo {filteredTenants.length} de {tenants.length} assinantes{search && ` · busca: "${search}"`}
                     </p>
                   )}
-                </div>
-              )}
-
-              {/* ══ CUPONS ═══════════════════════════════════════════════════ */}
-              {activeTab === 'coupons' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16 }}>
-                  <div style={{ ...card, alignSelf: 'flex-start' }}>
-                    <p style={{ ...sLbl, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-                      <Plus style={{ width: 13, height: 13 }} /> Novo Cupom
-                    </p>
-                    <form onSubmit={handleCreateCoupon} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                      <div>
-                        <span style={sLbl}>Código</span>
-                        <input type="text" required maxLength={15} value={newCode} onChange={e => setNewCode(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="EX: INVERNO30" style={{ ...inp, letterSpacing: '2px', fontFamily: 'monospace' }} />
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                        <div><span style={sLbl}>Desconto (%)</span><input type="number" required min={5} max={100} value={newDiscount} onChange={e => setNewDiscount(Number(e.target.value))} style={inp} /></div>
-                        <div><span style={sLbl}>Expira em</span><input type="date" required value={newExpiry} onChange={e => setNewExpiry(e.target.value)} style={inp} /></div>
-                      </div>
-                      <button type="submit" style={{ width: '100%', padding: '11px', background: C.accent, color: '#FFFFFF', fontSize: 13, fontWeight: 700, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Criar Cupom</button>
-                    </form>
-                  </div>
-                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                      <thead>
-                        <tr style={{ background: C.bg, borderBottom: `1px solid ${C.border}` }}>
-                          {['Código', 'Desconto', 'Expira', 'Usos', 'Status'].map(h => (
-                            <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: C.muted }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {coupons.map((c, idx) => (
-                          <tr key={c.id} style={{ background: idx % 2 === 0 ? C.surface : C.bg, borderBottom: `1px solid ${C.border}` }}>
-                            <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontWeight: 700, color: C.text, letterSpacing: '1.5px' }}>{c.code}</td>
-                            <td style={{ padding: '12px 14px', fontWeight: 700, color: C.accent }}>{c.discountPercentage}% OFF</td>
-                            <td style={{ padding: '12px 14px', fontFamily: 'monospace', color: C.secondary, fontSize: 11 }}>{c.expiresAt}</td>
-                            <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: 12, color: C.secondary }}>{c.usageCount}</td>
-                            <td style={{ padding: '12px 14px' }}>
-                              <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: c.status === 'active' ? C.greenBg : C.redBg, color: c.status === 'active' ? C.green : C.red, border: `1px solid ${c.status === 'active' ? C.greenBd : C.redBd}` }}>
-                                {c.status === 'active' ? 'Ativo' : 'Expirado'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {coupons.length === 0 && <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: C.muted, fontSize: 13 }}>Nenhum cupom cadastrado</td></tr>}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
               )}
 
@@ -1099,10 +1131,166 @@ export default function SuperAdminPanel({
                 );
               })()}
 
+            {/* ── Marketing tab ─────────────────────────────────────────────── */}
+              {activeTab === 'marketing' && (() => {
+                const presetMap = Object.fromEntries(CAMPAIGN_PRESETS.map(p => [p.id, p]));
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+                    {/* Header + new campaign button */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 13, color: C.secondary }}>Crie e dispare campanhas de email para grupos segmentados de usuários.</p>
+                      </div>
+                      <button onClick={() => setMktForm({ name: '', campaign_type: 'newsletter', subject: '', filters: {} })}
+                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: C.accent, color: '#fff', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                        <Plus size={14} /> Nova Campanha
+                      </button>
+                    </div>
+
+                    {/* Result banner */}
+                    {mktResult && (
+                      <div style={{ padding: '12px 16px', borderRadius: 12, background: C.greenBg, border: `1px solid ${C.greenBd}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.green }}>
+                          ✓ Campanha disparada — {mktResult.sent} enviados, {mktResult.skipped} já recebidos anteriormente
+                        </span>
+                        <button onClick={() => setMktResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.green, fontWeight: 700, fontSize: 16, lineHeight: 1 }}>×</button>
+                      </div>
+                    )}
+
+                    {/* Presets reference */}
+                    <div style={{ ...card }}>
+                      <p style={{ ...sLbl, marginBottom: 12 }}>Tipos de campanha disponíveis</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 10 }}>
+                        {CAMPAIGN_PRESETS.map(p => (
+                          <div key={p.id} style={{ padding: '10px 14px', borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{p.label}</span>
+                            <span style={{ fontSize: 11, color: C.muted }}>{p.period}</span>
+                            <span style={{ fontSize: 10, color: C.secondary, fontFamily: 'monospace', marginTop: 2 }}>{p.id}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Campaign form */}
+                    {mktForm && (
+                      <div style={{ ...card, border: `1px solid ${C.accentBd}`, background: C.accentBg }}>
+                        <p style={{ ...sLbl, color: C.accent, marginBottom: 14 }}>Nova Campanha</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                          <div>
+                            <label style={sLbl}>Nome interno</label>
+                            <input style={inp} value={mktForm.name} onChange={e => setMktForm(f => f && ({ ...f, name: e.target.value }))} placeholder="Ex: Trial expirando — Jun/26" />
+                          </div>
+                          <div>
+                            <label style={sLbl}>Tipo de campanha</label>
+                            <select style={{ ...inp }}
+                              value={mktForm.campaign_type}
+                              onChange={e => {
+                                const preset = CAMPAIGN_PRESETS.find(p => p.id === e.target.value);
+                                setMktForm(f => f && ({ ...f, campaign_type: e.target.value, filters: preset?.filters ?? f.filters }));
+                              }}>
+                              {CAMPAIGN_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                            </select>
+                          </div>
+                          <div style={{ gridColumn: '1/-1' }}>
+                            <label style={sLbl}>Assunto do email</label>
+                            <input style={inp} value={mktForm.subject} onChange={e => setMktForm(f => f && ({ ...f, subject: e.target.value }))} placeholder="Ex: Seu trial vence em 2 dias — assine agora" />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 10 }}>
+                          <button onClick={() => mktPreviewCampaign(mktForm)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: C.surface, border: `1px solid ${C.accentBd}`, borderRadius: 10, fontSize: 13, fontWeight: 700, color: C.accent, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                            <Eye size={13} /> Pré-visualizar
+                          </button>
+                          <button onClick={mktSaveCampaign} disabled={!mktForm.name || !mktForm.subject}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: C.accent, border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700, color: '#fff', cursor: !mktForm.name || !mktForm.subject ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', opacity: !mktForm.name || !mktForm.subject ? 0.5 : 1 }}>
+                            <CheckCircle size={13} /> Salvar
+                          </button>
+                          <button onClick={() => setMktForm(null)}
+                            style={{ padding: '9px 14px', background: 'none', border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 13, color: C.secondary, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Campaigns list */}
+                    {mktLoading ? (
+                      <div style={{ textAlign: 'center', padding: 40, color: C.muted }}>Carregando campanhas…</div>
+                    ) : mktCampaigns.length === 0 ? (
+                      <div style={{ ...card, textAlign: 'center', padding: 40, color: C.muted }}>
+                        <Megaphone size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
+                        <p style={{ margin: 0, fontSize: 14 }}>Nenhuma campanha criada ainda.</p>
+                        <p style={{ margin: '6px 0 0', fontSize: 12 }}>Crie sua primeira campanha acima.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {mktCampaigns.map(c => {
+                          const preset = presetMap[c.campaign_type];
+                          return (
+                            <div key={c.id} style={{ ...card, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                              <div style={{ width: 38, height: 38, borderRadius: 10, background: C.accentBg, border: `1px solid ${C.accentBd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Megaphone size={16} color={C.accent} />
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>{c.name}</p>
+                                <p style={{ margin: '2px 0 0', fontSize: 12, color: C.muted }}>{c.subject}</p>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', padding: '2px 8px', borderRadius: 20, background: C.accentBg, color: C.accent, border: `1px solid ${C.accentBd}` }}>{preset?.label ?? c.campaign_type}</span>
+                                  {c.last_sent_at && (
+                                    <span style={{ fontSize: 11, color: C.muted, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                      <CalendarCheck size={11} />
+                                      Último envio: {new Date(c.last_sent_at).toLocaleDateString('pt-BR')} — {c.last_sent_count ?? 0} emails
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+                                <button onClick={() => mktSendCampaign(c.id)} disabled={!!mktSending}
+                                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: C.green, border: 'none', borderRadius: 9, fontSize: 12, fontWeight: 700, color: '#fff', cursor: mktSending ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', opacity: mktSending === c.id ? 0.6 : 1 }}>
+                                  {mktSending === c.id ? <><RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> Enviando…</> : <><Send size={12} /> Disparar</>}
+                                </button>
+                                <button onClick={() => mktDeleteCampaign(c.id)}
+                                  style={{ padding: '8px 10px', background: C.redBg, border: `1px solid ${C.redBd}`, borderRadius: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Trash2 size={13} color={C.red} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
             </motion.div>
           </AnimatePresence>
         </div>
       </main>
+
+      {/* ── Modal de pré-visualização de email ──────────────────────────────── */}
+      {mktPreviewOpen && mktPreview && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => setMktPreviewOpen(false)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: C.surface, borderRadius: 18, width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)', fontFamily: 'Outfit, sans-serif', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 24px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: C.text }}>Pré-visualização do email</p>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: C.muted }}>{mktPreview.count} destinatário{mktPreview.count !== 1 ? 's' : ''} · Amostra: {mktPreview.sample.map(s => s.email).join(', ')}</p>
+              </div>
+              <button onClick={() => setMktPreviewOpen(false)}
+                style={{ padding: '6px 14px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, color: C.secondary, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                Fechar
+              </button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: 0 }}>
+              <iframe srcDoc={mktPreview.html} style={{ width: '100%', height: 600, border: 'none' }} title="Email preview" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal de confirmação de exclusão ─────────────────────────────── */}
       {deleteConfirm && (

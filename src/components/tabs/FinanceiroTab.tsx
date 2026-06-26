@@ -350,15 +350,15 @@ export default function FinanceiroTab({
     ].map(k => `
       <div style="background:${k.bg};border-radius:10px;padding:16px 18px;flex:1;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#64748B;margin-bottom:6px;">${k.label}</div>
-        <div style="font-size:22px;font-weight:800;color:${k.color};font-family:monospace;">${k.val}</div>
+        <div style="font-size:22px;font-weight:800;color:${k.color};font-family:Outfit,sans-serif;font-variant-numeric:tabular-nums;">${k.val}</div>
       </div>`).join('');
 
     const serviceRows = byService.map((s, i) => `<tr style="background:${i%2===0?'#fff':'#F8FAFC'};">
-      ${td(`<strong>${s.name}</strong>`)}${td(String(s.count),'right')}${td(fmtCurrency(s.revenue),'right','color:#10B981;font-weight:700;font-family:monospace;')}${td(totalRevenue>0?((s.revenue/totalRevenue)*100).toFixed(1)+'%':'—','right','color:#64748B;')}
+      ${td(`<strong>${s.name}</strong>`)}${td(String(s.count),'right')}${td(fmtCurrency(s.revenue),'right','color:#10B981;font-weight:700;font-family:Outfit,sans-serif;font-variant-numeric:tabular-nums;')}${td(totalRevenue>0?((s.revenue/totalRevenue)*100).toFixed(1)+'%':'—','right','color:#64748B;')}
     </tr>`).join('');
 
     const profRows = commissions.filter(c => c.closedCount > 0).map((c, i) => `<tr style="background:${i%2===0?'#fff':'#F8FAFC'};">
-      ${td(`<strong>${c.name}</strong>`)}${td(String(c.closedCount),'right')}${td(fmtCurrency(c.totalEarned),'right','color:#10B981;font-weight:700;font-family:monospace;')}${td(c.commissionPct+'%','right','color:#64748B;')}${td(fmtCurrency(c.dueCommission),'right','color:#EF4444;font-weight:700;font-family:monospace;')}${td(fmtCurrency(c.totalEarned-c.dueCommission),'right','font-weight:700;font-family:monospace;')}
+      ${td(`<strong>${c.name}</strong>`)}${td(String(c.closedCount),'right')}${td(fmtCurrency(c.totalEarned),'right','color:#10B981;font-weight:700;font-family:Outfit,sans-serif;font-variant-numeric:tabular-nums;')}${td(c.commissionPct+'%','right','color:#64748B;')}${td(fmtCurrency(c.dueCommission),'right','color:#EF4444;font-weight:700;font-family:Outfit,sans-serif;font-variant-numeric:tabular-nums;')}${td(fmtCurrency(c.totalEarned-c.dueCommission),'right','font-weight:700;font-family:Outfit,sans-serif;font-variant-numeric:tabular-nums;')}
     </tr>`).join('');
 
     const txRows = [...periodPayments].reverse().map((p, i) => {
@@ -366,11 +366,11 @@ export default function FinanceiroTab({
       const prof = appt ? myProfessionals.find(pr => pr.id === appt.professionalId) : undefined;
       const isOut = p.status === 'refunded';
       return `<tr style="background:${i%2===0?'#fff':'#F8FAFC'};">
-        ${td(`<span style="font-family:monospace;font-size:11px;color:#64748B;">${p.date.substring(0,10)}</span>`)}
+        ${td(`<span style="font-family:Outfit,sans-serif;font-variant-numeric:tabular-nums;font-size:11px;color:#64748B;">${p.date.substring(0,10)}</span>`)}
         ${td(p.description,'left','font-weight:600;')}
         ${td(prof?.name ?? '<span style="color:#CBD5E1;">—</span>')}
-        ${td(`<span style="background:#F1F5F9;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;font-family:monospace;">${methodLabel[p.method]??p.method}</span>`)}
-        ${td(`<span style="color:${isOut?'#EF4444':'#10B981'};font-weight:800;font-family:monospace;">${isOut?'−':'+'} ${fmtCurrency(p.amount)}</span>`,'right')}
+        ${td(`<span style="background:#F1F5F9;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;font-family:Outfit,sans-serif;font-variant-numeric:tabular-nums;">${methodLabel[p.method]??p.method}</span>`)}
+        ${td(`<span style="color:${isOut?'#EF4444':'#10B981'};font-weight:800;font-family:Outfit,sans-serif;font-variant-numeric:tabular-nums;">${isOut?'−':'+'} ${fmtCurrency(p.amount)}</span>`,'right')}
         ${td(`<span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:${isOut?'#FEF2F2':'#ECFDF5'};color:${isOut?'#EF4444':'#10B981'};">${isOut?'Saída':'Pago'}</span>`,'right')}
       </tr>`;
     }).join('');
@@ -444,7 +444,7 @@ export default function FinanceiroTab({
       <tbody>${txRows}</tbody>
       <tfoot><tr>
         <td colspan="4">Total do Período</td>
-        <td style="text-align:right;color:${netProfit>=0?'#10B981':'#EF4444'};font-family:monospace;">${netProfit>=0?'+':''} ${fmtCurrency(netProfit)}</td>
+        <td style="text-align:right;color:${netProfit>=0?'#10B981':'#EF4444'};font-family:Outfit,sans-serif;font-variant-numeric:tabular-nums;">${netProfit>=0?'+':''} ${fmtCurrency(netProfit)}</td>
         <td></td>
       </tr></tfoot>
     </table>` : `<p style="color:#94A3B8;">Nenhuma transação em ${periodLabel}.</p>`}
@@ -589,7 +589,7 @@ export default function FinanceiroTab({
               ].map(k => (
                 <div key={k.label} style={{ background: k.bg, borderRadius: 12, padding: '16px 18px' }}>
                   <p style={{ fontSize: 11, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 6px' }}>{k.label}</p>
-                  <p style={{ fontSize: 22, fontWeight: 800, color: k.color, margin: 0, fontFamily: 'monospace' }}>{k.isCnt ? String(k.value) : fmtCurrency(Number(k.value))}</p>
+                  <p style={{ fontSize: 22, fontWeight: 800, color: k.color, margin: 0, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>{k.isCnt ? String(k.value) : fmtCurrency(Number(k.value))}</p>
                 </div>
               ))}
             </div>
@@ -611,7 +611,7 @@ export default function FinanceiroTab({
                       <tr key={s.name} style={{ background: i % 2 === 0 ? '#fff' : '#F8FAFC' }}>
                         <td style={{ padding: '10px 14px', fontWeight: 600, color: '#0F172A', borderBottom: '1px solid #E2E8F0' }}>{s.name}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'right', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>{s.count}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#10B981', fontFamily: 'monospace', borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(s.revenue)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#10B981', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(s.revenue)}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'right', color: '#64748B', borderBottom: '1px solid #E2E8F0' }}>{totalRevenue > 0 ? ((s.revenue / totalRevenue) * 100).toFixed(1) + '%' : '—'}</td>
                       </tr>
                     ))}
@@ -637,10 +637,10 @@ export default function FinanceiroTab({
                       <tr key={c.id} style={{ background: i % 2 === 0 ? '#fff' : '#F8FAFC' }}>
                         <td style={{ padding: '10px 14px', fontWeight: 600, color: '#0F172A', borderBottom: '1px solid #E2E8F0' }}>{c.name}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'right', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>{c.closedCount}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#10B981', fontFamily: 'monospace', borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(c.totalEarned)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#10B981', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(c.totalEarned)}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'right', color: '#64748B', borderBottom: '1px solid #E2E8F0' }}>{c.commissionPct}%</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#EF4444', fontFamily: 'monospace', fontWeight: 700, borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(c.dueCommission)}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#0F172A', fontFamily: 'monospace', fontWeight: 700, borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(c.totalEarned - c.dueCommission)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#EF4444', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', fontWeight: 700, borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(c.dueCommission)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: '#0F172A', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', fontWeight: 700, borderBottom: '1px solid #E2E8F0' }}>{fmtCurrency(c.totalEarned - c.dueCommission)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -666,11 +666,11 @@ export default function FinanceiroTab({
                       const prof = appt ? myProfessionals.find(pr => pr.id === appt.professionalId) : undefined;
                       return (
                         <tr key={p.id} style={{ background: i % 2 === 0 ? '#fff' : '#F8FAFC' }}>
-                          <td style={{ padding: '9px 12px', color: '#64748B', fontFamily: 'monospace', fontSize: 11, borderBottom: '1px solid #E2E8F0' }}>{p.date.substring(0, 10)}</td>
+                          <td style={{ padding: '9px 12px', color: '#64748B', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', fontSize: 11, borderBottom: '1px solid #E2E8F0' }}>{p.date.substring(0, 10)}</td>
                           <td style={{ padding: '9px 12px', fontWeight: 600, color: '#0F172A', borderBottom: '1px solid #E2E8F0' }}>{p.description}</td>
                           <td style={{ padding: '9px 12px', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>{prof?.name ?? '—'}</td>
                           <td style={{ padding: '9px 12px', color: '#475569', borderBottom: '1px solid #E2E8F0' }}>{methodLabel[p.method] ?? p.method}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: p.status === 'refunded' ? '#EF4444' : '#10B981', borderBottom: '1px solid #E2E8F0' }}>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', color: p.status === 'refunded' ? '#EF4444' : '#10B981', borderBottom: '1px solid #E2E8F0' }}>
                             {p.status === 'refunded' ? '−' : '+'} {fmtCurrency(p.amount)}
                           </td>
                           <td style={{ padding: '9px 12px', textAlign: 'right', borderBottom: '1px solid #E2E8F0' }}>
@@ -685,7 +685,7 @@ export default function FinanceiroTab({
                   <tfoot>
                     <tr style={{ background: '#F1F5F9' }}>
                       <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, fontSize: 12, color: '#475569' }}>Total do Período</td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, fontFamily: 'monospace', color: netProfit >= 0 ? '#10B981' : '#EF4444' }}>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', color: netProfit >= 0 ? '#10B981' : '#EF4444' }}>
                         {netProfit >= 0 ? '+' : ''} {fmtCurrency(netProfit)}
                       </td>
                       <td />
@@ -719,7 +719,7 @@ export default function FinanceiroTab({
               <TrendingUp size={17} style={{ color: '#16A34A' }} />
             </div>
           </div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 26, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>
             {fmtCurrency(totalRevenue)}
           </span>
           <TrendBadge pct={trendPct(totalRevenue, prevRevenue)} />
@@ -733,7 +733,7 @@ export default function FinanceiroTab({
               <TrendingDown size={17} style={{ color: '#DC2626' }} />
             </div>
           </div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 26, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>
             {fmtCurrency(totalExpenses)}
           </span>
           <TrendBadge pct={trendPct(totalExpenses, prevExpenses)} invertColor />
@@ -747,7 +747,7 @@ export default function FinanceiroTab({
               <DollarSign size={17} style={{ color: '#3B82F6' }} />
             </div>
           </div>
-          <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.5px', fontFamily: 'monospace', color: netProfit >= 0 ? '#16A34A' : '#DC2626' }}>
+          <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.5px', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', color: netProfit >= 0 ? '#16A34A' : '#DC2626' }}>
             {fmtCurrency(netProfit)}
           </span>
           <TrendBadge pct={trendPct(netProfit, prevRevenue - prevExpenses)} />
@@ -761,7 +761,7 @@ export default function FinanceiroTab({
               <Users size={17} style={{ color: '#6B7280' }} />
             </div>
           </div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 26, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>
             {periodAtendimentos}
           </span>
           <TrendBadge pct={trendPct(periodAtendimentos, prevAtendimentos)} />
@@ -824,7 +824,7 @@ export default function FinanceiroTab({
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
                         <span style={{ color: '#374151' }}>{d.name}</span>
                       </div>
-                      <span style={{ color: '#111827', fontWeight: 700, fontFamily: 'monospace', fontSize: 11 }}>
+                      <span style={{ color: '#111827', fontWeight: 700, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', fontSize: 11 }}>
                         {fmtCurrency(d.value)}
                       </span>
                     </div>
@@ -841,7 +841,7 @@ export default function FinanceiroTab({
       </div>
 
       {/* Forms row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, maxWidth: 1200 }}>
         {/* Receita Avulsa */}
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h3 style={sectionLabel}>
@@ -948,33 +948,33 @@ export default function FinanceiroTab({
             ) : recurringExpenses.map(re => {
               const isDue = re.nextDueDate <= todayStr;
               return (
-                <div key={re.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: isDue && re.active ? '#FEF2F2' : '#F8FAFC', border: `1px solid ${isDue && re.active ? '#FCA5A5' : '#E2E8F0'}` }}>
+                <div key={re.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, background: isDue && re.active ? '#FEF2F2' : '#F8FAFC', border: `1px solid ${isDue && re.active ? '#FCA5A5' : '#E2E8F0'}` }}>
                   {/* Toggle ativo */}
                   <button
                     onClick={() => onUpdateRecurringExpense(re.id, { active: !re.active })}
                     title={re.active ? 'Desativar' : 'Ativar'}
                     style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: re.active ? '#7C3AED' : '#D1D5DB' }}>
-                    <CheckCircle2 size={16} />
+                    <CheckCircle2 size={15} />
                   </button>
                   {/* Info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: re.active ? '#111827' : '#9CA3AF', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{re.description}</p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, background: '#EDE9FE', color: '#7C3AED', padding: '1px 6px', borderRadius: 4 }}>{FREQ_LABEL[re.frequency]}</span>
-                      <span style={{ fontSize: 11, color: isDue && re.active ? '#DC2626' : '#9CA3AF', display: 'flex', alignItems: 'center', gap: 3 }}>
-                        {isDue && re.active && <AlertCircle size={10} />}
+                    <p style={{ fontSize: 12, fontWeight: 700, color: re.active ? '#111827' : '#9CA3AF', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{re.description}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, background: '#EDE9FE', color: '#7C3AED', padding: '1px 5px', borderRadius: 4 }}>{FREQ_LABEL[re.frequency]}</span>
+                      <span style={{ fontSize: 10, color: isDue && re.active ? '#DC2626' : '#9CA3AF', display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {isDue && re.active && <AlertCircle size={9} />}
                         {re.nextDueDate.split('-').reverse().join('/')}
                       </span>
                     </div>
                   </div>
-                  {/* Valor */}
-                  <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 800, color: '#DC2626', flexShrink: 0 }}>{fmtCurrency(re.amount)}</span>
+                  {/* Valor — cinza */}
+                  <span style={{ fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', fontSize: 11, fontWeight: 700, color: '#64748B', flexShrink: 0 }}>{fmtCurrency(re.amount)}</span>
                   {/* Lançar */}
                   {re.active && (
                     <button
                       onClick={() => handleLaunchRecurring(re)}
                       title="Lançar despesa agora"
-                      style={{ flexShrink: 0, padding: '5px 10px', background: isDue ? '#FEE2E2' : '#F3F4F6', color: isDue ? '#DC2626' : '#6B7280', fontWeight: 700, fontSize: 11, border: `1px solid ${isDue ? '#FCA5A5' : '#E2E8F0'}`, borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                      style={{ flexShrink: 0, padding: '4px 8px', background: isDue ? '#FEE2E2' : '#F3F4F6', color: isDue ? '#DC2626' : '#6B7280', fontWeight: 700, fontSize: 10, border: `1px solid ${isDue ? '#FCA5A5' : '#E2E8F0'}`, borderRadius: 7, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                       Lançar
                     </button>
                   )}
@@ -983,7 +983,7 @@ export default function FinanceiroTab({
                     onClick={() => onDeleteRecurringExpense(re.id)}
                     title="Remover"
                     style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#D1D5DB' }}>
-                    <Trash2 size={13} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
               );
@@ -1005,7 +1005,7 @@ export default function FinanceiroTab({
                   <span style={{ fontSize: 11, color: '#9CA3AF' }}>{c.closedCount} atend. · {c.commissionPct}%</span>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ color: '#16A34A', fontWeight: 800, fontSize: 13, fontFamily: 'monospace' }}>{fmtCurrency(c.dueCommission)}</span>
+                  <span style={{ color: '#16A34A', fontWeight: 800, fontSize: 13, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>{fmtCurrency(c.dueCommission)}</span>
                   <p style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase' }}>Salão: {fmtCurrency(c.totalEarned - c.dueCommission)}</p>
                 </div>
               </div>
@@ -1022,7 +1022,7 @@ export default function FinanceiroTab({
           <h3 style={{ ...sectionLabel, marginBottom: 0 }}>
             <RefreshCw style={{ width: 14, height: 14 }} /> Lançamentos do Período
           </h3>
-          <div style={{ display: 'flex', gap: 16, fontSize: 12, fontFamily: 'monospace' }}>
+          <div style={{ display: 'flex', gap: 16, fontSize: 12, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>
             <span style={{ color: '#16A34A', fontWeight: 700 }}>+ {fmtCurrency(totalRevenue)}</span>
             <span style={{ color: '#DC2626', fontWeight: 700 }}>− {fmtCurrency(totalExpenses)}</span>
             <span style={{ color: '#111827', fontWeight: 700 }}>= {fmtCurrency(netProfit)}</span>
@@ -1043,15 +1043,15 @@ export default function FinanceiroTab({
                 const prof = appt ? myProfessionals.find(pr => pr.id === appt.professionalId) : undefined;
                 return (
                   <tr key={p.id} style={{ background: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                    <td style={{ padding: '12px 14px', fontSize: 11, color: '#6B7280', fontFamily: 'monospace' }}>{p.date.substring(0, 10)}</td>
+                    <td style={{ padding: '12px 14px', fontSize: 11, color: '#6B7280', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>{p.date.substring(0, 10)}</td>
                     <td style={{ padding: '12px 14px', fontWeight: 600, color: '#111827', fontSize: 13 }}>{p.description}</td>
                     <td style={{ padding: '12px 14px', fontSize: 12, color: prof ? '#374151' : '#9CA3AF' }}>
                       {prof?.name ?? '—'}
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <span style={{ background: '#F1F5F9', color: '#374151', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', fontFamily: 'monospace', border: '1px solid #E2E8F0' }}>{methodLabel[p.method] ?? p.method}</span>
+                      <span style={{ background: '#F1F5F9', color: '#374151', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums', border: '1px solid #E2E8F0' }}>{methodLabel[p.method] ?? p.method}</span>
                     </td>
-                    <td style={{ padding: '12px 14px', fontWeight: 800, fontFamily: 'monospace' }}>
+                    <td style={{ padding: '12px 14px', fontWeight: 800, fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>
                       {p.status === 'refunded'
                         ? <span style={{ color: '#DC2626' }}>− {fmtCurrency(p.amount)}</span>
                         : <span style={{ color: '#16A34A' }}>+ {fmtCurrency(p.amount)}</span>}

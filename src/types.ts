@@ -26,6 +26,9 @@ export interface Tenant {
   agendaTimeMinutes?: number;
   timezone?: string;
   reminderMinutes?: number;
+  defaultPaymentMethod?: 'pix' | 'cash' | 'credit_card';
+  agendaDisplayStart?: number;
+  agendaDisplayEnd?: number;
   bookingPageConfig?: {
     primaryColor: string;
     showPhone: boolean;
@@ -33,6 +36,8 @@ export interface Tenant {
     showInstagram: boolean;
     mapsUrl?: string;
     waitlistEnabled?: boolean;
+    agendaDisplayStart?: number;
+    agendaDisplayEnd?: number;
   };
 }
 

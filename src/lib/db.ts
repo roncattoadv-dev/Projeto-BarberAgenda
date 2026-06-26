@@ -209,6 +209,11 @@ export async function updateAppointmentStatus(id: string, status: Appointment['s
   if (error) throw error;
 }
 
+export async function deleteAppointment(id: string): Promise<void> {
+  const { error } = await supabase.from('appointments').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function rescheduleAppointment(id: string, date: string, time: string): Promise<void> {
   const { error } = await supabase.from('appointments')
     .update({ scheduled_date: date, scheduled_time: time }).eq('id', id);
@@ -368,10 +373,13 @@ function mapTenant(r: any): Tenant {
     blockedDates: r.blocked_dates ?? [],
     bookingPageConfig: r.booking_page_config ?? undefined,
     contactEmail: r.contact_email ?? undefined,
+    agendaDisplayStart: r.booking_page_config?.agendaDisplayStart ?? 8,
+    agendaDisplayEnd: r.booking_page_config?.agendaDisplayEnd ?? 20,
     agendaMode: r.agenda_mode ?? 'auto_complete',
     agendaTimeMinutes: r.agenda_time_minutes ?? 30,
     timezone: r.timezone ?? 'America/Sao_Paulo',
     reminderMinutes: r.wpp_reminder_minutes ?? 60,
+    defaultPaymentMethod: r.default_payment_method ?? 'pix',
   };
 }
 function mapService(r: any): Service {
@@ -423,9 +431,12 @@ function dbTenant(t: Partial<Tenant>): any {
     ...(t.blockedDates        !== undefined && { blocked_dates: t.blockedDates }),
     ...(t.bookingPageConfig   !== undefined && { booking_page_config: t.bookingPageConfig }),
     ...(t.contactEmail        !== undefined && { contact_email: t.contactEmail }),
-    ...(t.agendaMode          !== undefined && { agenda_mode: t.agendaMode }),
-    ...(t.agendaTimeMinutes   !== undefined && { agenda_time_minutes: t.agendaTimeMinutes }),
-    ...(t.timezone            !== undefined && { timezone: t.timezone }),
+    ...(t.agendaMode              !== undefined && { agenda_mode: t.agendaMode }),
+    ...(t.agendaTimeMinutes       !== undefined && { agenda_time_minutes: t.agendaTimeMinutes }),
+    ...(t.timezone                !== undefined && { timezone: t.timezone }),
+    ...(t.defaultPaymentMethod    !== undefined && { default_payment_method: t.defaultPaymentMethod }),
+    ...(t.trialEndsAt             !== undefined && { trial_ends_at:        t.trialEndsAt }),
+    ...(t.subscriptionEndsAt      !== undefined && { subscription_ends_at: t.subscriptionEndsAt || null }),
   };
 }
 function dbService(s: Omit<Service, 'id'>): any {

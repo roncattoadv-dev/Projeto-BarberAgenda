@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, MessageSquare, Trash2, RefreshCw, AlertCircle, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
+import { X, MessageSquare, Trash2, RefreshCw, AlertCircle, ArrowRight, CheckCircle2, Clock, SlidersHorizontal } from 'lucide-react';
 import { WaitlistEntry, SlotHistory } from '../types';
 import { getWaitlistEntries, markWaitlistNotified, deleteWaitlistEntry, getSlotHistory } from '../lib/db';
 import { sendWhatsAppServer, buildWaitlistMsg } from '../services/whatsapp';
@@ -18,8 +18,12 @@ function fmtDate(d: string) {
   const [y, m, day] = d.split('-');
   return `${day}/${m}/${y}`;
 }
+function localToday(): string {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
 function isToday(d: string) {
-  return d === new Date().toISOString().split('T')[0];
+  return d === localToday();
 }
 
 export default function WaitlistModal({ tenantId, tenantName, tenantSlug, professionals, failedIds, onClose }: Props) {
@@ -29,6 +33,8 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
   const [sending,     setSending]     = useState<Record<string, boolean>>({});
   const [deleting,    setDeleting]    = useState<Record<string, boolean>>({});
   const [authToken,   setAuthToken]   = useState('');
+  const [filterDate,  setFilterDate]  = useState('');
+  const [filterProf,  setFilterProf]  = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setAuthToken(session?.access_token || ''));
@@ -41,7 +47,14 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
         getWaitlistEntries(tenantId),
         getSlotHistory(tenantId),
       ]);
-      setEntries(e);
+      const today = localToday();
+      const expired = e.filter(x => !x.notified && x.date < today);
+      if (expired.length > 0) {
+        await Promise.allSettled(expired.map(x => deleteWaitlistEntry(x.id)));
+        setEntries(e.filter(x => x.notified || x.date >= today));
+      } else {
+        setEntries(e);
+      }
       setHistory(h);
     } catch {}
     setLoading(false);
@@ -49,7 +62,7 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
 
   useEffect(() => { load(); }, [load]);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
 
   const aguardando = entries
     .filter(e => !e.notified && e.date >= today)
@@ -58,6 +71,12 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
   const notificados = entries
     .filter(e => e.notified)
     .sort((a, b) => (b.notifiedAt ?? '').localeCompare(a.notifiedAt ?? ''));
+
+  const filteredAguardando = aguardando
+    .filter(e => !filterDate || e.date === filterDate)
+    .filter(e => !filterProf || e.professionalId === filterProf);
+
+  const hasFilter = !!filterDate || !!filterProf;
 
   const profName = (id: string | null) =>
     id ? (professionals.find(p => p.id === id)?.name ?? 'Profissional') : 'Qualquer';
@@ -164,7 +183,7 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
           <div>
             <p style={{ fontSize: 15, fontWeight: 700, color: '#111827', margin: 0 }}>Lista de Espera</p>
             <p style={{ fontSize: 12, color: '#6B7280', margin: '2px 0 0' }}>
-              {aguardando.length} aguardando · {notificados.length} notificados
+              {hasFilter ? `${filteredAguardando.length} de ${aguardando.length} aguardando` : `${aguardando.length} aguardando`} · {notificados.length} notificados
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -188,22 +207,65 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
               <div style={{ textAlign: 'center', padding: '48px 0', color: '#9CA3AF', fontSize: 13 }}>Carregando…</div>
             ) : (
               <>
+                {/* ── Filtros ─────────────────────────────────────────────── */}
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <SlidersHorizontal size={12} style={{ color: '#9CA3AF', flexShrink: 0 }} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' as const, letterSpacing: '1px' }}>Filtros</span>
+                    {hasFilter && (
+                      <button onClick={() => { setFilterDate(''); setFilterProf(''); }}
+                        style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'Outfit, sans-serif' }}>
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                  {/* Data */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
+                      style={{ flex: 1, padding: '6px 10px', border: `1px solid ${filterDate ? '#BFDBFE' : '#E2E8F0'}`, borderRadius: 8, fontSize: 12, fontFamily: 'Outfit, sans-serif', color: filterDate ? '#1D4ED8' : '#374151', background: filterDate ? '#EFF6FF' : '#F8FAFC', outline: 'none', fontWeight: filterDate ? 700 : 400 }} />
+                    {filterDate && (
+                      <button onClick={() => setFilterDate('')}
+                        style={{ width: 26, height: 26, borderRadius: 7, background: '#F1F5F9', border: '1px solid #E2E8F0', color: '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14, lineHeight: 1 }}>
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  {/* Profissional */}
+                  {professionals.length > 0 && (
+                    <div style={{ display: 'flex', gap: 5, overflowX: 'auto', paddingBottom: 2 }} className="no-scrollbar">
+                      {[{ id: '', name: 'Todos' }, ...professionals].map(p => {
+                        const sel = filterProf === p.id;
+                        return (
+                          <button key={p.id} onClick={() => setFilterProf(sel ? '' : p.id)}
+                            style={{ flexShrink: 0, padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 150ms', background: sel ? '#1D4ED8' : '#F1F5F9', color: sel ? '#FFFFFF' : '#6B7280', border: `1px solid ${sel ? '#1D4ED8' : '#E2E8F0'}` }}>
+                            {p.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 {/* Aguardando */}
                 <div style={{ padding: '16px 20px 0' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase' as const, letterSpacing: '1px' }}>Aguardando vaga</span>
                     {aguardando.length > 0 && (
-                      <span style={{ fontSize: 11, fontWeight: 700, background: '#FEF3C7', color: '#92400E', borderRadius: 20, padding: '1px 8px' }}>{aguardando.length}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, background: '#FEF3C7', color: '#92400E', borderRadius: 20, padding: '1px 8px' }}>
+                        {hasFilter ? `${filteredAguardando.length}/${aguardando.length}` : aguardando.length}
+                      </span>
                     )}
                   </div>
-                  {aguardando.length === 0 ? (
+                  {filteredAguardando.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '24px 0 12px', background: '#F8FAFC', borderRadius: 12, border: '1px dashed #E2E8F0' }}>
-                      <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>Nenhum cliente aguardando vaga</p>
+                      <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>
+                        {aguardando.length === 0 ? 'Nenhum cliente aguardando vaga' : 'Nenhum resultado para esse filtro'}
+                      </p>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {aguardando.map(e => <EntryRow key={e.id} e={e} />)}
+                      {filteredAguardando.map(e => <EntryRow key={e.id} e={e} />)}
                     </div>
                   )}
                 </div>
