@@ -786,9 +786,6 @@ export default function LandingPage() {
 
             {/* Texto */}
             <div style={{ flex:'1 1 300px', minWidth:0 }} className="full-m">
-              <div style={{ width:56, height:56, borderRadius:16, background:C.accentBg, border:`1px solid ${C.accentBdr}`, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:20, color:C.accent }}>
-                <Ico.Zap />
-              </div>
               <h2 style={{ fontSize:'clamp(24px,3.5vw,40px)', fontWeight:900, margin:'0 0 16px', letterSpacing:'-1px', color:C.text }}>
                 Pronto para transformar<br />seu negócio?
               </h2>
