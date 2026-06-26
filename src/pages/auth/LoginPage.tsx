@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { ArrowLeft } from 'lucide-react';
 
 const LOGO = 'https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2019%20de%20jun.%20de%202026,%2014_46_16.png';
+const BG   = 'https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2025%20de%20jun.%20de%202026,%2016_12_48.png';
 const ACCENT = '#2563EB';
 
 function GoogleIcon() {
@@ -44,7 +45,15 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true); setError(null);
     const { error } = await signIn(email, password);
-    if (error) { setError('Email ou senha inválidos.'); setBusy(false); }
+    if (error) {
+      const msg = error.toLowerCase();
+      if (msg.includes('confirm') || msg.includes('not confirmed') || msg.includes('verificado')) {
+        setError('Confirme seu email antes de entrar. Verifique sua caixa de entrada (e a pasta de spam).');
+      } else {
+        setError('Email ou senha inválidos.');
+      }
+      setBusy(false);
+    }
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -70,7 +79,7 @@ export default function LoginPage() {
   // ── Onboarding: Google autenticado mas sem barbearia ────────────────────────
   if (!loading && needsOnboarding) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'Outfit, sans-serif' }}>
+      <div style={{ minHeight: '100vh', background: `url(${BG}) center/cover no-repeat`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'Outfit, sans-serif' }}>
         <div style={{ width: '100%', maxWidth: 360 }}>
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
             <img src={LOGO} alt="WorkAgenda" style={{ height: 120, objectFit: 'contain' }} />
@@ -98,7 +107,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: `url(${BG}) center/cover no-repeat`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'Outfit, sans-serif' }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
 
         {/* Logo */}

@@ -23,6 +23,9 @@ import {
   sendPaymentConfirmedEmail,
   sendPaymentOverdueEmail,
   sendBookingConfirmationEmail,
+  sendEmailVerificationEmail,
+  generateMarketingHtml,
+  sendMarketingEmail,
 } from './email';
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -115,6 +118,28 @@ app.use((req, _res, next) => {
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
+// ── Proxy de verificação de email ─────────────────────────────────────────────
+// Recebe token da URL do email e redireciona internamente para o Supabase Auth,
+// mantendo a URL pública limpa (api.workagenda.org em vez de kong:8000)
+app.get('/api/verify-email', async (req, res) => {
+  const { token, redirect_to } = req.query as Record<string, string>;
+  if (!token) return res.status(400).send('Token inválido ou ausente.');
+
+  const safeRedirect = redirect_to?.startsWith(SITE_URL) ? redirect_to : `${SITE_URL}/login`;
+  const internalUrl  = `${SUPABASE_URL}/auth/v1/verify?token=${encodeURIComponent(token)}&type=signup&redirect_to=${encodeURIComponent(safeRedirect)}`;
+
+  try {
+    const r = await fetch(internalUrl, { redirect: 'manual' });
+    const location = r.headers.get('location');
+    if (location) return res.redirect(location);
+    // Supabase retornou sem redirect → erro
+    return res.redirect(`${SITE_URL}/login?error=email_verification_failed`);
+  } catch (err: any) {
+    console.error('[VerifyEmail] Proxy error:', err.message);
+    return res.redirect(`${SITE_URL}/login?error=email_verification_failed`);
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/register
 // Cadastro público de nova barbearia — cria tenant + usuário + assinatura Asaas
@@ -166,11 +191,11 @@ app.post('/api/register', async (req, res) => {
 
     if (tenantErr) throw tenantErr;
 
-    // 4. Cria usuário no Supabase Auth
+    // 4. Cria usuário no Supabase Auth (sem confirmar — requer verificação de email)
     const { data: authUser, error: authErr } = await supabasePublic.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // confirma automaticamente (sem email de verificação)
+      email_confirm: false,
       user_metadata: {
         name,
         role:      'tenant_admin',
@@ -196,7 +221,26 @@ app.post('/api/register', async (req, res) => {
       tenant_id: tenant.id,
     });
 
-    // 6. Cria cliente e assinatura no Asaas (com 10 dias de trial)
+    // 6. Gera link de verificação e envia email customizado
+    try {
+      const { data: linkData } = await supabasePublic.auth.admin.generateLink({
+        type: 'signup',
+        email,
+        options: { redirectTo: `${SITE_URL}/login` },
+      });
+      const actionLink = (linkData as any)?.properties?.action_link as string | undefined;
+      if (actionLink) {
+        // Extrai o token interno e constrói URL limpa via proxy próprio
+        const parsed = new URL(actionLink);
+        const token  = parsed.searchParams.get('token') || parsed.searchParams.get('hashed_token') || '';
+        const cleanUrl = `${API_PUBLIC_URL}/api/verify-email?token=${encodeURIComponent(token)}&redirect_to=${encodeURIComponent(`${SITE_URL}/login`)}`;
+        await sendEmailVerificationEmail(email, name, cleanUrl);
+      }
+    } catch (verifyErr: any) {
+      console.error('[Register] Verification email error (non-fatal):', verifyErr.message);
+    }
+
+    // 8. Cria cliente e assinatura no Asaas (com 10 dias de trial)
     let asaasCustomerId    = null;
     let asaasSubscriptionId = null;
 
@@ -232,11 +276,12 @@ app.post('/api/register', async (req, res) => {
     );
 
     return res.status(201).json({
-      ok:       true,
-      tenantId: tenant.id,
-      slug:     tenant.slug,
-      trialEndsAt: trialDate,
-      message:  'Cadastro realizado! Acesse o painel para configurar sua barbearia.',
+      ok:                    true,
+      needsEmailVerification: true,
+      tenantId:              tenant.id,
+      slug:                  tenant.slug,
+      trialEndsAt:           trialDate,
+      message:               'Cadastro realizado! Confirme seu email para acessar o painel.',
     });
 
   } catch (err: any) {
@@ -1837,6 +1882,145 @@ async function sendReminders(): Promise<void> {
     }
   }
 }
+
+// ── Marketing Campaigns ───────────────────────────────────────────────────────
+
+app.get('/api/admin/marketing/campaigns', verifySuperAdmin, async (_req, res) => {
+  const { data, error } = await supabase
+    .from('marketing_campaigns')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json(data);
+});
+
+app.post('/api/admin/marketing/campaigns', verifySuperAdmin, async (req, res) => {
+  const { id, name, campaign_type, subject, filters } = req.body;
+  if (!name || !campaign_type || !subject) return res.status(400).json({ error: 'name, campaign_type e subject são obrigatórios' });
+  if (id) {
+    const { data, error } = await supabase
+      .from('marketing_campaigns')
+      .update({ name, campaign_type, subject, filters: filters ?? {}, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json(data);
+  }
+  const { data, error } = await supabase
+    .from('marketing_campaigns')
+    .insert({ name, campaign_type, subject, filters: filters ?? {} })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(201).json(data);
+});
+
+app.delete('/api/admin/marketing/campaigns/:id', verifySuperAdmin, async (req, res) => {
+  const { error } = await supabase
+    .from('marketing_campaigns')
+    .delete()
+    .eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ ok: true });
+});
+
+async function getMarketingRecipients(filters: Record<string, any>): Promise<{ tenantId: string; email: string; name: string; slug: string }[]> {
+  let query = supabase.from('tenants').select('id, name, slug, status, plan, trial_ends_at, created_at');
+
+  if (filters.status?.length) query = query.in('status', filters.status);
+  if (filters.plan?.length)   query = query.in('plan', filters.plan);
+
+  const { data: tenants } = await query;
+  if (!tenants?.length) return [];
+
+  let list = tenants;
+
+  if (filters.trial_expiring_in_days != null) {
+    const horizon = new Date();
+    horizon.setDate(horizon.getDate() + Number(filters.trial_expiring_in_days) + 1);
+    const from = new Date();
+    list = list.filter(t => {
+      if (!t.trial_ends_at) return false;
+      const d = new Date(t.trial_ends_at);
+      return d >= from && d <= horizon;
+    });
+  }
+  if (filters.subscription_days_min != null) {
+    const minDays = Number(filters.subscription_days_min);
+    list = list.filter(t => {
+      const d = new Date(t.created_at);
+      return (Date.now() - d.getTime()) / 86400000 >= minDays;
+    });
+  }
+
+  if (!list.length) return [];
+  const tenantIds = list.map(t => t.id).filter(id => id !== '00000000-0000-0000-0000-000000000001');
+
+  const { data: profiles } = await supabasePublic
+    .from('profiles')
+    .select('tenant_id, email, name')
+    .in('tenant_id', tenantIds)
+    .eq('role', 'tenant_admin');
+
+  if (!profiles?.length) return [];
+
+  const tenantMap = Object.fromEntries(list.map(t => [t.id, t]));
+  return profiles
+    .filter(p => p.email)
+    .map(p => ({
+      tenantId: p.tenant_id,
+      email:    p.email,
+      name:     (p as any).name ?? tenantMap[p.tenant_id]?.name ?? 'Olá',
+      slug:     tenantMap[p.tenant_id]?.slug ?? '',
+    }));
+}
+
+app.post('/api/admin/marketing/preview', verifySuperAdmin, async (req, res) => {
+  const { filters, campaign_type } = req.body;
+  const recipients = await getMarketingRecipients(filters ?? {});
+  const sample = recipients.slice(0, 5).map(r => ({ email: r.email, name: r.name }));
+  const html = generateMarketingHtml(campaign_type ?? 'newsletter', sample[0]?.name ?? 'Usuário', sample[0]?.slug ?? '');
+  return res.json({ count: recipients.length, sample, html });
+});
+
+app.post('/api/admin/marketing/campaigns/:id/send', verifySuperAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { data: campaign, error: ce } = await supabase
+    .from('marketing_campaigns')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (ce || !campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
+
+  const recipients = await getMarketingRecipients(campaign.filters ?? {});
+  if (!recipients.length) return res.json({ sent: 0, skipped: 0 });
+
+  let sent = 0, skipped = 0;
+  for (const r of recipients) {
+    try {
+      const { data: prev } = await supabase
+        .from('marketing_sends')
+        .select('id')
+        .eq('campaign_id', id)
+        .eq('tenant_id', r.tenantId)
+        .maybeSingle();
+      if (prev) { skipped++; continue; }
+      const html = generateMarketingHtml(campaign.campaign_type, r.name, r.slug);
+      await sendMarketingEmail(r.email, campaign.subject, html);
+      await supabase.from('marketing_sends').insert({ campaign_id: id, tenant_id: r.tenantId, email: r.email });
+      sent++;
+    } catch (err: any) {
+      console.error('[Marketing] Erro ao enviar para', r.email, err.message);
+    }
+  }
+
+  await supabase.from('marketing_campaigns')
+    .update({ last_sent_at: new Date().toISOString(), last_sent_count: sent })
+    .eq('id', id);
+
+  return res.json({ sent, skipped });
+});
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {

@@ -16,7 +16,7 @@ export function RouteGuard({ children, roles, redirectTo = '/login' }: Props) {
   // Mostra spinner enquanto carrega OU enquanto há sessão mas o profile ainda não chegou
   if (loading || (session && !profile)) {
     return (
-      <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#F8FAFC 0%,#EFF6FF 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, fontFamily: 'Outfit, sans-serif' }}>
+      <div style={{ minHeight: '100vh', background: `url(https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2025%20de%20jun.%20de%202026,%2016_12_48.png) center/cover no-repeat`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, fontFamily: 'Outfit, sans-serif' }}>
         <style>{`
           @keyframes wlFadeIn { from { opacity:0; transform:scale(0.92) } to { opacity:1; transform:scale(1) } }
           @keyframes wlShimmer { 0% { transform:translateX(-100%) } 100% { transform:translateX(200%) } }

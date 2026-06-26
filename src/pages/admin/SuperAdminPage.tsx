@@ -43,19 +43,37 @@ export default function SuperAdminPage() {
   useEffect(() => { load(); }, [load]);
 
   const handleUpdateStatus = async (tenantId: string, status: Tenant['status']) => {
-    await updateTenant(tenantId, { status });
-    setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, status } : t));
+    const patch: Partial<Tenant> = { status };
+    if (status === 'active') {
+      const t = tenants.find(x => x.id === tenantId);
+      if (!t?.plan || t.plan === 'trial') patch.plan = 'mensal';
+      const base = new Date();
+      const subEnd = t?.subscriptionEndsAt ? new Date(t.subscriptionEndsAt) : null;
+      const d = subEnd && subEnd > base ? subEnd : base;
+      d.setDate(d.getDate() + 30);
+      patch.subscriptionEndsAt = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    if (status === 'trial') {
+      patch.plan = 'trial';
+      patch.subscriptionEndsAt = '';
+    }
+    await updateTenant(tenantId, patch);
+    setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, ...patch } : t));
     await logAudit('Status Tenant', `Status de ${tenantId} → ${status}`, null, profile?.name ?? 'Super Admin', profile?.id);
   };
 
   const handleExtendTrial = async (tenantId: string) => {
     const t = tenants.find(x => x.id === tenantId);
     if (!t) return;
-    const d = new Date(t.trialEndsAt);
-    d.setDate(d.getDate() + 10);
-    const newDate = d.toISOString().split('T')[0];
-    await updateTenant(tenantId, { trialEndsAt: newDate } as any);
-    setTenants(prev => prev.map(x => x.id === tenantId ? { ...x, trialEndsAt: newDate } : x));
+    // Base: o maior entre hoje e a data atual de trial (evita contar a partir do passado)
+    const base = new Date(Math.max(Date.now(), t.trialEndsAt ? new Date(t.trialEndsAt).getTime() : 0));
+    base.setDate(base.getDate() + 7);
+    const n = base;
+    const newDate = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+    const patch: any = { trialEndsAt: newDate };
+    if (t.status === 'blocked') patch.status = 'trial';
+    await updateTenant(tenantId, patch);
+    setTenants(prev => prev.map(x => x.id === tenantId ? { ...x, ...patch } : x));
   };
 
   const handleAddCoupon = async (code: string, discount: number, expiresAt: string) => {

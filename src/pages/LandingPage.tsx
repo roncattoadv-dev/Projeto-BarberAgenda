@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 
+const BG2 = 'https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2025%20de%20jun.%20de%202026,%2016_21_02.png';
+
 // ── Paleta ─────────────────────────────────────────────────────────────────────
 const C = {
   bg:        '#F8FAFC',
@@ -308,7 +310,7 @@ export default function LandingPage() {
       )}
 
       {/* ── HERO ─────────────────────────────────────────────────────────────── */}
-      <section className="hero-s" style={{ padding:`140px ${PX} 80px`, position:'relative', overflow:'hidden' }}>
+      <section className="hero-s" style={{ padding:`140px ${PX} 80px`, position:'relative', overflow:'hidden', backgroundImage:`linear-gradient(rgba(248,250,252,0.78),rgba(248,250,252,0.78)),url('${BG2}')`, backgroundSize:'auto,cover', backgroundPosition:'0 0,center', backgroundRepeat:'no-repeat' }}>
         {/* blobs */}
         <div style={{ position:'absolute', top:-80, right:'0%', width:700, height:700, borderRadius:'50%', background:'radial-gradient(circle, rgba(37,99,235,0.07) 0%, transparent 65%)', pointerEvents:'none' }} />
         <div style={{ position:'absolute', bottom:-60, left:'5%', width:500, height:500, borderRadius:'50%', background:'radial-gradient(circle, rgba(34,197,94,0.05) 0%, transparent 65%)', pointerEvents:'none' }} />
@@ -321,7 +323,7 @@ export default function LandingPage() {
               <Pill>Plataforma para barbearias e salões</Pill>
             </div>
             <h1 className="h2" style={{ fontSize:'clamp(38px,5.5vw,66px)', fontWeight:900, lineHeight:1.05, margin:'22px 0 20px', letterSpacing:'-2.5px', color:C.text }}>
-              Sua barbearia<br />
+              Sua Barbearia/Salão<br />
               <span style={{ color:C.accent }}>cheia</span>, sem<br />esforço nenhum
             </h1>
             <p className="h3" style={{ fontSize:'clamp(15px,1.8vw,18px)', color:C.secondary, maxWidth:460, lineHeight:1.72, margin:'0 0 36px' }}>
@@ -398,7 +400,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── STATS BAR ────────────────────────────────────────────────────────── */}
-      <Reveal style={{ padding:`0 ${PX} clamp(40px,6vw,72px)` }}>
+      <Reveal style={{ padding:`clamp(24px,4vw,48px) ${PX} clamp(40px,6vw,72px)` }}>
         <div className="stats-inner" style={{ background:'#fff', borderRadius:20, border:`1px solid ${C.border}`, padding:'28px 40px', display:'flex', alignItems:'center', justifyContent:'center', gap:'clamp(20px,6vw,80px)', flexWrap:'wrap', boxShadow:'0 2px 12px rgba(0,0,0,0.04)' }}>
           {[['12000','Agendamentos realizados','+'],['45000','Mensagens WhatsApp/mês','+'],['200','Negócios ativos','+'],['99.9','Uptime garantido','%']].map(([v,l,s])=>(
             <div key={l} style={{ textAlign:'center' }}>
@@ -577,7 +579,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── LISTA DE ESPERA ─────────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX}`, background:C.bg, borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
+      <section style={{ padding:`80px ${PX}`, backgroundImage:`linear-gradient(rgba(248,250,252,0.82),rgba(248,250,252,0.82)),url('https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2025%20de%20jun.%20de%202026,%2016_12_48.png')`, backgroundSize:'auto,cover', backgroundPosition:'0 0,center', backgroundRepeat:'no-repeat', borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
         <div style={{ maxWidth:1020, margin:'0 auto' }}>
 
           {/* Header */}
@@ -758,7 +760,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── CTA FINAL ────────────────────────────────────────────────────────── */}
-      <section style={{ padding:`80px ${PX} 96px`, position:'relative', overflow:'hidden' }}>
+      <section style={{ padding:`80px ${PX} 96px`, position:'relative', overflow:'hidden', backgroundImage:`url('${BG2}')`, backgroundSize:'cover', backgroundPosition:'center', backgroundRepeat:'no-repeat' }}>
         <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 30%, rgba(37,99,235,0.07) 0%, transparent 60%)', pointerEvents:'none' }} />
         <Reveal from="bottom" style={{ position:'relative', background:'#fff', border:`1px solid ${C.border}`, borderRadius:32, padding:'clamp(32px,5vw,64px) clamp(24px,5vw,64px)', maxWidth:1040, margin:'0 auto', boxShadow:'0 8px 48px rgba(0,0,0,0.07)' }}>
           {/* Barra decorativa no topo */}

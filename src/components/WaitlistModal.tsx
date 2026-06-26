@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { X, MessageSquare, Trash2, RefreshCw, AlertCircle, ArrowRight, CheckCircle2, Clock, SlidersHorizontal } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { X, MessageSquare, Trash2, RefreshCw, AlertCircle, ArrowRight, CheckCircle2, Clock, ChevronDown } from 'lucide-react';
 import { WaitlistEntry, SlotHistory } from '../types';
 import { getWaitlistEntries, markWaitlistNotified, deleteWaitlistEntry, getSlotHistory } from '../lib/db';
 import { sendWhatsAppServer, buildWaitlistMsg } from '../services/whatsapp';
@@ -25,6 +25,132 @@ function localToday(): string {
 function isToday(d: string) {
   return d === localToday();
 }
+function localDateStr(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+type DatePreset = 'todos' | 'hoje' | 'ontem' | 'semana' | 'mes' | 'custom';
+const DATE_PRESETS: { value: DatePreset; label: string }[] = [
+  { value: 'todos',  label: 'Todas as datas' },
+  { value: 'hoje',   label: 'Hoje'           },
+  { value: 'ontem',  label: 'Ontem'          },
+  { value: 'semana', label: 'Esta semana'    },
+  { value: 'mes',    label: 'Este mês'       },
+  { value: 'custom', label: 'Personalizado'  },
+];
+
+function MultiSelect({ label, options, selected, onChange }: {
+  label: string;
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const toggle = (value: string) =>
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
+
+  const displayLabel = selected.length === 0
+    ? label
+    : selected.length === 1
+    ? (options.find(o => o.value === selected[0])?.label ?? label)
+    : `${selected.length} selecionados`;
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', fontSize: 11, fontWeight: 600, fontFamily: 'Outfit, sans-serif', background: selected.length > 0 ? '#EFF6FF' : '#FFFFFF', border: `1px solid ${selected.length > 0 ? '#BFDBFE' : '#D1D5DB'}`, borderRadius: 8, color: selected.length > 0 ? '#1D4ED8' : '#374151', cursor: 'pointer', outline: 'none', whiteSpace: 'nowrap' as const }}>
+        {displayLabel}
+        <ChevronDown size={11} style={{ color: '#9CA3AF', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: 180, padding: 6 }}>
+          {selected.length > 0 && (
+            <button type="button" onClick={() => onChange([])}
+              style={{ display: 'block', width: '100%', textAlign: 'left' as const, padding: '6px 10px', fontSize: 11, fontWeight: 700, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', borderRadius: 6, marginBottom: 2 }}>
+              Limpar seleção
+            </button>
+          )}
+          {options.map(o => (
+            <label key={o.value} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', borderRadius: 6, background: selected.includes(o.value) ? '#EFF6FF' : 'transparent' }}>
+              <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)}
+                style={{ width: 14, height: 14, accentColor: '#2563EB', cursor: 'pointer', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, fontWeight: selected.includes(o.value) ? 700 : 500, color: selected.includes(o.value) ? '#1D4ED8' : '#374151', fontFamily: 'Outfit, sans-serif' }}>
+                {o.label}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DateFilter({ preset, from, to, onPreset, onFrom, onTo }: {
+  preset: DatePreset; from: string; to: string;
+  onPreset: (p: DatePreset) => void; onFrom: (d: string) => void; onTo: (d: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const isActive = preset !== 'todos';
+  const displayLabel = isActive ? (DATE_PRESETS.find(p => p.value === preset)?.label ?? 'Data') : 'Data';
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', fontSize: 11, fontWeight: 600, fontFamily: 'Outfit, sans-serif', background: isActive ? '#EFF6FF' : '#FFFFFF', border: `1px solid ${isActive ? '#BFDBFE' : '#D1D5DB'}`, borderRadius: 8, color: isActive ? '#1D4ED8' : '#374151', cursor: 'pointer', outline: 'none', whiteSpace: 'nowrap' as const }}>
+        {displayLabel}
+        <ChevronDown size={11} style={{ color: '#9CA3AF', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: 180, padding: 6 }}>
+          {DATE_PRESETS.map(p => (
+            <button key={p.value} type="button"
+              onClick={() => { onPreset(p.value); if (p.value !== 'custom') setOpen(false); }}
+              style={{ display: 'block', width: '100%', textAlign: 'left' as const, padding: '7px 10px', fontSize: 12, fontWeight: preset === p.value ? 700 : 500, color: preset === p.value ? '#1D4ED8' : '#374151', background: preset === p.value ? '#EFF6FF' : 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', borderRadius: 6 }}>
+              {p.label}
+            </button>
+          ))}
+          {preset === 'custom' && (
+            <div style={{ padding: '8px 10px', borderTop: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column' as const, gap: 6, marginTop: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: '#6B7280', width: 24, flexShrink: 0 }}>De</span>
+                <input type="date" value={from} onChange={e => onFrom(e.target.value)}
+                  style={{ flex: 1, padding: '5px 8px', fontSize: 11, border: '1px solid #E2E8F0', borderRadius: 7, outline: 'none', fontFamily: 'Outfit, sans-serif', color: '#111827' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: '#6B7280', width: 24, flexShrink: 0 }}>Até</span>
+                <input type="date" value={to} onChange={e => onTo(e.target.value)}
+                  style={{ flex: 1, padding: '5px 8px', fontSize: 11, border: '1px solid #E2E8F0', borderRadius: 7, outline: 'none', fontFamily: 'Outfit, sans-serif', color: '#111827' }} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function WaitlistModal({ tenantId, tenantName, tenantSlug, professionals, failedIds, onClose }: Props) {
   const [entries,     setEntries]     = useState<WaitlistEntry[]>([]);
@@ -33,8 +159,10 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
   const [sending,     setSending]     = useState<Record<string, boolean>>({});
   const [deleting,    setDeleting]    = useState<Record<string, boolean>>({});
   const [authToken,   setAuthToken]   = useState('');
-  const [filterDate,  setFilterDate]  = useState('');
-  const [filterProf,  setFilterProf]  = useState('');
+  const [profFilter,  setProfFilter]  = useState<string[]>([]);
+  const [datePreset,  setDatePreset]  = useState<DatePreset>('todos');
+  const [dateFrom,    setDateFrom]    = useState('');
+  const [dateTo,      setDateTo]      = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setAuthToken(session?.access_token || ''));
@@ -72,11 +200,32 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
     .filter(e => e.notified)
     .sort((a, b) => (b.notifiedAt ?? '').localeCompare(a.notifiedAt ?? ''));
 
-  const filteredAguardando = aguardando
-    .filter(e => !filterDate || e.date === filterDate)
-    .filter(e => !filterProf || e.professionalId === filterProf);
+  let filteredAguardando = aguardando;
 
-  const hasFilter = !!filterDate || !!filterProf;
+  if (profFilter.length > 0)
+    filteredAguardando = filteredAguardando.filter(e => e.professionalId && profFilter.includes(e.professionalId));
+
+  if (datePreset !== 'todos') {
+    if (datePreset === 'hoje') {
+      filteredAguardando = filteredAguardando.filter(e => e.date === today);
+    } else if (datePreset === 'ontem') {
+      const d = new Date(); d.setDate(d.getDate() - 1);
+      filteredAguardando = filteredAguardando.filter(e => e.date === localDateStr(d));
+    } else if (datePreset === 'semana') {
+      const d = new Date(); const dow = d.getDay();
+      const mon = new Date(d); mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+      const sun = new Date(d); sun.setDate(d.getDate() + (dow === 0 ? 0 : 7 - dow));
+      filteredAguardando = filteredAguardando.filter(e => e.date >= localDateStr(mon) && e.date <= localDateStr(sun));
+    } else if (datePreset === 'mes') {
+      const ym = today.substring(0, 7);
+      filteredAguardando = filteredAguardando.filter(e => e.date.startsWith(ym));
+    } else if (datePreset === 'custom') {
+      if (dateFrom) filteredAguardando = filteredAguardando.filter(e => e.date >= dateFrom);
+      if (dateTo)   filteredAguardando = filteredAguardando.filter(e => e.date <= dateTo);
+    }
+  }
+
+  const hasFilter = profFilter.length > 0 || datePreset !== 'todos';
 
   const profName = (id: string | null) =>
     id ? (professionals.find(p => p.id === id)?.name ?? 'Profissional') : 'Qualquer';
@@ -208,41 +357,27 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
             ) : (
               <>
                 {/* ── Filtros ─────────────────────────────────────────────── */}
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <SlidersHorizontal size={12} style={{ color: '#9CA3AF', flexShrink: 0 }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' as const, letterSpacing: '1px' }}>Filtros</span>
-                    {hasFilter && (
-                      <button onClick={() => { setFilterDate(''); setFilterProf(''); }}
-                        style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'Outfit, sans-serif' }}>
-                        Limpar
-                      </button>
-                    )}
-                  </div>
-                  {/* Data */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
-                      style={{ flex: 1, padding: '6px 10px', border: `1px solid ${filterDate ? '#BFDBFE' : '#E2E8F0'}`, borderRadius: 8, fontSize: 12, fontFamily: 'Outfit, sans-serif', color: filterDate ? '#1D4ED8' : '#374151', background: filterDate ? '#EFF6FF' : '#F8FAFC', outline: 'none', fontWeight: filterDate ? 700 : 400 }} />
-                    {filterDate && (
-                      <button onClick={() => setFilterDate('')}
-                        style={{ width: 26, height: 26, borderRadius: 7, background: '#F1F5F9', border: '1px solid #E2E8F0', color: '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14, lineHeight: 1 }}>
-                        ×
-                      </button>
-                    )}
-                  </div>
-                  {/* Profissional */}
-                  {professionals.length > 0 && (
-                    <div style={{ display: 'flex', gap: 5, overflowX: 'auto', paddingBottom: 2 }} className="no-scrollbar">
-                      {[{ id: '', name: 'Todos' }, ...professionals].map(p => {
-                        const sel = filterProf === p.id;
-                        return (
-                          <button key={p.id} onClick={() => setFilterProf(sel ? '' : p.id)}
-                            style={{ flexShrink: 0, padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 150ms', background: sel ? '#1D4ED8' : '#F1F5F9', color: sel ? '#FFFFFF' : '#6B7280', border: `1px solid ${sel ? '#1D4ED8' : '#E2E8F0'}` }}>
-                            {p.name}
-                          </button>
-                        );
-                      })}
-                    </div>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #F1F5F9', display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <MultiSelect
+                    label="Profissional"
+                    options={professionals.map(p => ({ value: p.id, label: p.name }))}
+                    selected={profFilter}
+                    onChange={setProfFilter}
+                  />
+                  <DateFilter
+                    preset={datePreset}
+                    from={dateFrom}
+                    to={dateTo}
+                    onPreset={setDatePreset}
+                    onFrom={setDateFrom}
+                    onTo={setDateTo}
+                  />
+                  {hasFilter && (
+                    <button
+                      onClick={() => { setProfFilter([]); setDatePreset('todos'); setDateFrom(''); setDateTo(''); }}
+                      style={{ fontSize: 10, fontWeight: 700, color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', fontFamily: 'Outfit, sans-serif' }}>
+                      Limpar
+                    </button>
                   )}
                 </div>
 

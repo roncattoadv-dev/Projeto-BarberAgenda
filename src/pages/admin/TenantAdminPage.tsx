@@ -277,7 +277,7 @@ import {
   getCustomers, getAppointments, getPayments,
   updateTenant, createService, updateService, deleteService,
   createProfessional, updateProfessional, deleteProfessional, setServiceProfessionals, createProduct, updateCustomer, deleteCustomer,
-  updateProductStock, createAppointment, updateAppointmentStatus, rescheduleAppointment,
+  updateProductStock, createAppointment, updateAppointmentStatus, deleteAppointment, rescheduleAppointment,
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours, mapAppointment,
   getRecurringExpenses, createRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
@@ -331,6 +331,30 @@ export default function TenantAdminPage() {
   }, [tenantId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Realtime: atualiza tenant quando SuperAdmin muda status/plano/datas
+  useEffect(() => {
+    if (!tenantId) return;
+    const ch = supabase
+      .channel(`tenant-status-${tenantId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'barber', table: 'tenants', filter: `id=eq.${tenantId}` },
+        (payload) => {
+          const r = payload.new as Record<string, unknown>;
+          setTenant(prev => prev ? {
+            ...prev,
+            status:             (r.status               as Tenant['status']) ?? prev.status,
+            plan:               (r.plan                 as string)           ?? prev.plan,
+            subscriptionEndsAt: r.subscription_ends_at  != null ? (r.subscription_ends_at as string) : '',
+            trialEndsAt:        r.trial_ends_at          != null ? (r.trial_ends_at        as string) : prev.trialEndsAt,
+            mrr:                (r.mrr                  as number)           ?? prev.mrr,
+          } : prev);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [tenantId]);
 
   // Sincroniza INSERT e UPDATE de appointments via WebSocket + polling de fallback
   useEffect(() => {
@@ -571,6 +595,10 @@ export default function TenantAdminPage() {
             setAppointments(p => p.map(a => a.id === id ? { ...a, date, time } : a));
             const appt = appointments.find(a => a.id === id);
             if (appt) notifyAppointmentWhatsApp(appt.tenantId, id).catch(() => {});
+          }}
+          onDeleteAppointment={async (id) => {
+            await deleteAppointment(id);
+            setAppointments(p => p.filter(a => a.id !== id));
           }}
           onAddPayment={async p => {
             const c = await createPayment(p);

@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Clock, Search, MessageSquare, ChevronDown } from 'lucide-react';
+import { Check, X, Clock, Search, MessageSquare, ChevronDown, Trash2 } from 'lucide-react';
 import { Appointment, Service, Professional, Tenant } from '../../types';
 import { supabase } from '../../lib/supabase';
+import DeleteConfirmDialog from '../DeleteConfirmDialog';
 import {
   checkStatusServer, sendWhatsAppServer,
   buildConfirmationMsg, buildReminderMsg, buildCancellationMsg,
@@ -16,6 +17,7 @@ interface Props {
   myProfessionals: Professional[];
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onCompleteAppointment: (appt: Appointment) => void;
+  onDeleteAppointment: (id: string) => void;
 }
 
 type SendState = 'idle' | 'sending' | 'done' | 'error';
@@ -193,19 +195,27 @@ function SelectWrap({ children }: { children: React.ReactNode }) {
   );
 }
 
+function localDateStr(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 const LS_KEY = 'bf_agend_filters';
 function loadFilters() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; }
 }
 
-export default function AgendamentosTab({ activeTenant, myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment, reminderMinutes = 60 }: Props & { reminderMinutes?: number }) {
+export default function AgendamentosTab({ activeTenant, myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment, onDeleteAppointment, reminderMinutes = 60 }: Props & { reminderMinutes?: number }) {
   const [search,       setSearch]       = useState('');
   const [profFilter,   setProfFilter]   = useState<string[]>(() => loadFilters().profFilter   ?? []);
   const [statusFilter, setStatusFilter] = useState<string[]>(() => loadFilters().statusFilter ?? []);
   const [sortOrder,    setSortOrder]    = useState<'desc' | 'asc'>(() => loadFilters().sortOrder  ?? 'desc');
-  const [datePreset,   setDatePreset]   = useState<DatePreset>(() => loadFilters().datePreset  ?? 'todos');
+  const [datePreset,   setDatePreset]   = useState<DatePreset>(() => loadFilters().datePreset  ?? 'hoje');
   const [dateFrom,     setDateFrom]     = useState<string>(() => loadFilters().dateFrom    ?? '');
   const [dateTo,       setDateTo]       = useState<string>(() => loadFilters().dateTo      ?? '');
+  const [deletingAppt, setDeletingAppt] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify({ profFilter, statusFilter, sortOrder, datePreset, dateFrom, dateTo }));
@@ -305,17 +315,17 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
     if (profFilter.length > 0)   list = list.filter(a => profFilter.includes(a.professionalId));
 
     if (datePreset !== 'todos') {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateStr();
       if (datePreset === 'hoje') {
         list = list.filter(a => a.date === today);
       } else if (datePreset === 'ontem') {
-        const y = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-        list = list.filter(a => a.date === y);
+        const d = new Date(); d.setDate(d.getDate() - 1);
+        list = list.filter(a => a.date === localDateStr(d));
       } else if (datePreset === 'semana') {
         const d = new Date(); const dow = d.getDay();
-        const mon = new Date(d.getTime() - (dow === 0 ? 6 : dow - 1) * 86400000).toISOString().split('T')[0];
-        const sun = new Date(d.getTime() + (dow === 0 ? 0 : 7 - dow) * 86400000).toISOString().split('T')[0];
-        list = list.filter(a => a.date >= mon && a.date <= sun);
+        const mon = new Date(d); mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+        const sun = new Date(d); sun.setDate(d.getDate() + (dow === 0 ? 0 : 7 - dow));
+        list = list.filter(a => a.date >= localDateStr(mon) && a.date <= localDateStr(sun));
       } else if (datePreset === 'mes') {
         const ym = today.substring(0, 7);
         list = list.filter(a => a.date.startsWith(ym));
@@ -505,10 +515,10 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                     ? `${String(Math.floor(remMin/60)).padStart(2,'0')}:${String(remMin%60).padStart(2,'0')}`
                     : null;
 
-                  // Lembrete suspenso: janela do lembrete já passou mas agendamento ainda não ocorreu
+                  // Lembrete cancelado: janela do lembrete já passou e não foi enviado (cobre late booking e pós-agendamento)
                   const remDt        = new Date(`${appt.date}T${appt.time}`);
                   remDt.setMinutes(remDt.getMinutes() - reminderMinutes);
-                  const reminderSuspenso = !appt.wppReminderSent && !apptPast && remDt <= new Date();
+                  const reminderSuspenso = !appt.wppReminderSent && remDt <= new Date();
 
                   return (
                     <>
@@ -520,7 +530,7 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                             <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 700, color: '#64748B', whiteSpace: 'nowrap' }}>
                               <Clock size={8} /> {remTime ? `Lemb. ${remTime}` : 'Lembrete'}
                             </div>
-                            <div style={{ fontSize: 8, color: '#94A3B8', whiteSpace: 'nowrap' }}>Suspenso</div>
+                            <div style={{ fontSize: 8, color: '#94A3B8', whiteSpace: 'nowrap' }}>Tempo insuficiente</div>
                           </div>
                         </div>
                       ) : (
@@ -552,11 +562,29 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                   );
                 })()}
 
+                {/* Apagar — somente concluídos e cancelados */}
+                {(appt.status === 'attended' || appt.status === 'cancelled') && (
+                  <button
+                    onClick={() => setDeletingAppt({ id: appt.id, name: appt.customerName })}
+                    title="Apagar agendamento"
+                    style={{ height: 24, padding: '0 8px', borderRadius: 7, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#9CA3AF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <Trash2 size={10} /> Apagar
+                  </button>
+                )}
+
               </motion.div>
             );
           })}
         </AnimatePresence>
       </div>
+
+      {deletingAppt && (
+        <DeleteConfirmDialog
+          name={deletingAppt.name}
+          onConfirm={() => { onDeleteAppointment(deletingAppt.id); setDeletingAppt(null); }}
+          onCancel={() => setDeletingAppt(null)}
+        />
+      )}
     </div>
   );
 }

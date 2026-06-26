@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import PrivacyModal from '../../components/PrivacyModal';
 
 const LOGO   = 'https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2019%20de%20jun.%20de%202026,%2014_46_16.png';
+const BG     = 'https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2025%20de%20jun.%20de%202026,%2016_12_48.png';
 const ACCENT = '#2563EB';
 
 const API_URL = (() => {
@@ -97,7 +98,7 @@ function BarberSetupForm({ googleName, onDone, onSignOut }: {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: `url(${BG}) center/cover no-repeat`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'Outfit, sans-serif' }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 28 }}>
           <img src={LOGO} alt="WorkAgenda" style={{ height: 210, objectFit: 'contain', marginBottom: 12 }} />
@@ -166,35 +167,38 @@ function BarberSetupForm({ googleName, onDone, onSignOut }: {
   );
 }
 
-// ── Tela de sucesso ────────────────────────────────────────────────────────
-function SuccessScreen({ slug, trialEndsAt, onGoToDashboard }: { slug: string; trialEndsAt: string; onGoToDashboard: () => void }) {
+// ── Tela: verificação de email pendente ───────────────────────────────────────
+function VerifyEmailScreen({ email, onBackToLogin }: { email: string; onBackToLogin: () => void }) {
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: `url(${BG}) center/cover no-repeat`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'Outfit, sans-serif' }}>
       <div style={{ width: '100%', maxWidth: 420, textAlign: 'center' }}>
-        <div style={{ fontSize: 52, marginBottom: 16 }}>🎉</div>
-        <h1 style={{ color: '#111827', fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Cadastro concluído!</h1>
-        <p style={{ color: '#6B7280', fontSize: 14, lineHeight: 1.6, marginBottom: 28 }}>
-          Sua barbearia tem <strong style={{ color: '#111827' }}>7 dias grátis</strong> para testar tudo.<br />
-          Após o período, o plano é <strong style={{ color: '#111827' }}>R$ 89,90/mês</strong>.
-        </p>
-        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20, textAlign: 'left', marginBottom: 24, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-          <div style={{ marginBottom: 16 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '2px', color: '#9CA3AF', marginBottom: 6 }}>Link de agendamento</p>
-            <code style={{ display: 'block', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#111827', fontFamily: 'monospace' }}>
-              {window.location.origin}/{slug}/agendamento
-            </code>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
+          <img src={LOGO} alt="WorkAgenda" style={{ height: 110, objectFit: 'contain' }} />
+        </div>
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 20, padding: 36, boxShadow: '0 2px 16px rgba(0,0,0,0.08)' }}>
+          <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#EFF6FF', border: '1px solid #BFDBFE', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 26 }}>
+            ✉️
           </div>
-          <div>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '2px', color: '#9CA3AF', marginBottom: 6 }}>Trial gratuito até</p>
-            <p style={{ color: '#111827', fontWeight: 700, fontSize: 15 }}>
-              {new Date(trialEndsAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
-            </p>
+          <h1 style={{ color: '#111827', fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Confirme seu email</h1>
+          <p style={{ color: '#6B7280', fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
+            Enviamos um link de confirmação para:
+          </p>
+          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '12px 16px', marginBottom: 24 }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#111827' }}>{email}</p>
+          </div>
+          <p style={{ color: '#9CA3AF', fontSize: 13, lineHeight: 1.6, marginBottom: 28 }}>
+            Clique no link do email para ativar sua conta e acessar o painel. Verifique também a pasta de <strong>spam</strong>.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+            <button onClick={onBackToLogin}
+              style={{ width: '100%', padding: 14, background: ACCENT, color: '#fff', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+              Ir para o login →
+            </button>
           </div>
         </div>
-        <button onClick={onGoToDashboard}
-          style={{ width: '100%', padding: 14, background: ACCENT, color: '#fff', fontWeight: 700, fontSize: 14, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-          Acessar o painel →
-        </button>
+        <p style={{ marginTop: 20, fontSize: 12, color: '#9CA3AF' }}>
+          O link expira em 24 horas. Após confirmar, faça login normalmente.
+        </p>
       </div>
     </div>
   );
@@ -206,10 +210,11 @@ export default function RegisterPage() {
   const navigate = useNavigate();
   const { session, profile, loading: authLoading, needsOnboarding, signOut } = useAuth();
 
-  const [step,       setStep]       = useState<1 | 2>(1);
-  const [busy,       setBusy]       = useState(false);
-  const [googleBusy, setGoogleBusy] = useState(false);
-  const [done,       setDone]       = useState<{ slug: string; trialEndsAt: string } | null>(null);
+  const [step,         setStep]         = useState<1 | 2>(1);
+  const [busy,         setBusy]         = useState(false);
+  const [googleBusy,   setGoogleBusy]   = useState(false);
+  const [done,         setDone]         = useState<{ slug: string; trialEndsAt: string } | null>(null);
+  const [verifyEmail,  setVerifyEmail]  = useState<string | null>(null);
 
   const [name,          setName]          = useState('');
   const [slug,          setSlug]          = useState('');
@@ -265,20 +270,25 @@ export default function RegisterPage() {
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || 'Erro ao cadastrar. Tente novamente.'); setBusy(false); return; }
-      setDone({ slug: data.slug, trialEndsAt: data.trialEndsAt });
+      if (data.needsEmailVerification) {
+        setVerifyEmail(email);
+      } else {
+        setDone({ slug: data.slug, trialEndsAt: data.trialEndsAt });
+      }
     } catch {
       toast.error('Erro de conexão. Verifique sua internet e tente novamente.');
     } finally { setBusy(false); }
   };
 
   if (authLoading) return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ minHeight: '100vh', background: `url(${BG}) center/cover no-repeat`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid #BFDBFE`, borderTopColor: ACCENT, animation: 'spin 0.8s linear infinite' }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 
-  if (done) return <SuccessScreen slug={done.slug} trialEndsAt={done.trialEndsAt} onGoToDashboard={() => navigate('/login')} />;
+  if (verifyEmail) return <VerifyEmailScreen email={verifyEmail} onBackToLogin={() => navigate('/login')} />;
+  if (done) return <VerifyEmailScreen email={email} onBackToLogin={() => navigate('/login')} />;
 
   if (needsOnboarding) {
     const googleName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || '';
@@ -286,7 +296,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px', fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: `url(${BG}) center/cover no-repeat`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px', fontFamily: 'Outfit, sans-serif' }}>
       <div style={{ width: '100%', maxWidth: 420 }}>
 
         {/* Header */}
