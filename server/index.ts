@@ -167,7 +167,7 @@ app.post('/api/register', async (req, res) => {
     // 2. Verifica se o email já usou trial (anti-abuso)
     const { data: usedTrial } = await supabasePublic.from('used_trials').select('email').eq('email', email).maybeSingle();
 
-    // 3. Calcula datas do trial (10 dias apenas para novos; emails com trial anterior iniciam bloqueados)
+    // 3. Calcula datas do trial (7 dias para novos; emails com trial anterior iniciam bloqueados)
     const trialEndsAt = new Date();
     if (!usedTrial) trialEndsAt.setDate(trialEndsAt.getDate() + 7);
     const trialDate = trialEndsAt.toISOString().split('T')[0];
@@ -241,7 +241,8 @@ app.post('/api/register', async (req, res) => {
       console.error('[Register] Verification email error (non-fatal):', verifyErr.message);
     }
 
-    // 8. Cria cliente e assinatura no Asaas (com 10 dias de trial)
+    // 8. Cria cliente e assinatura no Asaas
+    // trialDays: 7 para novos tenants; 0 para bloqueados (cobrança vence hoje, pagamento imediato)
     let asaasCustomerId    = null;
     let asaasSubscriptionId = null;
 
@@ -251,7 +252,7 @@ app.post('/api/register', async (req, res) => {
       // Salva customer_id imediatamente — evita criar duplicata se subscription falhar
       await supabase.from('tenants').update({ asaas_customer_id: asaasCustomerId }).eq('id', tenant.id);
 
-      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', 7);
+      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', usedTrial ? 0 : 7);
       asaasSubscriptionId   = subscription.id;
 
       await supabase.from('tenants').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
@@ -525,7 +526,7 @@ app.post('/api/register-google', async (req, res) => {
     // Verifica se o email já usou trial (anti-abuso)
     const { data: usedTrial } = await supabasePublic.from('used_trials').select('email').eq('email', email).maybeSingle();
 
-    // Calcula datas do trial (10 dias apenas para novos; emails com trial anterior iniciam bloqueados)
+    // Calcula datas do trial (7 dias para novos; emails com trial anterior iniciam bloqueados)
     const trialEndsAt = new Date();
     if (!usedTrial) trialEndsAt.setDate(trialEndsAt.getDate() + 7);
     const trialDate    = trialEndsAt.toISOString().split('T')[0];
@@ -551,31 +552,37 @@ app.post('/api/register-google', async (req, res) => {
     if (tenantErr) throw tenantErr;
 
     // Atualiza user_metadata com role e tenant_id
-    await supabasePublic.auth.admin.updateUserById(user.id, {
-      user_metadata: {
-        name:      name,
-        role:      'tenant_admin',
-        tenant_id: tenant.id,
-      },
+    const { error: metaErr } = await supabasePublic.auth.admin.updateUserById(user.id, {
+      user_metadata: { name, role: 'tenant_admin', tenant_id: tenant.id },
     });
+    if (metaErr) {
+      // Rollback: remove tenant órfão
+      await supabase.from('tenants').delete().eq('id', tenant.id);
+      throw metaErr;
+    }
 
     // Upsert do profile
-    await supabasePublic.from('profiles').upsert({
-      id:        user.id,
-      name,
-      email,
-      role:      'tenant_admin',
-      tenant_id: tenant.id,
+    const { error: profileErr } = await supabasePublic.from('profiles').upsert({
+      id: user.id, name, email, role: 'tenant_admin', tenant_id: tenant.id,
     });
+    if (profileErr) {
+      // Rollback: remove tenant e reverte metadata
+      await supabase.from('tenants').delete().eq('id', tenant.id);
+      await supabasePublic.auth.admin.updateUserById(user.id, {
+        user_metadata: { name, role: 'tenant_admin', tenant_id: null },
+      }).catch(() => {});
+      throw profileErr;
+    }
 
     // Cria cliente e assinatura no Asaas (não bloqueia o cadastro se falhar)
+    // trialDays: 7 para novos tenants; 0 para bloqueados (cobrança vence hoje)
     let asaasSubscriptionId = null;
     try {
       const asaasCustomer   = await createAsaasCustomer({ name, email, phone, tenantId: tenant.id });
       // Salva customer_id imediatamente — evita criar duplicata se subscription falhar
       await supabase.from('tenants').update({ asaas_customer_id: asaasCustomer.id }).eq('id', tenant.id);
 
-      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', 7);
+      const subscription    = await createSubscription(asaasCustomer.id, 'mensal', usedTrial ? 0 : 7);
       asaasSubscriptionId   = subscription.id;
       await supabase.from('tenants').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
     } catch (asaasErr) {
