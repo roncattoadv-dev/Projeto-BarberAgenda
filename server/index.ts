@@ -445,7 +445,7 @@ app.delete('/api/account', async (req, res) => {
 
     const adminProfile = allProfiles?.find(p => p.role === 'tenant_admin');
     const adminEmail   = adminProfile
-      ? (await supabasePublic.auth.admin.getUserById(adminProfile.id).then(r => r.data.user?.email ?? '')).catch(() => '') ?? ''
+      ? await supabasePublic.auth.admin.getUserById(adminProfile.id).then(r => r.data.user?.email ?? '').catch(() => '')
       : '';
 
     // Registra email em used_trials ANTES de deletar (impede abuso de trial)
