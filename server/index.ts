@@ -98,6 +98,11 @@ const supabasePublic = new PostgrestClient(SUPABASE_URL, {
 });
 
 const app = express();
+// Atrás do Traefik (1 hop) — necessário pra express-rate-limit confiar no
+// X-Forwarded-For real do cliente em vez do IP interno do proxy. `1` (não
+// `true`) pra confiar só no hop imediato, não numa cadeia arbitrária que o
+// próprio cliente poderia forjar.
+app.set('trust proxy', 1);
 const CORS_ORIGINS = [
   process.env.FRONTEND_URL,
   process.env.CORS_ORIGIN,
