@@ -10,7 +10,7 @@ import {
   Check, X, RefreshCw, Scissors, CreditCard, Package,
   Menu, Bell, User, ChevronDown, Zap, Copy, CheckCheck, Pencil,
   Palette, Phone, MapPin, Instagram, Eye, EyeOff,
-  Mail, Lock, Clock, Shield, Trash2, LogOut, Eraser,
+  Mail, Lock, Clock, Shield, Trash2, LogOut, Eraser, StickyNote,
 } from 'lucide-react';
 
 import { Tenant, Service, Professional, Product, Appointment, Payment, Customer, RecurringExpense } from '../types';
@@ -60,7 +60,7 @@ interface Props {
   onDeleteRecurringExpense: (id: string) => void;
   waitlistFailedIds: Set<string>;
   onAddCustomer: (c: Omit<Customer, 'id'>) => Promise<Customer>;
-  onUpdateCustomer: (id: string, updates: { name?: string; phone?: string; email?: string }) => Promise<void>;
+  onUpdateCustomer: (id: string, updates: { name?: string; phone?: string; email?: string; notes?: string }) => Promise<void>;
   onDeleteCustomer: (id: string) => Promise<void>;
   onUpdateTenantDetails: (tenantId: string, details: Partial<Tenant>) => void | Promise<void>;
   onSwitchToBookingFlow: (slug: string) => void;
@@ -314,6 +314,32 @@ export default function ClientAdminPanel({
     setEditingCust(null);
     setCustName(''); setCustPhone(''); setCustEmail('');
     setShowNewClientModal(false);
+  };
+
+  const [notesCust,   setNotesCust]   = useState<Customer | null>(null);
+  const [custNotes,   setCustNotes]   = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+  const startEditNotes = (c: Customer) => {
+    setNotesCust(c);
+    setCustNotes(c.notes || '');
+  };
+  const cancelEditNotes = () => {
+    setNotesCust(null);
+    setCustNotes('');
+  };
+  const handleSaveNotes = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notesCust) return;
+    setSavingNotes(true);
+    try {
+      await onUpdateCustomer(notesCust.id, { notes: custNotes });
+      toast.success('Notas salvas.');
+      cancelEditNotes();
+    } catch {
+      toast.error('Não foi possível salvar as notas.');
+    } finally {
+      setSavingNotes(false);
+    }
   };
 
   // ── Config state ──────────────────────────────────────────────────────────
@@ -1030,6 +1056,12 @@ export default function ClientAdminPanel({
                             title="Editar cliente"
                             style={{ width: 28, height: 28, borderRadius: 7, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             <Pencil size={12} />
+                          </button>
+                          <button
+                            onClick={() => startEditNotes(c)}
+                            title={c.notes ? 'Editar notas' : 'Adicionar nota'}
+                            style={{ width: 28, height: 28, borderRadius: 7, background: c.notes ? '#FEF3C7' : '#F8FAFC', border: c.notes ? '1px solid #FDE68A' : '1px solid #E2E8F0', color: c.notes ? '#B45309' : '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <StickyNote size={12} />
                           </button>
                           <button
                             onClick={() => setDeleteCustomerPending({ id: c.id, name: c.name })}
@@ -3096,6 +3128,38 @@ export default function ClientAdminPanel({
                 )}
                 <button type="submit" style={{ flex: 2, padding: 12, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
                   {editingCust ? 'Salvar' : 'Adicionar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Notas do Cliente ────────────────────────────────────────── */}
+      {notesCust && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={cancelEditNotes}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>Notas — {notesCust.name}</p>
+              <button onClick={cancelEditNotes} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
+            </div>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 14px' }}>Visível só para você e sua equipe.</p>
+            <form onSubmit={handleSaveNotes} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <textarea
+                placeholder="Preferências, alergias, observações sobre o cliente…"
+                value={custNotes}
+                onChange={e => setCustNotes(e.target.value)}
+                rows={5}
+                className="navy-input"
+                style={{ resize: 'vertical', fontFamily: 'Outfit, sans-serif' }}
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button type="button" onClick={cancelEditNotes} style={{ flex: 1, padding: 12, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                <button type="submit" disabled={savingNotes} style={{ flex: 2, padding: 12, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: savingNotes ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif', opacity: savingNotes ? 0.7 : 1 }}>
+                  {savingNotes ? 'Salvando…' : 'Salvar'}
                 </button>
               </div>
             </form>
