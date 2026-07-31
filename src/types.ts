@@ -116,6 +116,15 @@ export interface Appointment {
   emailConfirmSent?: boolean;
 }
 
+export interface PaymentItem {
+  type: 'service' | 'product';
+  refId: string;
+  name: string;
+  unitPrice: number;
+  qty: number;
+  subtotal: number;
+}
+
 export interface Payment {
   id: string;
   tenantId: string;
@@ -125,6 +134,7 @@ export interface Payment {
   status: 'pending' | 'paid' | 'failed' | 'refunded';
   date: string; // YYYY-MM-DD HH:mm:ss
   description: string;
+  items?: PaymentItem[];
 }
 
 export interface Subscription {

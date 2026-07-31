@@ -275,7 +275,7 @@ import {
   getCustomers, getAppointments, getPayments,
   updateTenant, createService, updateService, deleteService,
   createProfessional, updateProfessional, deleteProfessional, setServiceProfessionals, createProduct, updateProduct, deleteProduct, updateCustomer, deleteCustomer,
-  updateProductStock, createAppointment, updateAppointmentStatus, deleteAppointment, rescheduleAppointment,
+  updateProductStock, createAppointment, updateAppointmentStatus, updateAppointmentPrice, deleteAppointment, rescheduleAppointment,
   createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours, mapAppointment,
   getRecurringExpenses, createRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
@@ -564,6 +564,10 @@ export default function TenantAdminPage() {
                 // falha silenciosa
               }
             }
+          }}
+          onUpdateAppointmentPrice={async (id, price) => {
+            await updateAppointmentPrice(id, price);
+            setAppointments(p => p.map(a => a.id === id ? { ...a, price } : a));
           }}
           onRescheduleAppointment={async (id, date, time) => {
             await rescheduleAppointment(id, date, time);

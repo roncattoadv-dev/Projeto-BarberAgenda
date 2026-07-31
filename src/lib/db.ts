@@ -209,6 +209,11 @@ export async function updateAppointmentStatus(id: string, status: Appointment['s
   if (error) throw error;
 }
 
+export async function updateAppointmentPrice(id: string, price: number): Promise<void> {
+  const { error } = await supabase.from('appointments').update({ price }).eq('id', id);
+  if (error) throw error;
+}
+
 export async function deleteAppointment(id: string): Promise<void> {
   const { error } = await supabase.from('appointments').delete().eq('id', id);
   if (error) throw error;
@@ -422,7 +427,7 @@ export function mapAppointment(r: any): Appointment {
   return { id: r.id, tenantId: r.tenant_id, serviceId: r.service_id, professionalId: r.professional_id, customerId: r.customer_id, customerName: r.customer_name, customerPhone: r.customer_phone, customerEmail: r.customer_email ?? '', date: r.scheduled_date, time: r.scheduled_time?.substring(0,5) ?? '', durationMinutes: r.duration_minutes, price: Number(r.price), status: r.status, notes: r.notes, wppConfirmSent: r.wpp_confirm_sent ?? false, wppReminderSent: r.wpp_reminder_sent ?? false, emailConfirmSent: r.email_confirm_sent ?? false };
 }
 function mapPayment(r: any): Payment {
-  return { id: r.id, tenantId: r.tenant_id, appointmentId: r.appointment_id, amount: Number(r.amount), method: r.method, status: r.status, date: r.paid_at, description: r.description ?? '' };
+  return { id: r.id, tenantId: r.tenant_id, appointmentId: r.appointment_id, amount: Number(r.amount), method: r.method, status: r.status, date: r.paid_at, description: r.description ?? '', items: r.items ?? [] };
 }
 function mapRecurringExpense(r: any): RecurringExpense {
   return { id: r.id, tenantId: r.tenant_id, description: r.description, amount: Number(r.amount), frequency: r.frequency, nextDueDate: r.next_due_date, active: r.active, createdAt: r.created_at };
@@ -476,7 +481,7 @@ function dbAppointment(a: Omit<Appointment, 'id'>): any {
   return { tenant_id: a.tenantId, service_id: a.serviceId, professional_id: a.professionalId, customer_id: a.customerId, customer_name: a.customerName, customer_phone: a.customerPhone, customer_email: a.customerEmail ?? null, scheduled_date: a.date, scheduled_time: a.time, duration_minutes: a.durationMinutes, price: a.price, status: a.status, notes: a.notes ?? null };
 }
 function dbPayment(p: Omit<Payment, 'id'>): any {
-  return { tenant_id: p.tenantId, appointment_id: p.appointmentId ?? null, amount: p.amount, method: p.method, status: p.status, description: p.description };
+  return { tenant_id: p.tenantId, appointment_id: p.appointmentId ?? null, amount: p.amount, method: p.method, status: p.status, description: p.description, items: p.items ?? [] };
 }
 function dbProduct(p: Omit<Product, 'id'>): any {
   return { tenant_id: p.tenantId, name: p.name, price: p.price, cost_price: p.costPrice, stock: p.stock, min_stock: p.minStock, category: p.category, custom_fields: p.customFields ?? [], is_active: true };

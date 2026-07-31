@@ -13,7 +13,7 @@ import {
   Mail, Lock, Clock, Shield, Trash2, LogOut, Eraser, StickyNote,
 } from 'lucide-react';
 
-import { Tenant, Service, Professional, Product, Appointment, Payment, Customer, RecurringExpense } from '../types';
+import { Tenant, Service, Professional, Product, Appointment, Payment, PaymentItem, Customer, RecurringExpense } from '../types';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../contexts/AuthContext';
 import { UseNotificationsReturn } from '../hooks/useNotifications';
@@ -53,6 +53,7 @@ interface Props {
   onUpdateProductStock: (id: string, stock: number) => void;
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
+  onUpdateAppointmentPrice: (id: string, price: number) => void | Promise<void>;
   onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
   onDeleteAppointment: (id: string) => void;
   onAddPayment: (pay: Omit<Payment, 'id'>) => void;
@@ -101,7 +102,7 @@ export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
   onAddProfessional, onUpdateProfessional, onDeleteProfessional, onSetServiceProfessionals, onAddProduct, onUpdateProduct, onDeleteProduct, onUpdateProductStock,
-  onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onDeleteAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
+  onAddAppointment, onUpdateAppointmentStatus, onUpdateAppointmentPrice, onRescheduleAppointment, onDeleteAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount, onSignOut,
   openSubscriptionTab, onSubscriptionTabOpened,
   recurringExpenses, onAddRecurringExpense, onUpdateRecurringExpense, onDeleteRecurringExpense,
@@ -579,10 +580,88 @@ export default function ClientAdminPanel({
     const r = new FileReader(); r.onloadend = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(f);
   });
 
+  // ── Fechar Fatura state ───────────────────────────────────────────────────
+  const [invoiceAppt,    setInvoiceAppt]    = useState<Appointment | null>(null);
+  const [invoiceItems,   setInvoiceItems]   = useState<PaymentItem[]>([]);
+  const [invoiceMethod,  setInvoiceMethod]  = useState<'pix' | 'credit_card' | 'cash'>('pix');
+  const [savingInvoice,  setSavingInvoice]  = useState(false);
+  const [addLinePicker,  setAddLinePicker]  = useState<'service' | 'product' | null>(null);
+
   const handleCompleteAppointment = (appt: Appointment) => {
-    onUpdateAppointmentStatus(appt.id, 'attended');
-    onAddPayment({ tenantId: activeTenant.id, appointmentId: appt.id, amount: appt.price, method: defaultPaymentMethod, status: 'paid', date: new Date().toISOString().replace('T', ' ').substring(0, 19), description: `Atendimento: ${appt.customerName}` });
-    toast.success(`${appt.customerName} concluído — R$ ${appt.price.toFixed(2)} registrado.`);
+    const svc = myServices.find(s => s.id === appt.serviceId);
+    setInvoiceAppt(appt);
+    setInvoiceItems([{ type: 'service', refId: appt.serviceId, name: svc?.name || 'Serviço', unitPrice: appt.price, qty: 1, subtotal: appt.price }]);
+    setInvoiceMethod(defaultPaymentMethod);
+    setAddLinePicker(null);
+  };
+  const cancelInvoice = () => {
+    setInvoiceAppt(null);
+    setInvoiceItems([]);
+    setAddLinePicker(null);
+  };
+  const addServiceLine = (s: Service) => {
+    setInvoiceItems(prev => [...prev, { type: 'service', refId: s.id, name: s.name, unitPrice: s.price, qty: 1, subtotal: s.price }]);
+    setAddLinePicker(null);
+  };
+  const addProductLine = (p: Product) => {
+    if (p.stock <= 0) { toast.error('Produto sem estoque.'); return; }
+    setInvoiceItems(prev => [...prev, { type: 'product', refId: p.id, name: p.name, unitPrice: p.price, qty: 1, subtotal: p.price }]);
+    setAddLinePicker(null);
+  };
+  const removeInvoiceLine = (idx: number) => {
+    if (invoiceItems.length <= 1) return;
+    setInvoiceItems(prev => prev.filter((_, i) => i !== idx));
+  };
+  const updateInvoiceLineQty = (idx: number, qty: number) => {
+    setInvoiceItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it;
+      let q = Math.max(1, qty);
+      if (it.type === 'product') {
+        const prod = myProducts.find(p => p.id === it.refId);
+        if (prod) q = Math.min(q, prod.stock);
+      }
+      return { ...it, qty: q, subtotal: q * it.unitPrice };
+    }));
+  };
+  const updateInvoiceLinePrice = (idx: number, price: number) => {
+    setInvoiceItems(prev => prev.map((it, i) => i === idx ? { ...it, unitPrice: price, subtotal: it.qty * price } : it));
+  };
+  const invoiceTotal = invoiceItems.reduce((s, i) => s + i.subtotal, 0);
+
+  const handleCloseInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invoiceAppt || invoiceItems.length === 0) return;
+    for (const it of invoiceItems) {
+      if (it.type === 'product') {
+        const prod = myProducts.find(p => p.id === it.refId);
+        if (!prod || it.qty > prod.stock) { toast.error(`Estoque insuficiente para "${it.name}".`); return; }
+      }
+    }
+    setSavingInvoice(true);
+    try {
+      await onUpdateAppointmentStatus(invoiceAppt.id, 'attended');
+      const originalLine = invoiceItems[0];
+      if (originalLine.type === 'service' && originalLine.refId === invoiceAppt.serviceId && originalLine.unitPrice !== invoiceAppt.price) {
+        await onUpdateAppointmentPrice(invoiceAppt.id, originalLine.unitPrice);
+      }
+      for (const it of invoiceItems) {
+        if (it.type === 'product') {
+          const prod = myProducts.find(p => p.id === it.refId);
+          if (prod) await onUpdateProductStock(prod.id, prod.stock - it.qty);
+        }
+      }
+      await onAddPayment({
+        tenantId: activeTenant.id, appointmentId: invoiceAppt.id, amount: invoiceTotal, method: invoiceMethod,
+        status: 'paid', date: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        description: invoiceItems.map(i => i.name).join(' + '), items: invoiceItems,
+      });
+      toast.success(`${invoiceAppt.customerName} concluído — R$ ${invoiceTotal.toFixed(2)} registrado.`);
+      cancelInvoice();
+    } catch {
+      toast.error('Não foi possível fechar a fatura.');
+    } finally {
+      setSavingInvoice(false);
+    }
   };
 
   const handleCancelAndNotifyWaitlist = useCallback(async (id: string, status: Appointment['status']) => {
@@ -3687,6 +3766,106 @@ export default function ClientAdminPanel({
                 {deletingProduct ? 'Apagando…' : 'Sim, apagar'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Fechar Fatura ──────────────────────────────────────────────── */}
+      {invoiceAppt && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => !savingInvoice && cancelInvoice()}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 460, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}
+            className="no-scrollbar">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>Fechar Fatura — {invoiceAppt.customerName}</p>
+              <button onClick={cancelInvoice} disabled={savingInvoice} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
+            </div>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 14px' }}>Revise o valor do serviço, adicione outro serviço ou produtos antes de concluir.</p>
+
+            <form onSubmit={handleCloseInvoice} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {invoiceItems.map((it, idx) => {
+                  const prod = it.type === 'product' ? myProducts.find(p => p.id === it.refId) : undefined;
+                  return (
+                    <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '8px 10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</div>
+                        <div style={{ fontSize: 10, color: '#9CA3AF' }}>{it.type === 'service' ? 'Serviço' : `Produto${prod ? ` · ${prod.stock} em estoque` : ''}`}</div>
+                      </div>
+                      <input type="number" min="1" max={it.type === 'product' ? (prod?.stock ?? 1) : undefined} value={it.qty}
+                        onChange={e => updateInvoiceLineQty(idx, Number(e.target.value) || 1)}
+                        className="navy-input" style={{ width: 48, padding: '6px 4px', textAlign: 'center' as const }} />
+                      <input type="number" min="0" step="0.01" value={it.unitPrice}
+                        onChange={e => updateInvoiceLinePrice(idx, Number(e.target.value) || 0)}
+                        className="navy-input" style={{ width: 76, padding: '6px 6px' }} />
+                      <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 12, color: '#059669', width: 64, textAlign: 'right' as const, flexShrink: 0 }}>
+                        R$ {it.subtotal.toFixed(2)}
+                      </span>
+                      <button type="button" onClick={() => removeInvoiceLine(idx)} disabled={invoiceItems.length <= 1} title="Remover item"
+                        style={{ width: 24, height: 24, borderRadius: 6, background: invoiceItems.length <= 1 ? '#F1F5F9' : '#FEE2E2', border: invoiceItems.length <= 1 ? '1px solid #E2E8F0' : '1px solid #FCA5A5', color: invoiceItems.length <= 1 ? '#CBD5E1' : '#DC2626', cursor: invoiceItems.length <= 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => setAddLinePicker(addLinePicker === 'service' ? null : 'service')}
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '8px 0', background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB', fontWeight: 700, fontSize: 11, borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                  <Plus size={12} /> Serviço
+                </button>
+                <button type="button" onClick={() => setAddLinePicker(addLinePicker === 'product' ? null : 'product')}
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '8px 0', background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#059669', fontWeight: 700, fontSize: 11, borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                  <Plus size={12} /> Produto
+                </button>
+              </div>
+
+              {addLinePicker === 'service' && (
+                <div className="no-scrollbar" style={{ maxHeight: 140, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, padding: 6, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8 }}>
+                  {myServices.map(s => (
+                    <button key={s.id} type="button" onClick={() => addServiceLine(s)}
+                      style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 6, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', fontSize: 12, color: '#111827', textAlign: 'left' as const }}>
+                      <span>{s.name}</span><span style={{ color: '#6B7280' }}>R$ {s.price.toFixed(2)}</span>
+                    </button>
+                  ))}
+                  {myServices.length === 0 && <p style={{ fontSize: 11, color: '#9CA3AF', margin: '4px 0' }}>Nenhum serviço cadastrado.</p>}
+                </div>
+              )}
+              {addLinePicker === 'product' && (
+                <div className="no-scrollbar" style={{ maxHeight: 140, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, padding: 6, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8 }}>
+                  {myProducts.map(p => (
+                    <button key={p.id} type="button" onClick={() => addProductLine(p)} disabled={p.stock <= 0}
+                      style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', background: p.stock <= 0 ? '#F1F5F9' : '#fff', border: '1px solid #E2E8F0', borderRadius: 6, cursor: p.stock <= 0 ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif', fontSize: 12, color: p.stock <= 0 ? '#9CA3AF' : '#111827', textAlign: 'left' as const }}>
+                      <span>{p.name} {p.stock <= 0 && '(sem estoque)'}</span><span style={{ color: '#6B7280' }}>R$ {p.price.toFixed(2)}</span>
+                    </button>
+                  ))}
+                  {myProducts.length === 0 && <p style={{ fontSize: 11, color: '#9CA3AF', margin: '4px 0' }}>Nenhum produto cadastrado.</p>}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                {(['pix', 'credit_card', 'cash'] as const).map(m => (
+                  <button key={m} type="button" onClick={() => setInvoiceMethod(m)}
+                    style={{ flex: 1, padding: '8px 0', background: invoiceMethod === m ? '#1D4ED8' : '#F8FAFC', color: invoiceMethod === m ? '#fff' : '#6B7280', border: invoiceMethod === m ? 'none' : '1px solid #E2E8F0', fontWeight: 700, fontSize: 11, borderRadius: 8, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+                    {m === 'pix' ? 'Pix' : m === 'credit_card' ? 'Cartão' : 'Dinheiro'}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 4px 4px', borderTop: '1px solid #E2E8F0', marginTop: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#6B7280' }}>Total</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 16, color: '#059669' }}>R$ {invoiceTotal.toFixed(2)}</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button type="button" onClick={cancelInvoice} disabled={savingInvoice} style={{ flex: 1, padding: 12, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                <button type="submit" disabled={savingInvoice} style={{ flex: 2, padding: 12, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: savingInvoice ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif', opacity: savingInvoice ? 0.7 : 1 }}>
+                  {savingInvoice ? 'Concluindo…' : 'Concluir e Fechar Fatura'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
