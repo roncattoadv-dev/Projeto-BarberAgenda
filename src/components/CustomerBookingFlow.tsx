@@ -728,7 +728,7 @@ export default function CustomerBookingFlow({
                       <form onSubmit={handleWaitlistSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <input required placeholder="Seu nome *" value={wlName} onChange={e => setWlName(e.target.value)}
                           style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
-                        <input required placeholder="Telefone (WhatsApp) *" value={wlPhone} onChange={e => setWlPhone(e.target.value)}
+                        <input required placeholder="Telefone (WhatsApp) * — ex: (xx)00000-0000" value={wlPhone} onChange={e => setWlPhone(e.target.value)}
                           style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
                         {(() => {
                           const occupiedFuture = occupiedFutureSlots;
@@ -912,7 +912,7 @@ export default function CustomerBookingFlow({
                         <form onSubmit={handleWaitlistSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                           <input required placeholder="Seu nome *" value={wlName} onChange={e => setWlName(e.target.value)}
                             style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
-                          <input required placeholder="Telefone (WhatsApp) *" value={wlPhone} onChange={e => setWlPhone(e.target.value)}
+                          <input required placeholder="Telefone (WhatsApp) * — ex: (xx)00000-0000" value={wlPhone} onChange={e => setWlPhone(e.target.value)}
                             style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const }} />
                           {(() => {
                             const occupiedFuture = HOURLY_SLOTS.filter(t => checkSlotOccupied(t) && !checkSlotPast(t));
