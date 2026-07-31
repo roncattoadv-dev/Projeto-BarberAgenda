@@ -104,7 +104,10 @@ const CORS_ORIGINS = [
   'https://workagenda.org',
 ].filter(Boolean) as string[];
 
-app.use(helmet({ contentSecurityPolicy: false }));
+// crossOriginResourcePolicy 'cross-origin': o front (workagenda.org) carrega
+// imagens desta API (api.workagenda.org) — origens diferentes. O default do
+// helmet ('same-origin') bloqueia isso no navegador (ERR_BLOCKED_BY_RESPONSE).
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 app.use(cors({
   origin: (origin, cb) => {
@@ -505,9 +508,9 @@ app.delete('/api/account', async (req, res) => {
     }
 
     // 2. Remove instância WhatsApp no EvoGo (non-fatal)
-    if (EVO_URL && EVO_GLOBAL_KEY && tenant.slug) {
+    if (EVO_URL && EVO_GLOBAL_KEY) {
       try {
-        await fetch(`${EVO_URL}/instance/delete/${tenant.slug}`, {
+        await fetch(`${EVO_URL}/instance/delete/${evoInstanceName(tenantId)}`, {
           method: 'DELETE',
           headers: { apikey: EVO_GLOBAL_KEY },
         });
@@ -1026,8 +1029,8 @@ app.post('/api/whatsapp/notify', async (req, res) => {
     // WhatsApp (se tem telefone e canal habilitado)
     if (phone && tenant.wpp_enabled !== false) {
       const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
-      const instanceToken = evoInstanceToken(tenant.slug, tenantId);
-      await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
+      const instanceToken = evoInstanceToken(tenantId);
+      await evoSendWpp(instanceToken, evoInstanceName(tenantId), `55${phone}`, msg, link ? {
         url: link,
         title: `${tenant.name} — Agendamento confirmado`,
         description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
@@ -1105,9 +1108,9 @@ app.post('/api/whatsapp/remind', async (req, res) => {
     };
 
     const msg           = applyTemplate(tenant.wpp_template_remind ?? TPL_REMIND_DEFAULT, vars);
-    const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+    const instanceToken = evoInstanceToken(tenantId);
 
-    await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
+    await evoSendWpp(instanceToken, evoInstanceName(tenantId), `55${phone}`, msg, link ? {
       url: link,
       title: `${tenant.name} — Lembrete de agendamento`,
       description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
@@ -1139,9 +1142,17 @@ async function getTenantReplyEmail(tenantId: string, contactEmail?: string | nul
   return data?.email ?? 'noreply@workagenda.org';
 }
 
-/** Token determinístico por tenant: slug + primeiros 8 chars do id sem hífens */
-function evoInstanceToken(slug: string, tenantId: string): string {
-  return slug + '-' + tenantId.replace(/-/g, '').slice(0, 8);
+/**
+ * Nome/token da instância EvoGo — deriva só do tenantId (nunca do slug).
+ * O slug é editável pelo tenant a qualquer momento; usá-lo como identidade
+ * da instância fazia cada rename criar uma instância NOVA no EvoGo, deixando
+ * a antiga órfã (nunca deletada). tenantId é estável pela vida do tenant.
+ */
+function evoInstanceName(tenantId: string): string {
+  return 'tenant-' + tenantId.replace(/-/g, '');
+}
+function evoInstanceToken(tenantId: string): string {
+  return evoInstanceName(tenantId) + '-token';
 }
 
 /** Operações admin (global key): /instance/all, /instance/create, /instance/delete */
@@ -1311,10 +1322,11 @@ app.get('/api/whatsapp/status', verifyTenant, async (req, res) => {
     return;
   }
 
-  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+  const instanceName  = evoInstanceName(tenantId);
+  const instanceToken = evoInstanceToken(tenantId);
   try {
     const data = await evoInstance<{ data: { Connected: boolean; LoggedIn: boolean; Name: string } }>(
-      instanceToken, `/instance/status?instanceId=${tenant.slug}`
+      instanceToken, `/instance/status?instanceId=${instanceName}`
     );
     const loggedIn = !!data?.data?.LoggedIn;
     // Reconectou → limpa o timestamp de desconexão
@@ -1341,16 +1353,18 @@ app.get('/api/whatsapp/qr', verifyTenant, async (req, res) => {
     return;
   }
 
-  const instanceName  = tenant.slug;
-  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+  const instanceName  = evoInstanceName(tenantId);
+  const instanceToken = evoInstanceToken(tenantId);
 
   try {
     await ensureInstance(instanceName, instanceToken);
-    const data = await evoInstance<{ data: { Qrcode: string; Code: string } }>(
+    // EvoGo 0.7.2 retorna os campos em minúsculo (qrcode/code) — a versão
+    // anterior usava Qrcode/Code; ver memória do upgrade de 2026-07-30.
+    const data = await evoInstance<{ data: { qrcode: string; code: string } }>(
       instanceToken, `/instance/qr?instanceId=${instanceName}`
     );
-    if (data?.data?.Qrcode) {
-      res.json({ ok: true, qrcode: data.data.Qrcode, code: data.data.Code || '' });
+    if (data?.data?.qrcode) {
+      res.json({ ok: true, qrcode: data.data.qrcode, code: data.data.code || '' });
     } else {
       // Já conectado — sem QR
       res.json({ ok: true, qrcode: null, code: '' });
@@ -1370,12 +1384,13 @@ app.post('/api/whatsapp/disconnect', verifyTenant, async (req, res) => {
   const { data: tenant } = await supabase.from('tenants_live').select('slug').eq('id', tenantId).maybeSingle();
   if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
 
-  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+  const instanceName  = evoInstanceName(tenantId);
+  const instanceToken = evoInstanceToken(tenantId);
 
   try {
     await evoInstance(instanceToken, '/instance/disconnect', {
       method: 'POST',
-      body: JSON.stringify({ instanceId: tenant.slug }),
+      body: JSON.stringify({ instanceId: instanceName }),
     });
     // Registra quando foi desconectado para o job de limpeza de 30 dias
     await supabase.from('tenants_live').update({ evo_disconnected_at: new Date().toISOString() }).eq('id', tenantId);
@@ -1398,11 +1413,12 @@ app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
   const { data: tenant } = await supabase.from('tenants_live').select('slug').eq('id', tenantId).maybeSingle();
   if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
 
-  const instanceToken = evoInstanceToken(tenant.slug, tenantId);
+  const instanceName  = evoInstanceName(tenantId);
+  const instanceToken = evoInstanceToken(tenantId);
   try {
     await evoInstance(instanceToken, '/send/text', {
       method: 'POST',
-      body: JSON.stringify({ instanceId: tenant.slug, number: phone, text: message }),
+      body: JSON.stringify({ instanceId: instanceName, number: phone, text: message }),
     });
     res.json({ ok: true });
   } catch (err: any) {
@@ -1537,7 +1553,8 @@ app.post('/api/cancel', async (req, res) => {
         }
 
         console.log(`[Waitlist/Cancel] ${compatible.length} candidato(s) para notificar`);
-        const instanceToken = evoInstanceToken(slug, tenantId);
+        const instanceToken = evoInstanceToken(tenantId);
+        const instanceName  = evoInstanceName(tenantId);
 
         // Template do banco ou padrão
         const { data: tplData } = await supabase.from('tenants_live')
@@ -1557,7 +1574,7 @@ app.post('/api/cancel', async (req, res) => {
                 link_agendamento: bookingUrl,
                 link:             bookingUrl,
               });
-              await evoSendWpp(instanceToken, slug, `55${phone}`, msg);
+              await evoSendWpp(instanceToken, instanceName, `55${phone}`, msg);
               await supabase.from('waitlist')
                 .update({ notified: true, notified_at: new Date().toISOString() })
                 .eq('id', entry.id);
@@ -1605,14 +1622,14 @@ async function cleanupStaleInstances(): Promise<void> {
 
   for (const tenant of stale) {
     try {
-      const inst = (all.data ?? []).find((i: any) => i.name === tenant.slug);
+      const inst = (all.data ?? []).find((i: any) => i.name === evoInstanceName(tenant.id));
       if (inst?.id) {
         await evoAdmin(`/instance/delete/${inst.id}`, { method: 'DELETE' });
-        console.log(`[Cleanup] Instância "${tenant.slug}" removida (desconectada > 30 dias).`);
+        console.log(`[Cleanup] Instância "${evoInstanceName(tenant.id)}" removida (desconectada > 30 dias).`);
       }
       await supabase.from('tenants_live').update({ evo_disconnected_at: null }).eq('id', tenant.id);
     } catch (err: any) {
-      console.error(`[Cleanup] Erro ao remover "${tenant.slug}":`, err.message);
+      console.error(`[Cleanup] Erro ao remover "${evoInstanceName(tenant.id)}":`, err.message);
     }
   }
 }
@@ -1655,9 +1672,9 @@ async function sendConfirmations(): Promise<void> {
 
       if (phone && tenant.wpp_enabled !== false) {
         const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
-        const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
+        const instanceToken = evoInstanceToken(tenant.id);
 
-        await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
+        await evoSendWpp(instanceToken, evoInstanceName(tenant.id), `55${phone}`, msg, link ? {
           url: link,
           title: `${tenant.name} — Agendamento confirmado`,
           description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
@@ -1796,13 +1813,13 @@ async function processAutoActions(): Promise<void> {
               (e.time_preference === 'qualquer' || e.time_preference.split(',').includes(apptTime))
             ).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-            const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
+            const instanceToken = evoInstanceToken(tenant.id);
             compatible.forEach((entry: any, idx: number) => {
               setTimeout(async () => {
                 try {
                   const phone = (entry.customer_phone as string).replace(/\D/g, '');
                   const msg   = applyTemplate(TPL, { cliente: entry.customer_name, salao: tenant.name, data: apptDate, link_agendamento: bookingUrl, link: bookingUrl });
-                  await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg);
+                  await evoSendWpp(instanceToken, evoInstanceName(tenant.id), `55${phone}`, msg);
                   await supabase.from('waitlist').update({ notified: true, notified_at: new Date().toISOString() }).eq('id', entry.id);
                   console.log(`[AutoCancel/Waitlist] ${entry.customer_name} notificado`);
                 } catch {}
@@ -1880,9 +1897,9 @@ async function sendReminders(): Promise<void> {
         link,
       };
       const msg           = applyTemplate(tenant.wpp_template_remind ?? TPL_REMIND_DEFAULT, vars);
-      const instanceToken = evoInstanceToken(tenant.slug, tenant.id);
+      const instanceToken = evoInstanceToken(tenant.id);
 
-      await evoSendWpp(instanceToken, tenant.slug, `55${phone}`, msg, link ? {
+      await evoSendWpp(instanceToken, evoInstanceName(tenant.id), `55${phone}`, msg, link ? {
         url: link,
         title: `${tenant.name} — Lembrete de agendamento`,
         description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
