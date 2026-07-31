@@ -19,7 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { UseNotificationsReturn } from '../hooks/useNotifications';
 import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket, getWaitlistEntries, markWaitlistNotified } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { sendWhatsAppServer, buildWaitlistMsg } from '../services/whatsapp';
+import { sendWhatsAppServer, buildWaitlistMsg, checkStatusServer } from '../services/whatsapp';
 import LogoCropModal from './LogoCropModal';
 import TourOverlay, { TourStep } from './TourOverlay';
 import WaitlistModal from './WaitlistModal';
@@ -158,6 +158,19 @@ export default function ClientAdminPanel({
   const [pixCopied,      setPixCopied]      = useState(false);
   const [wppConnState,   setWppConnState]   = useState<string>('checking');
   const [wppConnName,    setWppConnName]    = useState<string | null>(null);
+
+  // Poll de status do WhatsApp independente da aba ativa, pra alertar o admin
+  // mesmo que ele nunca tenha aberto Automações→WhatsApp nessa sessão.
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      const { state, name } = await checkStatusServer(activeTenant.id, session?.access_token ?? '');
+      if (!cancelled) { setWppConnState(state); setWppConnName(name); }
+    };
+    poll();
+    const interval = setInterval(poll, 60_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeTenant.id, session?.access_token]);
   const [autoTab,        setAutoTab]        = useState<'whatsapp' | 'email'>('whatsapp');
   const [privacyModal,   setPrivacyModal]   = useState(false);
   const [supportModal,   setSupportModal]   = useState(false);
@@ -923,6 +936,7 @@ export default function ClientAdminPanel({
             {NAV.map(({ id, label, Icon }) => {
               const active = activeTab === id;
               const badge = id === 'agendamentos' ? pendingCount : id === 'agenda' ? todayAppts.length : 0;
+              const wppAlert = id === 'automacoes' && wppConnState !== 'open' && wppConnState !== 'checking';
               return (
                 <motion.button key={id} id={`tour-nav-${id}`} onClick={() => setActiveTab(id)}
                   whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
@@ -940,6 +954,9 @@ export default function ClientAdminPanel({
                   )}
                   {badge > 0 && collapsed && (
                     <span style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: '50%', background: '#f59e0b' }} />
+                  )}
+                  {wppAlert && (
+                    <span title="WhatsApp desconectado" style={{ position: 'absolute', top: 6, right: collapsed ? 6 : 10, width: 8, height: 8, borderRadius: '50%', background: '#EF4444' }} />
                   )}
                 </motion.button>
               );
