@@ -505,8 +505,16 @@ export default function CustomerBookingFlow({
   /* ═══════════════════════════════════════════════════════════════
      RETURN
   ═══════════════════════════════════════════════════════════════ */
+  // Primeira página (seleção de serviço) sem moldura — só logo/infos/botões
+  // soltos sobre o fundo da página. Demais passos mantêm o card branco.
+  const isLandingStep = activeTab === 'booking' && step === 1;
   return (
-    <div style={{ width: '100%', maxWidth: 1060, margin: '0 auto', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0', fontFamily: 'inherit', overflow: 'hidden' }}>
+    <div style={{
+      width: '100%', maxWidth: 1060, margin: '0 auto', borderRadius: 12, fontFamily: 'inherit', overflow: 'hidden',
+      background: isLandingStep ? 'transparent' : '#fff',
+      boxShadow: isLandingStep ? 'none' : '0 10px 30px rgba(0,0,0,0.15)',
+      border: isLandingStep ? 'none' : '1px solid #e2e8f0',
+    }}>
 
       {/* ══ Steps 2 / 3 / 4 ══ */}
       {activeTab === 'booking' && step > 1 && step < 5 && (isDesktop ? (
