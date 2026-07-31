@@ -1,15 +1,18 @@
 // src/pages/auth/ResetPasswordPage.tsx
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, CheckCircle } from 'lucide-react';
 
-export default function ResetPasswordPage() {
-  const { updatePassword } = useAuth();
-  const navigate = useNavigate();
+function getApiUrl(): string {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  return (w.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+}
 
-  const [ready,       setReady]       = useState(false);
+export default function ResetPasswordPage() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const token = params.get('token');
+
   const [password,    setPassword]    = useState('');
   const [confirm,     setConfirm]     = useState('');
   const [showPass,    setShowPass]    = useState(false);
@@ -18,18 +21,7 @@ export default function ResetPasswordPage() {
   const [error,       setError]       = useState<string | null>(null);
   const [done,        setDone]        = useState(false);
 
-  useEffect(() => {
-    // Supabase detecta o token de recuperação na URL e emite PASSWORD_RECOVERY
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true);
-    });
-    // Se o fragmento da URL já tem access_token, o evento pode ter disparado antes
-    // do listener ser registrado — verificamos a sessão atual
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+  const ready = !!token;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,16 +29,27 @@ export default function ResetPasswordPage() {
       setError('As senhas não coincidem.');
       return;
     }
-    if (password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres.');
+    if (password.length < 8) {
+      setError('A senha deve ter pelo menos 8 caracteres.');
       return;
     }
     setBusy(true);
     setError(null);
-    const { error } = await updatePassword(password);
-    setBusy(false);
-    if (error) {
-      setError('Não foi possível redefinir a senha. O link pode ter expirado.');
+    try {
+      const res = await fetch(`${getApiUrl()}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, newPassword: password }),
+      });
+      const data = await res.json();
+      setBusy(false);
+      if (!res.ok) {
+        setError(data.error ?? 'Não foi possível redefinir a senha. O link pode ter expirado.');
+        return;
+      }
+    } catch {
+      setBusy(false);
+      setError('Erro de conexão. Tente novamente.');
       return;
     }
     setDone(true);
@@ -88,8 +91,12 @@ export default function ResetPasswordPage() {
             </div>
           ) : !ready ? (
             <div style={{ textAlign: 'center' }}>
-              <div style={{ width: 32, height: 32, border: '3px solid rgba(255,255,255,0.09)', borderTopColor: 'rgba(255,255,255,0.65)', borderRadius: '50%', margin: '0 auto 16px' }} className="animate-spin" />
-              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>Verificando link…</p>
+              <p style={{ color: 'rgba(255,255,255,0.88)', fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
+                Link inválido
+              </p>
+              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
+                Solicite um novo link de redefinição de senha na tela de login.
+              </p>
             </div>
           ) : (
             <>
@@ -97,7 +104,7 @@ export default function ResetPasswordPage() {
                 Criar nova senha
               </p>
               <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginBottom: 24, lineHeight: 1.5 }}>
-                Escolha uma senha segura com pelo menos 6 caracteres.
+                Escolha uma senha segura com pelo menos 8 caracteres.
               </p>
 
               <form onSubmit={handleSubmit} className="space-y-5">

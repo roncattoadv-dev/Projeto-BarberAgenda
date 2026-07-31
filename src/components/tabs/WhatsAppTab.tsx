@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Tenant } from '../../types';
 import { useToast } from '../../hooks/useToast';
-import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   checkStatusServer, fetchQRCodeServer, disconnectServer,
   buildCustomMsg,
@@ -57,6 +57,7 @@ function Toggle({ on, onChange, disabled }: { on: boolean; onChange: () => void;
 
 export default function WhatsAppTab({ activeTenant, onStatusChange, section }: Props) {
   const toast = useToast();
+  const { session } = useAuth();
 
   // Ref estável para onStatusChange — evita que re-renders do pai recriem refreshStatus
   const onStatusChangeRef = React.useRef(onStatusChange);
@@ -65,10 +66,8 @@ export default function WhatsAppTab({ activeTenant, onStatusChange, section }: P
   // ── Auth token ─────────────────────────────────────────────
   const [authToken, setAuthToken] = useState<string>('');
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setAuthToken(session?.access_token || ''));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => setAuthToken(session?.access_token || ''));
-    return () => subscription.unsubscribe();
-  }, []);
+    setAuthToken(session?.access_token || '');
+  }, [session]);
 
   // ── Channel toggles (saved server-side) ───────────────────
   const [wppEnabled,   setWppEnabled]   = useState(true);

@@ -106,7 +106,7 @@ export default function ClientAdminPanel({
   notifications,
 }: Props) {
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, session, updatePassword } = useAuth();
 
   // ── Conta / senha ─────────────────────────────────────────────────────────
   const [senhaAtual,     setSenhaAtual]     = useState('');
@@ -506,7 +506,6 @@ export default function ClientAdminPanel({
     if (!cancelled) return;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token ?? '';
       const LINK  = `https://workagenda.org/${activeTenant.slug}/agendamento`;
       const LS_KEY = `barber_wpp_tpl_${activeTenant.id}`;
@@ -657,7 +656,7 @@ export default function ClientAdminPanel({
     setUploadingLogo(true);
     try {
       const file = new File([blob], 'logo.jpg', { type: 'image/jpeg' });
-      const baseUrl = await uploadTenantLogo(activeTenant.id, file);
+      const baseUrl = await uploadTenantLogo(activeTenant.id, file, session?.access_token ?? '');
       const url = `${baseUrl}?t=${Date.now()}`;
       setTenantLogo(url);
       await onUpdateTenantDetails(activeTenant.id, { logo: url });
@@ -2337,22 +2336,17 @@ export default function ClientAdminPanel({
                           ? createdAt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
                           : '—';
 
-                        const isGoogleUser = user?.app_metadata?.provider === 'google'
-                          || (user?.identities ?? []).some((id: { provider: string }) => id.provider === 'google');
+                        const isGoogleUser = !!user?.google_linked;
 
                         const handleTrocarSenha = async (e: React.FormEvent) => {
                           e.preventDefault();
-                          if (novaSenha.length < 6) { toast.error('A nova senha deve ter ao menos 6 caracteres.'); return; }
+                          if (novaSenha.length < 8) { toast.error('A nova senha deve ter ao menos 8 caracteres.'); return; }
                           if (novaSenha !== confirmarSenha) { toast.error('As senhas não coincidem.'); return; }
+                          if (!isGoogleUser && !senhaAtual) { toast.error('Informe sua senha atual.'); return; }
                           setSalvandoSenha(true);
-                          if (!isGoogleUser) {
-                            if (!senhaAtual) { setSalvandoSenha(false); toast.error('Informe sua senha atual.'); return; }
-                            const { error: authError } = await supabase.auth.signInWithPassword({ email: user?.email ?? '', password: senhaAtual });
-                            if (authError) { setSalvandoSenha(false); toast.error('Senha atual incorreta.'); return; }
-                          }
-                          const { error } = await supabase.auth.updateUser({ password: novaSenha });
+                          const { error } = await updatePassword(novaSenha, isGoogleUser ? undefined : senhaAtual);
                           setSalvandoSenha(false);
-                          if (error) { toast.error('Erro ao trocar senha: ' + error.message); return; }
+                          if (error) { toast.error('Erro ao trocar senha: ' + error); return; }
                           toast.success('Senha definida com sucesso!');
                           setSenhaAtual(''); setNovaSenha(''); setConfirmarSenha('');
                         };
@@ -3242,7 +3236,6 @@ export default function ClientAdminPanel({
           }
           setBillingModal(prev => prev ? { ...prev, step: 'loading', error: undefined } : null);
           try {
-            const { data: { session } } = await supabase.auth.getSession();
             const apiUrl = ((window as any).__BARBER_CONFIG__?.API_URL || '').replace(/\/$/, '');
             const r = await fetch(
               `${apiUrl}/api/billing/payment-link?tenantId=${activeTenant.id}&plan=${billingModal.plan}&cpfCnpj=${cpfClean}`,

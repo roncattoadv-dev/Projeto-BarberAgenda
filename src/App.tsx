@@ -7,6 +7,7 @@ import LandingPage       from './pages/LandingPage';
 import LoginPage         from './pages/auth/LoginPage';
 import RegisterPage      from './pages/auth/RegisterPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
+import GoogleCallbackPage from './pages/auth/GoogleCallbackPage';
 import SuperAdminPage  from './pages/admin/SuperAdminPage';
 import TenantAdminPage from './pages/admin/TenantAdminPage';
 import BookingPage     from './pages/booking/BookingPage';
@@ -62,6 +63,7 @@ function AppRoutes() {
       <Route path="/login"            element={<LoginPage />} />
       <Route path="/cadastro"         element={<RegisterPage />} />
       <Route path="/redefinir-senha"  element={<ResetPasswordPage />} />
+      <Route path="/auth/callback"    element={<GoogleCallbackPage />} />
 
       {/* ── Super Admin ───────────────────────────── */}
       <Route path="/admin/super" element={

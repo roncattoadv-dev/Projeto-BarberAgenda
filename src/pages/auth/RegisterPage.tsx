@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
 import PrivacyModal from '../../components/PrivacyModal';
 
 const LOGO   = 'https://oyepfoizulceyyxozgwv.supabase.co/storage/v1/object/public/prova%20real/ChatGPT%20Image%2019%20de%20jun.%20de%202026,%2014_46_16.png';
@@ -53,6 +52,7 @@ function BarberSetupForm({ googleName, onDone, onSignOut }: {
   onSignOut: () => void;
 }) {
   const toast = useToast();
+  const { session, refreshSession } = useAuth();
   const [name,          setName]          = useState(googleName);
   const [slug,          setSlug]          = useState(slugify(googleName));
   const [slugEdited,    setSlugEdited]    = useState(false);
@@ -81,7 +81,6 @@ function BarberSetupForm({ googleName, onDone, onSignOut }: {
     if (!validate()) return;
     setBusy(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) { toast.error('Sessão expirada. Tente novamente.'); setBusy(false); return; }
       const res = await fetch(`${API_URL}/api/register-google`, {
         method: 'POST',
@@ -90,7 +89,7 @@ function BarberSetupForm({ googleName, onDone, onSignOut }: {
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || 'Erro ao cadastrar. Tente novamente.'); setBusy(false); return; }
-      await supabase.auth.refreshSession();
+      await refreshSession();
       onDone({ slug: data.slug, trialEndsAt: data.trialEndsAt });
     } catch {
       toast.error('Erro de conexão. Tente novamente.'); setBusy(false);
@@ -208,7 +207,7 @@ function VerifyEmailScreen({ email, onBackToLogin }: { email: string; onBackToLo
 export default function RegisterPage() {
   const toast    = useToast();
   const navigate = useNavigate();
-  const { session, profile, loading: authLoading, needsOnboarding, signOut } = useAuth();
+  const { session, user, profile, loading: authLoading, needsOnboarding, signOut, signInWithGoogle } = useAuth();
 
   const [step,         setStep]         = useState<1 | 2>(1);
   const [busy,         setBusy]         = useState(false);
@@ -234,10 +233,9 @@ export default function RegisterPage() {
     if (profile?.role === 'super_admin')  navigate('/admin/super',  { replace: true });
   }, [authLoading, profile]);
 
-  const handleGoogleSignUp = async () => {
+  const handleGoogleSignUp = () => {
     setGoogleBusy(true);
-    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/cadastro' } });
-    setGoogleBusy(false);
+    signInWithGoogle();
   };
 
   const handleNameChange = (val: string) => { setName(val); if (!slugEdited) setSlug(slugify(val)); };
@@ -291,7 +289,7 @@ export default function RegisterPage() {
   if (done) return <VerifyEmailScreen email={email} onBackToLogin={() => navigate('/login')} />;
 
   if (needsOnboarding) {
-    const googleName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || '';
+    const googleName = user?.user_metadata?.name || '';
     return <BarberSetupForm googleName={googleName} onDone={setDone} onSignOut={async () => { await signOut(); navigate('/login', { replace: true }); }} />;
   }
 

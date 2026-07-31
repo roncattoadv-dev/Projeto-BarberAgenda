@@ -1,7 +1,6 @@
 // src/contexts/AuthContext.tsx
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import type { Session, User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { setAccessToken } from '../lib/supabase';
 
 export type Role = 'super_admin' | 'tenant_admin' | 'tenant_professional' | 'customer';
 
@@ -14,17 +13,31 @@ export interface Profile {
   phone?: string;
 }
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  created_at?: string;
+  google_linked?: boolean;
+  user_metadata: { name: string; role: Role; tenant_id: string | null; phone: string | null };
+}
+
+export interface AuthSession {
+  access_token: string;
+}
+
 interface AuthCtx {
-  session:         Session | null;
-  user:            User    | null;
+  session:         AuthSession | null;
+  user:            AuthUser   | null;
   profile:         Profile | null;
   loading:         boolean;
   needsOnboarding: boolean;
   signIn:          (email: string, password: string) => Promise<{ error: string | null }>;
-  signInWithGoogle: (redirectTo?: string) => Promise<void>;
+  signInWithGoogle: () => void;
   signOut:         () => Promise<void>;
   resetPassword:   (email: string) => Promise<{ error: string | null }>;
-  updatePassword:  (password: string) => Promise<{ error: string | null }>;
+  updatePassword:  (newPassword: string, currentPassword?: string) => Promise<{ error: string | null }>;
+  refreshSession:  () => Promise<void>;
+  completeSession: (accessToken: string, user: AuthUser) => void;
   isSuper:         boolean;
   isAdmin:         boolean;
   tenantId:        string | null;
@@ -32,17 +45,23 @@ interface AuthCtx {
 
 const Ctx = createContext<AuthCtx | null>(null);
 
-// ── Extrai profile do JWT (user_metadata) — zero chamadas de rede ──────────────
-function profileFromUser(user: User): Profile | null {
-  const m = user.user_metadata ?? {};
+function getApiUrl(): string {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  return (w.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+}
+const API_URL = getApiUrl();
+
+// ── Extrai profile do user (user_metadata) — zero chamadas de rede ─────────────
+function profileFromUser(user: AuthUser): Profile | null {
+  const m = user.user_metadata ?? ({} as AuthUser['user_metadata']);
   if (!m.role) return null;
   return {
     id:        user.id,
     tenant_id: m.tenant_id ?? null,
     name:      m.name ?? user.email ?? '',
     email:     user.email ?? '',
-    role:      m.role as Role,
-    phone:     m.phone,
+    role:      m.role,
+    phone:     m.phone ?? undefined,
   };
 }
 
@@ -63,92 +82,128 @@ function writeCache(p: Profile | null) {
   } catch {}
 }
 
+/** Lê o campo "exp" do JWT sem verificar assinatura — só pra agendar o próximo refresh */
+function decodeExpiry(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' ? payload.exp : null;
+  } catch { return null; }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Inicia com cache — evita spinner em reloads
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [user,    setUser]    = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(readCache);
-  const [loading, setLoading]  = useState(true);
+  const [loading, setLoading] = useState(true);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function applyProfile(p: Profile | null) {
     writeCache(p);
     setProfile(p);
   }
 
+  function clearSession() {
+    setAccessToken(null);
+    setSession(null);
+    setUser(null);
+    applyProfile(null);
+    if (refreshTimer.current) { clearTimeout(refreshTimer.current); refreshTimer.current = null; }
+  }
+
+  function applySession(accessToken: string, authUser: AuthUser) {
+    setAccessToken(accessToken);
+    setSession({ access_token: accessToken });
+    setUser(authUser);
+    applyProfile(profileFromUser(authUser));
+
+    const exp = decodeExpiry(accessToken);
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    if (exp) {
+      const msUntilRefresh = Math.max((exp * 1000 - Date.now()) - 60_000, 5_000); // 1min antes de expirar
+      refreshTimer.current = setTimeout(() => { silentRefresh(); }, msUntilRefresh);
+    }
+  }
+
+  async function silentRefresh(): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_URL}/api/auth/refresh`, { method: 'POST', credentials: 'include' });
+      if (!res.ok) { clearSession(); return false; }
+      const data = await res.json();
+      applySession(data.access_token, data.user);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   useEffect(() => {
-    let done = false;
-
-    const finish = () => { if (!done) { done = true; setLoading(false); } };
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, sess) => {
-      setSession(sess);
-
-      if (sess?.user) {
-        const p = profileFromUser(sess.user);
-        applyProfile(p);
-        finish();
-
-        // Verifica se o usuário ainda existe no servidor (detecta sessões de contas deletadas)
-        supabase.auth.getUser().then(({ error }) => {
-          if (error?.status === 403 || error?.message?.includes('does not exist')) {
-            supabase.auth.signOut();
-            applyProfile(null);
-          }
-        });
-      } else {
-        applyProfile(null);
-        finish();
-      }
-    });
-
-    // Fallsafe: se onAuthStateChange não disparar em 3s, libera
-    const t = setTimeout(finish, 3000);
-
-    return () => {
-      subscription.unsubscribe();
-      clearTimeout(t);
-    };
+    silentRefresh().finally(() => setLoading(false));
+    return () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); };
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
+    try {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error ?? 'Erro ao entrar.' };
+      applySession(data.access_token, data.user);
+      return { error: null };
+    } catch {
+      return { error: 'Erro de conexão.' };
+    }
   };
 
-  const signInWithGoogle = async (redirectTo?: string) => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: redirectTo ?? window.location.origin },
-    });
+  const signInWithGoogle = () => {
+    window.location.href = `${API_URL}/api/auth/google`;
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    // Se o servidor rejeitar (ex: usuário já deletado), limpa apenas a sessão local
-    if (error) await supabase.auth.signOut({ scope: 'local' });
-    applyProfile(null);
+    try { await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }); } catch {}
+    clearSession();
   };
 
   const resetPassword = async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/redefinir-senha`,
-    });
-    return { error: error?.message ?? null };
+    try {
+      const res = await fetch(`${API_URL}/api/auth/forgot-password`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      return { error: res.ok ? null : (data.error ?? 'Erro ao solicitar redefinição.') };
+    } catch {
+      return { error: 'Erro de conexão.' };
+    }
   };
 
-  const updatePassword = async (password: string) => {
-    const { error } = await supabase.auth.updateUser({ password });
-    return { error: error?.message ?? null };
+  const updatePassword = async (newPassword: string, currentPassword?: string) => {
+    if (!session) return { error: 'Sessão expirada.' };
+    try {
+      const res = await fetch(`${API_URL}/api/auth/update-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ newPassword, currentPassword }),
+      });
+      const data = await res.json();
+      return { error: res.ok ? null : (data.error ?? 'Erro ao trocar senha.') };
+    } catch {
+      return { error: 'Erro de conexão.' };
+    }
   };
 
-  // Usuário autenticado mas sem barbearia associada (inclui role='customer' criado pelo trigger)
+  // Usuário autenticado mas sem barbearia associada (inclui role='customer' do onboarding do Google)
   const needsOnboarding = !loading && session !== null
     && !profile?.tenant_id
     && profile?.role !== 'super_admin';
 
   const value: AuthCtx = {
-    session, user: session?.user ?? null, profile, loading,
+    session, user, profile, loading,
     needsOnboarding,
     signIn, signInWithGoogle, signOut, resetPassword, updatePassword,
+    refreshSession: async () => { await silentRefresh(); },
+    completeSession: applySession,
     isSuper:  profile?.role === 'super_admin',
     isAdmin:  profile?.role === 'tenant_admin',
     tenantId: profile?.tenant_id ?? null,

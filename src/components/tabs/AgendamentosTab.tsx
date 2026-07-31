@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Clock, Search, MessageSquare, ChevronDown, Trash2 } from 'lucide-react';
 import { Appointment, Service, Professional, Tenant } from '../../types';
-import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 import DeleteConfirmDialog from '../DeleteConfirmDialog';
 import {
   checkStatusServer, sendWhatsAppServer,
@@ -208,6 +208,7 @@ function loadFilters() {
 }
 
 export default function AgendamentosTab({ activeTenant, myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment, onDeleteAppointment, reminderMinutes = 60 }: Props & { reminderMinutes?: number }) {
+  const { session } = useAuth();
   const [search,       setSearch]       = useState('');
   const [profFilter,   setProfFilter]   = useState<string[]>(() => loadFilters().profFilter   ?? []);
   const [statusFilter, setStatusFilter] = useState<string[]>(() => loadFilters().statusFilter ?? []);
@@ -227,10 +228,8 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
   const [sendStates, setSendStates] = useState<Record<string, SendState>>({});
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setAuthToken(session?.access_token || ''));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setAuthToken(s?.access_token || ''));
-    return () => subscription.unsubscribe();
-  }, []);
+    setAuthToken(session?.access_token || '');
+  }, [session]);
 
   useEffect(() => {
     if (!authToken) return;

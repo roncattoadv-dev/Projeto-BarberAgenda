@@ -44,11 +44,9 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
   const [verifyMsg,  setVerifyMsg]  = useState('');
 
   const isTrialEnd = tenant.plan === 'trial';
+  const { session: blockedScreenSession } = useAuth();
 
-  const getToken = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token ?? '';
-  };
+  const getToken = async () => blockedScreenSession?.access_token ?? '';
 
   // Tenta buscar cobrança existente
   useEffect(() => {
@@ -289,7 +287,7 @@ import type { Tenant, Service, Professional, Product, Customer, Appointment, Pay
 import { useNotifications } from '../../hooks/useNotifications';
 
 export default function TenantAdminPage() {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, session } = useAuth();
   const tenantId = profile?.tenant_id ?? '';
 
   const notifications = useNotifications();
@@ -332,95 +330,65 @@ export default function TenantAdminPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Realtime: atualiza tenant quando SuperAdmin muda status/plano/datas
-  useEffect(() => {
-    if (!tenantId) return;
-    const ch = supabase
-      .channel(`tenant-status-${tenantId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'barber', table: 'tenants_live', filter: `id=eq.${tenantId}` },
-        (payload) => {
-          const r = payload.new as Record<string, unknown>;
-          setTenant(prev => prev ? {
-            ...prev,
-            status:             (r.status               as Tenant['status']) ?? prev.status,
-            plan:               (r.plan                 as string)           ?? prev.plan,
-            subscriptionEndsAt: r.subscription_ends_at  != null ? (r.subscription_ends_at as string) : '',
-            trialEndsAt:        r.trial_ends_at          != null ? (r.trial_ends_at        as string) : prev.trialEndsAt,
-            mrr:                (r.mrr                  as number)           ?? prev.mrr,
-          } : prev);
-        }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [tenantId]);
-
-  // Sincroniza INSERT e UPDATE de appointments via WebSocket + polling de fallback
+  // Sincroniza status do tenant (mudado pelo SuperAdmin) e appointments (novos
+  // agendamentos + mudanças de status/confirmação) por polling a cada 30s.
+  // Substituiu os canais Realtime (WebSocket) — o polling já existia como
+  // fallback e cobria os mesmos dados; ver plano de eliminação do Supabase.
   useEffect(() => {
     if (!tenantId) return;
 
-    const applyUpdate = (prev: Appointment[], row: Record<string, unknown>) =>
-      prev.map(a => a.id !== row.id ? a : {
-        ...a,
-        ...(row.wpp_confirm_sent  !== undefined && { wppConfirmSent:  row.wpp_confirm_sent  as boolean }),
-        ...(row.wpp_reminder_sent !== undefined && { wppReminderSent: row.wpp_reminder_sent as boolean }),
-        ...(row.status            !== undefined && { status:           row.status            as Appointment['status'] }),
-        ...(row.scheduled_date    !== undefined && { date:             row.scheduled_date    as string }),
-        ...(row.scheduled_time    !== undefined && { time:            (row.scheduled_time as string).slice(0, 5) }),
-      });
-
-    const channel = supabase
-      .channel(`appt-updates-${tenantId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'barber', table: 'appointments' },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>;
-          if (row.tenant_id !== tenantId) return;
-          setAppointments(prev => {
-            if (prev.some(a => a.id === row.id)) return prev; // já existe (admin criou via UI)
-            return [mapAppointment(row), ...prev];
-          });
-          const appt = mapAppointment(row);
-          notifyRef.current('Novo agendamento! 📅', {
-            body: `${appt.customerName} — ${appt.date.split('-').reverse().join('/')} às ${appt.time}`,
-            tag: appt.id,
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'barber', table: 'appointments' },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>;
-          if (row.tenant_id !== tenantId) return;
-          setAppointments(prev => applyUpdate(prev, row));
-        }
-      )
-      .subscribe();
-
-    // Polling de 30s como fallback caso o WebSocket não entregue o evento
     const pollId = setInterval(async () => {
-      const { data } = await supabase
+      const { data: tenantRow } = await supabase
+        .from('tenants_live')
+        .select('status, plan, subscription_ends_at, trial_ends_at, mrr')
+        .eq('id', tenantId)
+        .maybeSingle();
+      if (tenantRow) {
+        const r = tenantRow as Record<string, unknown>;
+        setTenant(prev => prev ? {
+          ...prev,
+          status:             (r.status               as Tenant['status']) ?? prev.status,
+          plan:               (r.plan                 as string)           ?? prev.plan,
+          subscriptionEndsAt: r.subscription_ends_at  != null ? (r.subscription_ends_at as string) : '',
+          trialEndsAt:        r.trial_ends_at          != null ? (r.trial_ends_at        as string) : prev.trialEndsAt,
+          mrr:                (r.mrr                  as number)           ?? prev.mrr,
+        } : prev);
+      }
+
+      const { data: apptRows } = await supabase
         .from('appointments')
-        .select('id, wpp_confirm_sent, wpp_reminder_sent')
+        .select('*')
         .eq('tenant_id', tenantId);
-      if (!data) return;
-      setAppointments(prev =>
-        prev.map(a => {
-          const r = (data as any[]).find(d => d.id === a.id);
-          if (!r) return a;
-          if (r.wpp_confirm_sent === a.wppConfirmSent && r.wpp_reminder_sent === a.wppReminderSent) return a;
-          return { ...a, wppConfirmSent: r.wpp_confirm_sent, wppReminderSent: r.wpp_reminder_sent };
-        })
-      );
+      if (!apptRows) return;
+
+      setAppointments(prev => {
+        const byId = new Map<string, Appointment>(prev.map(a => [a.id, a]));
+        const next: Appointment[] = [];
+        for (const row of apptRows as any[]) {
+          const existing = byId.get(row.id);
+          if (!existing) {
+            const appt = mapAppointment(row);
+            next.push(appt);
+            notifyRef.current('Novo agendamento! 📅', {
+              body: `${appt.customerName} — ${appt.date.split('-').reverse().join('/')} às ${appt.time}`,
+              tag: appt.id,
+            });
+          } else {
+            next.push({
+              ...existing,
+              wppConfirmSent:  row.wpp_confirm_sent  ?? existing.wppConfirmSent,
+              wppReminderSent: row.wpp_reminder_sent ?? existing.wppReminderSent,
+              status:          row.status            ?? existing.status,
+              date:            row.scheduled_date     ?? existing.date,
+              time:            row.scheduled_time?.slice(0, 5) ?? existing.time,
+            });
+          }
+        }
+        return next;
+      });
     }, 30_000);
 
-    return () => {
-      supabase.removeChannel(channel);
-      clearInterval(pollId);
-    };
+    return () => clearInterval(pollId);
   }, [tenantId]);
 
   if (!tenant && !loading) return (
@@ -567,7 +535,6 @@ export default function TenantAdminPage() {
                 setSlotHistory(prev => [histEntry, ...prev]);
 
                 // Tenta notificar o primeiro da lista de espera
-                const { data: { session } } = await (await import('../../lib/supabase')).supabase.auth.getSession();
                 const token = session?.access_token ?? '';
                 const pending = await getWaitlistEntries(tenantId, appt.date);
                 const first = pending.find(e => !e.notified);
@@ -641,7 +608,6 @@ export default function TenantAdminPage() {
             window.open(`/${slug}/agendamento`, '_blank');
           }}
           onDeleteAccount={async () => {
-            const { data: { session } } = await supabase.auth.getSession();
             const r = await fetch(`${getApiUrl()}/api/account?tenantId=${tenant!.id}`, {
               method: 'DELETE',
               headers: { Authorization: `Bearer ${session?.access_token}` },

@@ -11,7 +11,7 @@ import {
   ChevronLeft, ChevronRight, RefreshCw, XCircle, FlaskConical, Globe, Trash2,
   Megaphone, Eye, CalendarCheck, User,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 function getApiUrl() {
   const w = (window as any).__BARBER_CONFIG__ || {};
@@ -190,6 +190,7 @@ export default function SuperAdminPanel({
   supportTickets, onResolveTicket,
   auditLogs, onSignOut,
 }: SuperAdminPanelProps) {
+  const { session } = useAuth();
 
   const [activeTab,        setActiveTab]        = useState<Tab>('overview');
 
@@ -202,7 +203,6 @@ export default function SuperAdminPanel({
   const fetchIntStatus = useCallback(async () => {
     setIntLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token ?? '';
       const r = await fetch(`${getApiUrl()}/api/admin/integrations/status`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -219,7 +219,6 @@ export default function SuperAdminPanel({
   const toggleAsaasMode = async (sandbox: boolean) => {
     setModeToggling(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token ?? '';
       await fetch(`${getApiUrl()}/api/admin/asaas-mode`, {
         method: 'POST',
@@ -320,7 +319,6 @@ export default function SuperAdminPanel({
   const fetchMktCampaigns = useCallback(async () => {
     setMktLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const r = await fetch(`${getApiUrl()}/api/admin/marketing/campaigns`, {
         headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
       });
@@ -334,7 +332,6 @@ export default function SuperAdminPanel({
   const mktPreviewCampaign = async (form: typeof mktForm) => {
     if (!form) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const r = await fetch(`${getApiUrl()}/api/admin/marketing/preview`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${session?.access_token ?? ''}`, 'Content-Type': 'application/json' },
@@ -347,7 +344,6 @@ export default function SuperAdminPanel({
   const mktSaveCampaign = async () => {
     if (!mktForm) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const r = await fetch(`${getApiUrl()}/api/admin/marketing/campaigns`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${session?.access_token ?? ''}`, 'Content-Type': 'application/json' },
@@ -360,7 +356,6 @@ export default function SuperAdminPanel({
   const mktDeleteCampaign = async (id: string) => {
     if (!confirm('Apagar esta campanha?')) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       await fetch(`${getApiUrl()}/api/admin/marketing/campaigns/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
@@ -373,7 +368,6 @@ export default function SuperAdminPanel({
     if (!confirm('Disparar esta campanha agora? Os emails serão enviados para todos os destinatários filtrados.')) return;
     setMktSending(id); setMktResult(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const r = await fetch(`${getApiUrl()}/api/admin/marketing/campaigns/${id}/send`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },

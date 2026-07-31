@@ -9,8 +9,12 @@
 import express from 'express';
 import cors    from 'cors';
 import helmet  from 'helmet';
+import cookieParser from 'cookie-parser';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 import { rateLimit } from 'express-rate-limit';
-import { createClient } from '@supabase/supabase-js';
+import { PostgrestClient } from '@supabase/postgrest-js';
 import {
   createAsaasCustomer,
   createSubscription,
@@ -27,7 +31,15 @@ import {
   sendEmailVerificationEmail,
   generateMarketingHtml,
   sendMarketingEmail,
+  isEmailConfigured,
 } from './email';
+import { pool } from './db';
+import {
+  hashPassword, verifyAccessToken,
+  createEmailVerificationToken, consumeEmailVerificationToken,
+  getUserById,
+} from './auth';
+import { authRouter } from './authRoutes';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT            = parseInt(process.env.PORT || process.env.SERVER_PORT || '4000');
@@ -38,6 +50,11 @@ const EVO_URL         = (process.env.EVO_URL || '').replace(/\/$/, '');
 const EVO_GLOBAL_KEY  = process.env.EVO_GLOBAL_KEY || process.env.EVO_APIKEY || '';
 const SITE_URL        = (process.env.SITE_URL || process.env.CORS_ORIGIN || '').replace(/\/$/, '');
 const API_PUBLIC_URL  = (process.env.API_PUBLIC_URL || '').replace(/\/$/, '');
+// Substitui Supabase Storage — só 1 bucket (logos), 2MB, sem uso suficiente
+// pra justificar S3/MinIO. Volume Docker + express.static.
+const UPLOAD_DIR       = process.env.UPLOAD_DIR || '/data/uploads';
+const LOGO_UPLOAD_DIR  = path.join(UPLOAD_DIR, 'tenant-logos');
+fs.mkdirSync(LOGO_UPLOAD_DIR, { recursive: true });
 
 // Modo Asaas — pode ser alternado em runtime via /api/admin/asaas-mode
 let asaasSandboxOverride: boolean | null = null;
@@ -58,13 +75,27 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1);
 }
 
+// SUPABASE_URL agora aponta pro PostgREST próprio (não mais Kong), e
+// SUPABASE_SERVICE_KEY é um JWT { role: 'service_role' } assinado com o
+// mesmo JWT_SECRET do auth.ts. Usamos @supabase/postgrest-js puro (não
+// @supabase/supabase-js) porque o supabase-js sempre prefixa as chamadas com
+// /rest/v1/ (convenção do Supabase hospedado — antes era o Kong que removia
+// esse prefixo antes de chegar no PostgREST; sem Kong, isso vira 404/PGRST125).
+// postgrest-js é só o query-builder, sem essa suposição de path e sem inicializar
+// cliente Realtime — os ~40 call sites de .from('tenants_live')/.from('audit_logs')
+// etc. continuam funcionando sem alteração de código. Só .auth.* (GoTrue) não
+// existe mais — esses call sites foram substituídos por chamadas a ./auth + pool.
+
 // Client para tabelas de negócio (schema barber)
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  db: { schema: 'barber' },
+const supabase = new PostgrestClient(SUPABASE_URL, {
+  schema: 'barber',
+  headers: { Authorization: `Bearer ${SUPABASE_KEY}` },
 });
 
-// Client para tabelas de auth (schema public: profiles, auth.admin)
-const supabasePublic = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Client para tabelas de auth (schema public: profiles)
+const supabasePublic = new PostgrestClient(SUPABASE_URL, {
+  headers: { Authorization: `Bearer ${SUPABASE_KEY}` },
+});
 
 const app = express();
 const CORS_ORIGINS = [
@@ -85,6 +116,9 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
 app.use(express.json());
+app.use(cookieParser());
+app.use('/api/auth', authRouter);
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Rate limiting — público (registro, booking, cancelamento, emails)
 const publicLimit = rateLimit({
@@ -119,24 +153,48 @@ app.use((req, _res, next) => {
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
-// ── Proxy de verificação de email ─────────────────────────────────────────────
-// Recebe token da URL do email e redireciona internamente para o Supabase Auth,
-// mantendo a URL pública limpa (api.workagenda.org em vez de kong:8000)
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/upload/logo — substitui supabase.storage.from('tenant-logos')
+// ─────────────────────────────────────────────────────────────────────────────
+const logoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype)) {
+      return cb(new Error('Formato de imagem não suportado.'));
+    }
+    cb(null, true);
+  },
+});
+
+app.post('/api/upload/logo', verifyTenant, logoUpload.single('logo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+
+  const tenantId = (req as any).verifiedTenantId as string;
+  const ext = (req.file.mimetype.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const tenantDir = path.join(LOGO_UPLOAD_DIR, tenantId);
+  fs.mkdirSync(tenantDir, { recursive: true });
+  const filename = `logo.${ext}`;
+  fs.writeFileSync(path.join(tenantDir, filename), req.file.buffer);
+
+  return res.json({ url: `${API_PUBLIC_URL}/uploads/tenant-logos/${tenantId}/${filename}` });
+});
+
+// ── Verificação de email ───────────────────────────────────────────────────
+// Token próprio (auth_internal.email_verification_tokens), substitui o proxy
+// pro GoTrue — não depende mais de nenhum serviço externo de auth.
 app.get('/api/verify-email', async (req, res) => {
   const { token, redirect_to } = req.query as Record<string, string>;
   if (!token) return res.status(400).send('Token inválido ou ausente.');
 
   const safeRedirect = redirect_to?.startsWith(SITE_URL) ? redirect_to : `${SITE_URL}/login`;
-  const internalUrl  = `${SUPABASE_URL}/auth/v1/verify?token=${encodeURIComponent(token)}&type=signup&redirect_to=${encodeURIComponent(safeRedirect)}`;
 
   try {
-    const r = await fetch(internalUrl, { redirect: 'manual' });
-    const location = r.headers.get('location');
-    if (location) return res.redirect(location);
-    // Supabase retornou sem redirect → erro
-    return res.redirect(`${SITE_URL}/login?error=email_verification_failed`);
+    const user = await consumeEmailVerificationToken(token);
+    if (!user) return res.redirect(`${SITE_URL}/login?error=email_verification_failed`);
+    return res.redirect(safeRedirect);
   } catch (err: any) {
-    console.error('[VerifyEmail] Proxy error:', err.message);
+    console.error('[VerifyEmail] Error:', err.message);
     return res.redirect(`${SITE_URL}/login?error=email_verification_failed`);
   }
 });
@@ -192,49 +250,32 @@ app.post('/api/register', async (req, res) => {
 
     if (tenantErr) throw tenantErr;
 
-    // 4. Cria usuário no Supabase Auth (sem confirmar — requer verificação de email)
-    const { data: authUser, error: authErr } = await supabasePublic.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: false,
-      user_metadata: {
-        name,
-        role:      'tenant_admin',
-        tenant_id: tenant.id,
-      },
-    });
-
-    if (authErr) {
+    // 4. Cria usuário (auth_internal.users) — sem confirmar, requer verificação de email
+    let authUserId: string;
+    try {
+      const passwordHash = await hashPassword(password);
+      const { rows } = await pool.query(
+        `INSERT INTO auth_internal.users (tenant_id, name, email, password_hash, role)
+         VALUES ($1, $2, $3, $4, 'tenant_admin') RETURNING id`,
+        [tenant.id, name, email, passwordHash],
+      );
+      authUserId = rows[0].id;
+    } catch (authErr: any) {
       // Rollback: remove o tenant se o usuário não foi criado
       await supabase.from('tenants_live').delete().eq('id', tenant.id);
-      if (authErr.message?.includes('already')) {
+      if (authErr.code === '23505') {
         return res.status(409).json({ error: 'Este email já está cadastrado.' });
       }
       throw authErr;
     }
 
-    // 5. Garante que o profile existe com role correto
-    await supabasePublic.from('profiles').upsert({
-      id:        authUser.user.id,
-      name,
-      email,
-      role:      'tenant_admin',
-      tenant_id: tenant.id,
-    });
-
-    // 6. Gera link de verificação e envia email customizado
+    // 5. Gera link de verificação e envia email customizado
     try {
-      const { data: linkData } = await supabasePublic.auth.admin.generateLink({
-        type: 'signup',
-        email,
-        options: { redirectTo: `${SITE_URL}/login` },
-      });
-      const actionLink = (linkData as any)?.properties?.action_link as string | undefined;
-      if (actionLink) {
-        // Extrai o token interno e constrói URL limpa via proxy próprio
-        const parsed = new URL(actionLink);
-        const token  = parsed.searchParams.get('token') || parsed.searchParams.get('hashed_token') || '';
-        const cleanUrl = `${API_PUBLIC_URL}/api/verify-email?token=${encodeURIComponent(token)}&redirect_to=${encodeURIComponent(`${SITE_URL}/login`)}`;
+      const token = await createEmailVerificationToken(authUserId);
+      const cleanUrl = `${API_PUBLIC_URL}/api/verify-email?token=${encodeURIComponent(token)}&redirect_to=${encodeURIComponent(`${SITE_URL}/login`)}`;
+      if (!isEmailConfigured()) {
+        console.log(`[Register] RESEND_API_KEY ausente — link de verificação: ${cleanUrl}`);
+      } else {
         await sendEmailVerificationEmail(email, name, cleanUrl);
       }
     } catch (verifyErr: any) {
@@ -264,7 +305,7 @@ app.post('/api/register', async (req, res) => {
     // 7. Audit log
     await supabase.from('audit_logs').insert({
       tenant_id: tenant.id,
-      user_id:   authUser.user.id,
+      user_id:   authUserId,
       user_name: name,
       action:    'Cadastro de nova barbearia',
       details:   `Trial de 7 dias iniciado. Asaas subscription: ${asaasSubscriptionId ?? 'pendente'}`,
@@ -298,8 +339,11 @@ app.get('/api/billing/payment-link', async (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token) return res.status(401).json({ error: 'Token obrigatório.' });
 
-  const { data: { user }, error: userErr } = await supabasePublic.auth.getUser(token);
-  if (userErr || !user) return res.status(401).json({ error: 'Token inválido.' });
+  let user: { id: string; email: string };
+  try {
+    const claims = verifyAccessToken(token);
+    user = { id: claims.sub, email: claims.email };
+  } catch { return res.status(401).json({ error: 'Token inválido.' }); }
 
   const tenantId = req.query.tenantId as string;
   if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório.' });
@@ -421,8 +465,11 @@ app.delete('/api/account', async (req, res) => {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token) return res.status(401).json({ error: 'Token de autenticação obrigatório.' });
 
-  const { data: { user }, error: userErr } = await supabasePublic.auth.getUser(token);
-  if (userErr || !user) return res.status(401).json({ error: 'Token inválido ou expirado.' });
+  let user: { id: string };
+  try {
+    const claims = verifyAccessToken(token);
+    user = { id: claims.sub };
+  } catch { return res.status(401).json({ error: 'Token inválido ou expirado.' }); }
 
   const tenantId = req.query.tenantId as string;
   if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório.' });
@@ -432,21 +479,20 @@ app.delete('/api/account', async (req, res) => {
       .from('tenants_live').select('id, slug, asaas_subscription_id').eq('id', tenantId).maybeSingle();
     if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
 
-    const { data: callerProfile } = await supabasePublic
-      .from('profiles').select('tenant_id, role').eq('id', user.id).maybeSingle();
+    const callerProfile = await getUserById(user.id);
     const isSuperAdmin = callerProfile?.role === 'super_admin';
     if (!isSuperAdmin && callerProfile?.tenant_id !== tenantId) {
       return res.status(403).json({ error: 'Acesso negado.' });
     }
 
-    // Busca TODOS os profiles do tenant ANTES de deletar qualquer dado
-    const { data: allProfiles } = await supabasePublic
-      .from('profiles').select('id, role, email').eq('tenant_id', tenantId);
+    // Busca TODOS os usuários do tenant ANTES de deletar qualquer dado
+    const { rows: allProfiles } = await pool.query(
+      `SELECT id, role, email FROM auth_internal.users WHERE tenant_id = $1`,
+      [tenantId],
+    );
 
-    const adminProfile = allProfiles?.find(p => p.role === 'tenant_admin');
-    const adminEmail   = adminProfile
-      ? await supabasePublic.auth.admin.getUserById(adminProfile.id).then(r => r.data.user?.email ?? '').catch(() => '')
-      : '';
+    const adminProfile = allProfiles.find((p: any) => p.role === 'tenant_admin');
+    const adminEmail = adminProfile?.email ?? '';
 
     // Registra email em used_trials ANTES de deletar (impede abuso de trial)
     if (adminEmail) {
@@ -474,15 +520,11 @@ app.delete('/api/account', async (req, res) => {
     // 4. Deleta tenant — CASCADE remove appointments, professionals, services, etc.
     await supabase.from('tenants_live').delete().eq('id', tenantId);
 
-    // 5. Deleta profiles (podem ter sido cascadeados mas garante explicitamente)
-    await supabasePublic.from('profiles').delete().eq('tenant_id', tenantId);
+    // 5. Deleta os usuários do tenant (auth_internal.users tem FK ON DELETE CASCADE
+    // em tenant_id, então o passo 4 já teria cascadeado — explícito por clareza/segurança)
+    await pool.query(`DELETE FROM auth_internal.users WHERE tenant_id = $1`, [tenantId]);
 
-    // 6. Deleta TODOS os auth users do tenant (admin + profissionais)
-    for (const p of allProfiles ?? []) {
-      try { await supabasePublic.auth.admin.deleteUser(p.id); } catch {}
-    }
-
-    console.log(`[DeleteAccount] Tenant ${tenantId} (${tenant.slug}) excluído. Users: ${(allProfiles ?? []).length}`);
+    console.log(`[DeleteAccount] Tenant ${tenantId} (${tenant.slug}) excluído. Users: ${allProfiles.length}`);
     return res.status(200).json({ ok: true });
 
   } catch (err: any) {
@@ -501,8 +543,11 @@ app.post('/api/register-google', async (req, res) => {
   if (!token) return res.status(401).json({ error: 'Token de autenticação obrigatório.' });
 
   // Verifica o JWT e obtém o usuário
-  const { data: { user }, error: userErr } = await supabasePublic.auth.getUser(token);
-  if (userErr || !user) return res.status(401).json({ error: 'Token inválido ou expirado.' });
+  let user: { id: string; email: string };
+  try {
+    const claims = verifyAccessToken(token);
+    user = { id: claims.sub, email: claims.email };
+  } catch { return res.status(401).json({ error: 'Token inválido ou expirado.' }); }
 
   const { name, slug, phone } = req.body;
 
@@ -513,8 +558,7 @@ app.post('/api/register-google', async (req, res) => {
 
   try {
     // Verifica se o usuário já tem um tenant (cadastro duplicado)
-    const { data: existingProfile } = await supabasePublic
-      .from('profiles').select('tenant_id').eq('id', user.id).maybeSingle();
+    const existingProfile = await getUserById(user.id);
     if (existingProfile?.tenant_id) {
       return res.status(409).json({ error: 'Esta conta Google já está associada a uma barbearia.' });
     }
@@ -551,27 +595,17 @@ app.post('/api/register-google', async (req, res) => {
 
     if (tenantErr) throw tenantErr;
 
-    // Atualiza user_metadata com role e tenant_id
-    const { error: metaErr } = await supabasePublic.auth.admin.updateUserById(user.id, {
-      user_metadata: { name, role: 'tenant_admin', tenant_id: tenant.id },
-    });
-    if (metaErr) {
+    // Completa o cadastro: nome + role + tenant_id na conta já criada no
+    // callback do Google (que entrou como role='customer', sem tenant)
+    try {
+      await pool.query(
+        `UPDATE auth_internal.users SET name = $1, role = 'tenant_admin', tenant_id = $2 WHERE id = $3`,
+        [name, tenant.id, user.id],
+      );
+    } catch (updateErr) {
       // Rollback: remove tenant órfão
       await supabase.from('tenants_live').delete().eq('id', tenant.id);
-      throw metaErr;
-    }
-
-    // Upsert do profile
-    const { error: profileErr } = await supabasePublic.from('profiles').upsert({
-      id: user.id, name, email, role: 'tenant_admin', tenant_id: tenant.id,
-    });
-    if (profileErr) {
-      // Rollback: remove tenant e reverte metadata
-      await supabase.from('tenants_live').delete().eq('id', tenant.id);
-      await supabasePublic.auth.admin.updateUserById(user.id, {
-        user_metadata: { name, role: 'tenant_admin', tenant_id: null },
-      }).catch(() => {});
-      throw profileErr;
+      throw updateErr;
     }
 
     // Cria cliente e assinatura no Asaas (não bloqueia o cadastro se falhar)
@@ -1150,7 +1184,7 @@ async function ensureInstance(instanceName: string, token: string): Promise<void
   }
 }
 
-/** Middleware: verifica JWT Supabase e confirma acesso ao tenant solicitado */
+/** Middleware: verifica o JWT próprio e confirma acesso ao tenant solicitado */
 async function verifyTenant(
   req: express.Request,
   res: express.Response,
@@ -1161,8 +1195,10 @@ async function verifyTenant(
     res.status(401).json({ error: 'Token de autenticação não fornecido.' });
     return;
   }
-  const { data: { user }, error } = await supabasePublic.auth.getUser(auth.slice(7));
-  if (error || !user) {
+  let claims;
+  try {
+    claims = verifyAccessToken(auth.slice(7));
+  } catch {
     res.status(401).json({ error: 'Token inválido ou expirado.' });
     return;
   }
@@ -1171,8 +1207,8 @@ async function verifyTenant(
     res.status(400).json({ error: 'tenantId é obrigatório.' });
     return;
   }
-  const role         = user.user_metadata?.role as string | undefined;
-  const userTenantId = user.user_metadata?.tenant_id as string | undefined;
+  const role         = claims.user_metadata?.role;
+  const userTenantId = claims.user_metadata?.tenant_id;
   if (role !== 'super_admin' && userTenantId !== tenantId) {
     res.status(403).json({ error: 'Sem permissão para este tenant.' });
     return;
@@ -1188,9 +1224,14 @@ async function verifyTenant(
 async function verifySuperAdmin(req: express.Request, res: express.Response, next: express.NextFunction): Promise<void> {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) { res.status(401).json({ error: 'Token não fornecido.' }); return; }
-  const { data: { user }, error } = await supabasePublic.auth.getUser(auth.slice(7));
-  if (error || !user) { res.status(401).json({ error: 'Token inválido.' }); return; }
-  const { data: profile } = await supabasePublic.from('profiles').select('role').eq('id', user.id).single();
+  let claims;
+  try {
+    claims = verifyAccessToken(auth.slice(7));
+  } catch { res.status(401).json({ error: 'Token inválido.' }); return; }
+  // Re-consulta o banco (não confia só no JWT) — mudança de role só entra em
+  // vigor no próximo access token pro resto do app, mas rotas de super admin
+  // exigem o estado atual sempre.
+  const profile = await getUserById(claims.sub);
   if (profile?.role !== 'super_admin') { res.status(403).json({ error: 'Acesso negado.' }); return; }
   next();
 }

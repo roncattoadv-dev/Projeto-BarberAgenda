@@ -319,15 +319,23 @@ export async function updateProductStock(id: string, stock: number) {
   if (error) throw error;
 }
 
-// ── TENANT LOGO STORAGE ────────────────────────────────────────────────────────
-export async function uploadTenantLogo(tenantId: string, file: File): Promise<string> {
-  const path = `${tenantId}/logo`;
-  const { error } = await supabase.storage
-    .from('tenant-logos')
-    .upload(path, file, { upsert: true, contentType: file.type });
-  if (error) throw error;
-  const { data } = supabase.storage.from('tenant-logos').getPublicUrl(path);
-  return data.publicUrl;
+// ── TENANT LOGO STORAGE (Express + multer, substitui Supabase Storage) ────────
+function getApiUrl(): string {
+  const w = (window as any).__BARBER_CONFIG__ || {};
+  return (w.API_URL || (import.meta as any).env?.VITE_API_URL || '').replace(/\/$/, '');
+}
+
+export async function uploadTenantLogo(tenantId: string, file: File, accessToken: string): Promise<string> {
+  const formData = new FormData();
+  formData.append('logo', file);
+  const res = await fetch(`${getApiUrl()}/api/upload/logo?tenantId=${tenantId}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'Falha ao enviar logo.');
+  return data.url as string;
 }
 
 // ── AUDIT LOG ──────────────────────────────────────────────────────────────────

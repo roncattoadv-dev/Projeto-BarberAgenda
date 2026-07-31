@@ -35,10 +35,9 @@ export default function LoginPage() {
     if (profile?.role === 'tenant_admin') navigate('/admin/painel', { replace: true });
   }, [profile, loading, navigate]);
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = () => {
     setGoogleBusy(true); setError(null);
-    await signInWithGoogle(window.location.origin + '/login');
-    setGoogleBusy(false);
+    signInWithGoogle();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

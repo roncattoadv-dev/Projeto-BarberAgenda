@@ -328,6 +328,39 @@ export async function sendEmailVerificationEmail(
   });
 }
 
+export async function sendPasswordResetEmail(
+  to: string,
+  name: string,
+  resetUrl: string,
+): Promise<void> {
+  if (!isEmailConfigured()) return;
+  const html = layout('Redefinir senha — WorkAgenda', `
+    <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:#111827;">Redefinir sua senha</h2>
+    <p style="margin:0 0 24px;font-size:15px;color:#6B7280;line-height:1.6;">
+      Olá, <strong style="color:#111827;">${name}</strong>! Recebemos um pedido para redefinir a senha da sua conta no WorkAgenda. Clique no botão abaixo para escolher uma nova senha.
+    </p>
+    <div style="margin:0 0 28px;">
+      <a href="${resetUrl}" style="display:inline-block;background:#2563EB;color:#ffffff;font-weight:700;font-size:15px;text-decoration:none;padding:16px 36px;border-radius:12px;letter-spacing:0.2px;">
+        Redefinir senha →
+      </a>
+    </div>
+    <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px 20px;margin-bottom:24px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9CA3AF;">Botão não funcionou?</p>
+      <p style="margin:0 0 8px;font-size:12px;color:#6B7280;">Copie e cole o endereço abaixo diretamente no seu navegador:</p>
+      <p style="margin:0;font-size:11px;color:#2563EB;word-break:break-all;font-family:monospace;">${resetUrl}</p>
+    </div>
+    <p style="margin:0;font-size:13px;color:#9CA3AF;line-height:1.5;">
+      Este link expira em 1 hora. Se você não pediu essa redefinição, pode ignorar este email com segurança — sua senha atual continua válida.
+    </p>
+  `);
+  await getResend().emails.send({
+    from:    FROM_EMAIL,
+    to,
+    subject: 'Redefinir sua senha no WorkAgenda',
+    html,
+  });
+}
+
 export async function sendPaymentOverdueEmail(
   to: string,
   tenantName: string,

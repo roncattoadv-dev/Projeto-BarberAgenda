@@ -3,7 +3,7 @@ import { X, MessageSquare, Trash2, RefreshCw, AlertCircle, ArrowRight, CheckCirc
 import { WaitlistEntry, SlotHistory } from '../types';
 import { getWaitlistEntries, markWaitlistNotified, deleteWaitlistEntry, getSlotHistory } from '../lib/db';
 import { sendWhatsAppServer, buildWaitlistMsg } from '../services/whatsapp';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Props {
   tenantId: string;
@@ -153,6 +153,7 @@ function DateFilter({ preset, from, to, onPreset, onFrom, onTo }: {
 }
 
 export default function WaitlistModal({ tenantId, tenantName, tenantSlug, professionals, failedIds, onClose }: Props) {
+  const { session } = useAuth();
   const [entries,     setEntries]     = useState<WaitlistEntry[]>([]);
   const [history,     setHistory]     = useState<SlotHistory[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -165,8 +166,8 @@ export default function WaitlistModal({ tenantId, tenantName, tenantSlug, profes
   const [dateTo,      setDateTo]      = useState('');
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setAuthToken(session?.access_token || ''));
-  }, []);
+    setAuthToken(session?.access_token || '');
+  }, [session]);
 
   const load = useCallback(async () => {
     setLoading(true);

@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 import type { Tenant, Coupon, AuditLog, SupportTicket } from '../../types';
 
 export default function SuperAdminPage() {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, session } = useAuth();
 
   const [tenants,        setTenants]        = useState<Tenant[]>([]);
   const [coupons,        setCoupons]        = useState<Coupon[]>([]);
@@ -82,7 +82,6 @@ export default function SuperAdminPage() {
   };
 
   const handleDeleteTenant = async (tenantId: string) => {
-    const { data: { session } } = await supabase.auth.getSession();
     const r = await fetch(`${(window as any).__BARBER_CONFIG__?.API_URL || ''}/api/account?tenantId=${tenantId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${session?.access_token}` },
