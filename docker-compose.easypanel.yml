@@ -1,10 +1,28 @@
 ###############################################################################
 # BarberFlow SaaS — docker-compose.easypanel.yml
 #
-# Domínios (via Traefik/EasyPanel):
+# ATUALIZADO 2026-07-31 no corte de auth própria (GoTrue/Kong eliminados —
+# ver commit "auth: replace Supabase (GoTrue/Kong) with self-hosted Postgres
+# + custom auth"). Reflete a arquitetura REAL rodando em produção nesta
+# data: Postgres puro + PostgREST + Express (auth própria), sem GoTrue/Kong/
+# Supabase Storage/Realtime. Os containers reais já rodavam com esses nomes
+# via `docker run` manual antes deste arquivo ser atualizado — ver
+# container_name abaixo, escolhido para bater exatamente com o que já
+# estava no ar (evita recriar postgres/postgrest do zero ao aplicar isto).
+#
+# Domínios (via Traefik/EasyPanel, roteamento por alias de rede Docker):
 #   Frontend : workagenda.org / www.workagenda.org  → app:80
 #   API      : api.workagenda.org                   → api:4000
-#   Supabase : barberflow-supabase.i9inu5.easypanel.host    → kong:8000 (projeto separado)
+#   PostgREST: barberflow-supabase.i9inu5.easypanel.host → postgrest:8000
+#              (endereço herdado do Kong antigo — mantido de propósito
+#              pra não precisar reconfigurar Traefik nem o app já em produção)
+#
+# IMPORTANTE — variáveis novas necessárias no .env deste projeto no EasyPanel
+# (já adicionadas manualmente em 2026-07-31, ver
+# /etc/easypanel/projects/barberflow/barberflow/code/.env):
+#   BARBERFLOW_JWT_SECRET, BARBERFLOW_SUPABASE_SERVICE_KEY,
+#   BARBERFLOW_DB_APP_PASSWORD, BARBERFLOW_DB_SUPERUSER_PASSWORD,
+#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 ###############################################################################
 
 version: "3.9"
@@ -30,18 +48,71 @@ services:
       - supabase_net
 
   ##############################################################################
+  # POSTGRES — banco próprio (substitui o Postgres do Supabase self-hosted)
+  # Volume EXTERNO (já existe com os dados reais, ver aviso no topo do arquivo)
+  ##############################################################################
+  postgres:
+    image: postgres:16-alpine
+    container_name: barberflow-prod-pg
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: barberflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${BARBERFLOW_DB_SUPERUSER_PASSWORD}
+    volumes:
+      - barberflow_postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      supabase_net:
+        aliases:
+          - barberflow-prod-pg
+
+  ##############################################################################
+  # POSTGREST — API REST direta sobre o Postgres (substitui Kong+PostgREST
+  # antigos do Supabase). Assume o endereço público que o Kong usava, via
+  # alias barberflow_supabase_kong na rede easypanel — nenhuma mudança de
+  # DNS/Traefik necessária.
+  ##############################################################################
+  postgrest:
+    image: postgrest/postgrest:latest
+    container_name: barberflow-postgrest-prod
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${BARBERFLOW_DB_SUPERUSER_PASSWORD}@barberflow-prod-pg:5432/barberflow
+      PGRST_DB_SCHEMAS: barber,public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${BARBERFLOW_JWT_SECRET}
+      PGRST_SERVER_PORT: "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      supabase_net:
+        aliases:
+          - kong                      # api usa SUPABASE_URL=http://kong:8000 — mantido de propósito
+      easypanel:
+        aliases:
+          - barberflow_supabase_kong  # endereço público que o Kong antigo respondia
+
+  ##############################################################################
   # APP — Frontend React (nginx)
-  # SUPABASE_URL deve ser a URL PÚBLICA do Supabase (acessível pelo browser)
+  # SUPABASE_URL deve ser a URL PÚBLICA acessível pelo browser — continua
+  # sendo o domínio do Kong antigo, agora servido pelo PostgREST (ver acima).
   ##############################################################################
   app:
     image: barberflow-app:latest
     restart: unless-stopped
     mem_limit: 256m
     environment:
-      # URL pública — browser do usuário acessa de fora da rede Docker
       SUPABASE_URL: https://barberflow-supabase.i9inu5.easypanel.host
-      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgyMzMwNTI1LCJleHAiOjI0MTMwNTA1MjV9.Uc53YlcgAhrKRFlw824T-HBs4nDZaxhxTzub6aH77NU
-      # URL pública da API Express
       API_URL: https://api.workagenda.org
       SITE_URL: https://workagenda.org
     healthcheck:
@@ -61,8 +132,9 @@ services:
           - barberflow_barberflow_app
 
   ##############################################################################
-  # API — Backend Express (registro + webhook Asaas)
-  # SUPABASE_URL aqui é interna (servidor-para-servidor, não precisa ser pública)
+  # API — Backend Express (auth própria + registro + WhatsApp + webhook Asaas)
+  # SUPABASE_URL aqui é interna (servidor-para-servidor) — continua
+  # http://kong:8000 de propósito, ver alias do serviço postgrest acima.
   ##############################################################################
   api:
     image: barberflow-api:latest
@@ -71,9 +143,12 @@ services:
     environment:
       NODE_ENV: production
       SERVER_PORT: 4000
-      # Kong interno — acesso servidor-para-servidor, não pelo browser
       SUPABASE_URL: http://kong:8000
-      SUPABASE_SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3ODIzMzA1MjUsImV4cCI6MjQxMzA1MDUyNX0.3aqiwuVXh5UwDAY5Y3KyfSmPGVtN6C8Rj1hhl6-M86E
+      SUPABASE_SERVICE_KEY: ${BARBERFLOW_SUPABASE_SERVICE_KEY}
+      DATABASE_URL: postgres://app_backend:${BARBERFLOW_DB_APP_PASSWORD}@barberflow-prod-pg:5432/barberflow
+      JWT_SECRET: ${BARBERFLOW_JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       ASAAS_API_KEY: ${ASAAS_API_KEY}
       ASAAS_SANDBOX_KEY: ${ASAAS_SANDBOX_KEY}
       ASAAS_WEBHOOK_SECRET: ${ASAAS_WEBHOOK_TOKEN}
@@ -81,10 +156,12 @@ services:
       CORS_ORIGIN: https://workagenda.org
       SITE_URL: https://workagenda.org
       API_PUBLIC_URL: https://api.workagenda.org
-      RESEND_API_KEY: re_2BLvozWY_LdyvwfYJyQaWyLTZVbRiHp4B
+      RESEND_API_KEY: ${RESEND_API_KEY}
       # Evolution Go — URL interna do EasyPanel (nunca exposta ao browser)
       EVO_URL: http://evolutionapi_evogo:8080
-      EVO_GLOBAL_KEY: 8f91c3d5-e2a7-4b60-9d88-1c4e7f0b5a22
+      EVO_GLOBAL_KEY: ${EVO_GLOBAL_KEY}
+    volumes:
+      - barberflow_uploads_data:/data/uploads   # logos de tenant — NUNCA remover este mount
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
       interval: 30s
@@ -93,6 +170,8 @@ services:
       start_period: 15s
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       barberflow:
@@ -107,6 +186,16 @@ services:
 volumes:
   redis_data:
 
+  # Já existem com dados reais (criados manualmente no corte de 2026-07-31) —
+  # external:true impede o compose de criar volumes novos VAZIOS com esses
+  # nomes prefixados pelo projeto, o que apagaria tudo silenciosamente.
+  barberflow_postgres_data:
+    external: true
+    name: barberflow_postgres_data_v2
+  barberflow_uploads_data:
+    external: true
+    name: barberflow_uploads_data
+
 ##############################################################################
 # NETWORKS
 ##############################################################################
@@ -114,7 +203,8 @@ networks:
   barberflow:
     driver: bridge
 
-  # Rede do Supabase já existente
+  # Rede compartilhada com o antigo projeto Supabase — mantida para o
+  # PostgREST/Postgres novos, sem precisar mexer nela
   supabase_net:
     external: true
     name: barberflow_supabase_default
