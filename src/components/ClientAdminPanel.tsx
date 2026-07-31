@@ -605,7 +605,7 @@ export default function ClientAdminPanel({
   };
   const addProductLine = (p: Product) => {
     if (p.stock <= 0) { toast.error('Produto sem estoque.'); return; }
-    setInvoiceItems(prev => [...prev, { type: 'product', refId: p.id, name: p.name, unitPrice: p.price, qty: 1, subtotal: p.price }]);
+    setInvoiceItems(prev => [...prev, { type: 'product', refId: p.id, name: p.name, unitPrice: p.price, costPrice: p.costPrice, qty: 1, subtotal: p.price }]);
     setAddLinePicker(null);
   };
   const removeInvoiceLine = (idx: number) => {

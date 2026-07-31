@@ -313,6 +313,19 @@ export default function FinanceiroTab({
     });
   }, [myProfessionals, myAppointments, dateRange, filterProfId]);
 
+  const productStats = useMemo(() => {
+    let gross = 0, net = 0, qty = 0;
+    paidPayments.forEach(p => {
+      (p.items ?? []).forEach(it => {
+        if (it.type !== 'product') return;
+        gross += it.subtotal;
+        net += it.subtotal - (it.costPrice ?? 0) * it.qty;
+        qty += it.qty;
+      });
+    });
+    return { gross, net, qty };
+  }, [paidPayments]);
+
   const handleDirectSale = (e: React.FormEvent) => {
     e.preventDefault();
     if (!directSaleDesc.trim() || directSaleAmount <= 0) { toast.error('Preencha descrição e valor.'); return; }
@@ -1013,6 +1026,28 @@ export default function FinanceiroTab({
               <p style={{ color: '#9CA3AF', fontSize: 13, paddingTop: 8 }}>Sem atendimentos no período.</p>
             )}
           </div>
+        </div>
+
+        {/* Produtos */}
+        <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h3 style={sectionLabel}>
+            <ShoppingBag style={{ width: 14, height: 14, color: '#6B7280' }} /> Produtos
+          </h3>
+          <p style={subText}>Vendas de produtos no período selecionado{productStats.qty > 0 ? ` · ${productStats.qty} un.` : ''}.</p>
+          {productStats.gross > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12, color: '#6B7280' }}>Valor Bruto</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: '#111827', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>{fmtCurrency(productStats.gross)}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12, color: '#6B7280' }}>Valor Líquido</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: '#16A34A', fontFamily: 'Outfit, sans-serif', fontVariantNumeric: 'tabular-nums' }}>{fmtCurrency(productStats.net)}</span>
+              </div>
+            </div>
+          ) : (
+            <p style={{ color: '#9CA3AF', fontSize: 13, paddingTop: 8 }}>Nenhuma venda de produto no período.</p>
+          )}
         </div>
       </div>
 

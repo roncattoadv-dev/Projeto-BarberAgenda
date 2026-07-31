@@ -121,6 +121,7 @@ export interface PaymentItem {
   refId: string;
   name: string;
   unitPrice: number;
+  costPrice?: number; // snapshot do custo no momento da venda (só para type: 'product')
   qty: number;
   subtotal: number;
 }
