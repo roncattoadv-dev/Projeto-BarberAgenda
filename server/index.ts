@@ -416,6 +416,21 @@ app.get('/api/billing/payment-link', async (req, res) => {
 
     // Cria ou reutiliza cliente no Asaas
     let customerId = tenant.asaas_customer_id;
+
+    // O customerId salvo pode ter sido apagado manualmente no painel do Asaas
+    // (acontece) — confirma que ainda existe antes de reutilizar; se não
+    // existir mais, trata como se nunca tivesse tido customerId (mesmo
+    // caminho de baixo: busca por externalReference ou cria um novo).
+    if (customerId) {
+      const checkRes = await fetch(`${asaasBase}/customers/${customerId}`, {
+        headers: { 'access_token': asaasKey },
+      });
+      if (!checkRes.ok) {
+        console.warn(`[PaymentLink] asaas_customer_id ${customerId} não existe mais no Asaas (provavelmente apagado manualmente) — recriando.`);
+        customerId = null;
+      }
+    }
+
     if (!customerId) {
       // Verifica se já existe cliente com externalReference = tenantId (evita duplicata)
       const existingRes = await fetch(`${asaasBase}/customers?externalReference=${tenant.id}&limit=1`, {
@@ -1670,19 +1685,30 @@ async function sendConfirmations(): Promise<void> {
         link,
       };
 
+      // Try/catch isolado: uma falha no WhatsApp (ex: tenant sem conexão
+      // ativa) não pode impedir o email de confirmação de ser tentado —
+      // ambos os canais são independentes.
+      let wppOk = true;
       if (phone && tenant.wpp_enabled !== false) {
-        const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
-        const instanceToken = evoInstanceToken(tenant.id);
+        try {
+          const msg           = applyTemplate(tenant.wpp_template_confirm ?? TPL_CONFIRM_DEFAULT, vars);
+          const instanceToken = evoInstanceToken(tenant.id);
 
-        await evoSendWpp(instanceToken, evoInstanceName(tenant.id), `55${phone}`, msg, link ? {
-          url: link,
-          title: `${tenant.name} — Agendamento confirmado`,
-          description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
-        } : undefined);
+          await evoSendWpp(instanceToken, evoInstanceName(tenant.id), `55${phone}`, msg, link ? {
+            url: link,
+            title: `${tenant.name} — Agendamento confirmado`,
+            description: `${vars.servico} · ${vars.data} às ${vars.hora} · Toque para ver os detalhes ou cancelar`,
+          } : undefined);
 
-        console.log(`[Confirm] Confirmação WPP enviada: ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time?.slice(0,5)})`);
+          console.log(`[Confirm] Confirmação WPP enviada: ${appt.customer_name} (${appt.scheduled_date} ${appt.scheduled_time?.slice(0,5)})`);
+        } catch (wppErr: any) {
+          wppOk = false;
+          console.error(`[Confirm] Erro WhatsApp para ${appt.customer_name}:`, wppErr.message);
+        }
       }
-      await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appt.id);
+      if (wppOk) {
+        await supabase.from('appointments').update({ wpp_confirm_sent: true }).eq('id', appt.id);
+      }
 
       // Se o agendamento foi feito com menos tempo que o lembrete configurado,
       // o job sendReminders nunca alcançará esta janela — marca como tempo insuficiente.
