@@ -506,7 +506,7 @@ export default function CustomerBookingFlow({
      RETURN
   ═══════════════════════════════════════════════════════════════ */
   return (
-    <div style={{ width: '100%', maxWidth: 1060, margin: '0 auto', background: '#fff', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0', fontFamily: 'inherit', overflow: 'hidden' }}>
+    <div style={{ width: '100%', maxWidth: 1060, margin: '0 auto', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0', fontFamily: 'inherit', overflow: 'hidden' }}>
 
       {/* ══ Steps 2 / 3 / 4 ══ */}
       {activeTab === 'booking' && step > 1 && step < 5 && (isDesktop ? (
