@@ -161,7 +161,7 @@ app.post('/api/register', async (req, res) => {
 
   try {
     // 1. Verifica se slug já existe
-    const { data: existing } = await supabase.from('tenants').select('id').eq('slug', slug).maybeSingle();
+    const { data: existing } = await supabase.from('tenants_live').select('id').eq('slug', slug).maybeSingle();
     if (existing) return res.status(409).json({ error: 'Este endereço já está em uso. Escolha outro.' });
 
     // 2. Verifica se o email já usou trial (anti-abuso)
@@ -176,7 +176,7 @@ app.post('/api/register', async (req, res) => {
 
     // 4. Cria o tenant no Supabase
     const { data: tenant, error: tenantErr } = await supabase
-      .from('tenants')
+      .from('tenants_live')
       .insert({
         name,
         slug: slug.toLowerCase().trim(),
@@ -206,7 +206,7 @@ app.post('/api/register', async (req, res) => {
 
     if (authErr) {
       // Rollback: remove o tenant se o usuário não foi criado
-      await supabase.from('tenants').delete().eq('id', tenant.id);
+      await supabase.from('tenants_live').delete().eq('id', tenant.id);
       if (authErr.message?.includes('already')) {
         return res.status(409).json({ error: 'Este email já está cadastrado.' });
       }
@@ -250,12 +250,12 @@ app.post('/api/register', async (req, res) => {
       const asaasCustomer = await createAsaasCustomer({ name, email, phone, cpfCnpj, tenantId: tenant.id });
       asaasCustomerId     = asaasCustomer.id;
       // Salva customer_id imediatamente — evita criar duplicata se subscription falhar
-      await supabase.from('tenants').update({ asaas_customer_id: asaasCustomerId }).eq('id', tenant.id);
+      await supabase.from('tenants_live').update({ asaas_customer_id: asaasCustomerId }).eq('id', tenant.id);
 
       const subscription    = await createSubscription(asaasCustomer.id, 'mensal', usedTrial ? 0 : 7);
       asaasSubscriptionId   = subscription.id;
 
-      await supabase.from('tenants').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
+      await supabase.from('tenants_live').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
     } catch (asaasErr) {
       // Asaas falhou — não bloqueia o cadastro, apenas loga
       console.error('[Register] Asaas error (non-fatal):', asaasErr);
@@ -306,7 +306,7 @@ app.get('/api/billing/payment-link', async (req, res) => {
 
   try {
     const { data: tenant } = await supabase
-      .from('tenants')
+      .from('tenants_live')
       .select('id, name, asaas_customer_id, asaas_subscription_id, status')
       .eq('id', tenantId)
       .maybeSingle();
@@ -362,7 +362,7 @@ app.get('/api/billing/payment-link', async (req, res) => {
           await fetch(`${asaasBase}/subscriptions/${tenant.asaas_subscription_id}`, {
             method: 'DELETE', headers: { 'access_token': asaasKey },
           }).catch(() => {});
-          await supabase.from('tenants').update({ asaas_subscription_id: null }).eq('id', tenantId);
+          await supabase.from('tenants_live').update({ asaas_subscription_id: null }).eq('id', tenantId);
         }
       } catch {}
     }
@@ -383,7 +383,7 @@ app.get('/api/billing/payment-link', async (req, res) => {
         customerId = customer.id;
       }
       // Salva imediatamente — evita criar duplicata se a subscription falhar a seguir
-      await supabase.from('tenants').update({ asaas_customer_id: customerId }).eq('id', tenantId);
+      await supabase.from('tenants_live').update({ asaas_customer_id: customerId }).eq('id', tenantId);
     }
 
     if (cpfCnpj) {
@@ -396,7 +396,7 @@ app.get('/api/billing/payment-link', async (req, res) => {
     }
 
     const subscription = await createSubscription(customerId, plan, 0);
-    await supabase.from('tenants').update({
+    await supabase.from('tenants_live').update({
       asaas_customer_id:     customerId,
       asaas_subscription_id: subscription.id,
       plan,
@@ -429,7 +429,7 @@ app.delete('/api/account', async (req, res) => {
 
   try {
     const { data: tenant } = await supabase
-      .from('tenants').select('id, slug, asaas_subscription_id').eq('id', tenantId).maybeSingle();
+      .from('tenants_live').select('id, slug, asaas_subscription_id').eq('id', tenantId).maybeSingle();
     if (!tenant) return res.status(404).json({ error: 'Barbearia não encontrada.' });
 
     const { data: callerProfile } = await supabasePublic
@@ -472,7 +472,7 @@ app.delete('/api/account', async (req, res) => {
     await supabasePublic.from('audit_logs').delete().eq('tenant_id', tenantId);
 
     // 4. Deleta tenant — CASCADE remove appointments, professionals, services, etc.
-    await supabase.from('tenants').delete().eq('id', tenantId);
+    await supabase.from('tenants_live').delete().eq('id', tenantId);
 
     // 5. Deleta profiles (podem ter sido cascadeados mas garante explicitamente)
     await supabasePublic.from('profiles').delete().eq('tenant_id', tenantId);
@@ -520,7 +520,7 @@ app.post('/api/register-google', async (req, res) => {
     }
 
     // Verifica se slug já existe
-    const { data: existingSlug } = await supabase.from('tenants').select('id').eq('slug', slug).maybeSingle();
+    const { data: existingSlug } = await supabase.from('tenants_live').select('id').eq('slug', slug).maybeSingle();
     if (existingSlug) return res.status(409).json({ error: 'Este endereço já está em uso. Escolha outro.' });
 
     // Verifica se o email já usou trial (anti-abuso)
@@ -535,7 +535,7 @@ app.post('/api/register-google', async (req, res) => {
 
     // Cria o tenant
     const { data: tenant, error: tenantErr } = await supabase
-      .from('tenants')
+      .from('tenants_live')
       .insert({
         name,
         slug: slug.toLowerCase().trim(),
@@ -557,7 +557,7 @@ app.post('/api/register-google', async (req, res) => {
     });
     if (metaErr) {
       // Rollback: remove tenant órfão
-      await supabase.from('tenants').delete().eq('id', tenant.id);
+      await supabase.from('tenants_live').delete().eq('id', tenant.id);
       throw metaErr;
     }
 
@@ -567,7 +567,7 @@ app.post('/api/register-google', async (req, res) => {
     });
     if (profileErr) {
       // Rollback: remove tenant e reverte metadata
-      await supabase.from('tenants').delete().eq('id', tenant.id);
+      await supabase.from('tenants_live').delete().eq('id', tenant.id);
       await supabasePublic.auth.admin.updateUserById(user.id, {
         user_metadata: { name, role: 'tenant_admin', tenant_id: null },
       }).catch(() => {});
@@ -580,11 +580,11 @@ app.post('/api/register-google', async (req, res) => {
     try {
       const asaasCustomer   = await createAsaasCustomer({ name, email, phone, tenantId: tenant.id });
       // Salva customer_id imediatamente — evita criar duplicata se subscription falhar
-      await supabase.from('tenants').update({ asaas_customer_id: asaasCustomer.id }).eq('id', tenant.id);
+      await supabase.from('tenants_live').update({ asaas_customer_id: asaasCustomer.id }).eq('id', tenant.id);
 
       const subscription    = await createSubscription(asaasCustomer.id, 'mensal', usedTrial ? 0 : 7);
       asaasSubscriptionId   = subscription.id;
-      await supabase.from('tenants').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
+      await supabase.from('tenants_live').update({ asaas_subscription_id: asaasSubscriptionId }).eq('id', tenant.id);
     } catch (asaasErr) {
       console.error('[RegisterGoogle] Asaas error (non-fatal):', asaasErr);
     }
@@ -647,7 +647,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
   try {
     // Busca o tenant pelo asaas_subscription_id
     const { data: tenant } = await supabase
-      .from('tenants')
+      .from('tenants_live')
       .select('id, name, status, plan, subscription_ends_at')
       .eq('asaas_subscription_id', subscriptionId)
       .maybeSingle();
@@ -679,7 +679,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
         const base = currentEnd > dueBase ? currentEnd : dueBase;
         base.setMonth(base.getMonth() + planMonths);
         const subscriptionEndsAt = base.toISOString().split('T')[0];
-        await supabase.from('tenants').update({
+        await supabase.from('tenants_live').update({
           status: 'active',
           plan:   planName,
           mrr:    parseFloat(monthlyValue as string),
@@ -701,7 +701,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
 
       case 'PAYMENT_OVERDUE': {
         // Venceu sem pagamento → bloqueia
-        await supabase.from('tenants').update({ status: 'blocked', mrr: 0 }).eq('id', tenant.id);
+        await supabase.from('tenants_live').update({ status: 'blocked', mrr: 0 }).eq('id', tenant.id);
         newStatus  = 'blocked';
         logAction  = 'Pagamento vencido — acesso bloqueado';
         logDetails = `Asaas payment ${payment?.id} vencido em ${payment?.dueDate}. Tenant bloqueado.`;
@@ -718,7 +718,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
 
       case 'SUBSCRIPTION_INACTIVATED': {
         // Assinatura cancelada → bloqueia
-        await supabase.from('tenants').update({ status: 'blocked', mrr: 0 }).eq('id', tenant.id);
+        await supabase.from('tenants_live').update({ status: 'blocked', mrr: 0 }).eq('id', tenant.id);
         newStatus  = 'blocked';
         logAction  = 'Assinatura cancelada';
         logDetails = `Asaas subscription ${subscriptionId} cancelada. Tenant bloqueado.`;
@@ -756,7 +756,7 @@ app.post('/api/webhook/asaas', async (req, res) => {
 app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { data: tenant } = await supabase
-    .from('tenants').select('asaas_subscription_id, asaas_customer_id, status, plan, subscription_ends_at').eq('id', tenantId).maybeSingle();
+    .from('tenants_live').select('asaas_subscription_id, asaas_customer_id, status, plan, subscription_ends_at').eq('id', tenantId).maybeSingle();
 
   if (!tenant?.asaas_customer_id && !tenant?.asaas_subscription_id) {
     return res.status(404).json({ error: 'Assinatura não encontrada.' });
@@ -799,7 +799,7 @@ app.post('/api/billing/verify-payment', verifyTenant, async (req, res) => {
     base2.setMonth(base2.getMonth() + planMonths);
     const subscriptionEndsAt = base2.toISOString().split('T')[0];
 
-    await supabase.from('tenants').update({
+    await supabase.from('tenants_live').update({
       status: 'active', plan: planName, mrr,
       subscription_ends_at: subscriptionEndsAt,
     }).eq('id', tenantId);
@@ -915,7 +915,7 @@ function applyTemplate(tpl: string, vars: Record<string, string>): string {
 app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { data } = await supabase
-    .from('tenants')
+    .from('tenants_live')
     .select('wpp_template_confirm, wpp_template_remind, wpp_template_waitlist, wpp_booking_url, wpp_reminder_minutes, wpp_enabled, email_enabled')
     .eq('id', tenantId)
     .maybeSingle();
@@ -937,7 +937,7 @@ app.get('/api/whatsapp/templates', verifyTenant, async (req, res) => {
 app.put('/api/whatsapp/templates', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
   const { confirm, remind, waitlist, bookingUrl, reminderMinutes, wppEnabled, emailEnabled } = req.body as { confirm?: string; remind?: string; waitlist?: string; bookingUrl?: string; reminderMinutes?: number; wppEnabled?: boolean; emailEnabled?: boolean };
-  await supabase.from('tenants').update({
+  await supabase.from('tenants_live').update({
     wpp_template_confirm:   confirm          ?? null,
     wpp_template_remind:    remind           ?? null,
     ...(waitlist    !== undefined ? { wpp_template_waitlist: waitlist || null } : {}),
@@ -965,7 +965,7 @@ app.post('/api/whatsapp/notify', async (req, res) => {
       supabase.from('appointments')
         .select('*, services(name), professionals(name)')
         .eq('id', appointmentId).eq('tenant_id', tenantId).maybeSingle(),
-      supabase.from('tenants')
+      supabase.from('tenants_live')
         .select('name, slug, wpp_template_confirm, wpp_booking_url, contact_email, wpp_enabled, email_enabled')
         .eq('id', tenantId).maybeSingle(),
     ]);
@@ -1044,7 +1044,7 @@ app.post('/api/whatsapp/remind', async (req, res) => {
       supabase.from('appointments')
         .select('*, services(name), professionals(name)')
         .eq('id', appointmentId).eq('tenant_id', tenantId).maybeSingle(),
-      supabase.from('tenants')
+      supabase.from('tenants_live')
         .select('name, slug, wpp_template_remind, wpp_booking_url')
         .eq('id', tenantId).maybeSingle(),
     ]);
@@ -1262,7 +1262,7 @@ app.post('/api/admin/asaas-mode', verifySuperAdmin, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/whatsapp/status', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
-  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  const { data: tenant } = await supabase.from('tenants_live').select('slug').eq('id', tenantId).maybeSingle();
   if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
 
   if (!EVO_URL || !EVO_GLOBAL_KEY) {
@@ -1278,7 +1278,7 @@ app.get('/api/whatsapp/status', verifyTenant, async (req, res) => {
     const loggedIn = !!data?.data?.LoggedIn;
     // Reconectou → limpa o timestamp de desconexão
     if (loggedIn) {
-      await supabase.from('tenants').update({ evo_disconnected_at: null }).eq('id', tenantId);
+      await supabase.from('tenants_live').update({ evo_disconnected_at: null }).eq('id', tenantId);
     }
     res.json({ ok: true, connected: !!data?.data?.Connected, loggedIn, name: data?.data?.Name || null });
   } catch {
@@ -1292,7 +1292,7 @@ app.get('/api/whatsapp/status', verifyTenant, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/whatsapp/qr', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
-  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  const { data: tenant } = await supabase.from('tenants_live').select('slug').eq('id', tenantId).maybeSingle();
   if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
 
   if (!EVO_URL || !EVO_GLOBAL_KEY) {
@@ -1326,7 +1326,7 @@ app.get('/api/whatsapp/qr', verifyTenant, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/whatsapp/disconnect', verifyTenant, async (req, res) => {
   const tenantId = (req as any).verifiedTenantId as string;
-  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  const { data: tenant } = await supabase.from('tenants_live').select('slug').eq('id', tenantId).maybeSingle();
   if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
 
   const instanceToken = evoInstanceToken(tenant.slug, tenantId);
@@ -1337,7 +1337,7 @@ app.post('/api/whatsapp/disconnect', verifyTenant, async (req, res) => {
       body: JSON.stringify({ instanceId: tenant.slug }),
     });
     // Registra quando foi desconectado para o job de limpeza de 30 dias
-    await supabase.from('tenants').update({ evo_disconnected_at: new Date().toISOString() }).eq('id', tenantId);
+    await supabase.from('tenants_live').update({ evo_disconnected_at: new Date().toISOString() }).eq('id', tenantId);
     res.json({ ok: true });
   } catch (err: any) {
     console.error('[WhatsApp Disconnect]', err.message);
@@ -1354,7 +1354,7 @@ app.post('/api/whatsapp/send', verifyTenant, async (req, res) => {
   const { phone, message } = req.body as { phone?: string; message?: string };
   if (!phone || !message) { res.status(400).json({ error: 'phone e message são obrigatórios.' }); return; }
 
-  const { data: tenant } = await supabase.from('tenants').select('slug').eq('id', tenantId).maybeSingle();
+  const { data: tenant } = await supabase.from('tenants_live').select('slug').eq('id', tenantId).maybeSingle();
   if (!tenant) { res.status(404).json({ error: 'Tenant não encontrado.' }); return; }
 
   const instanceToken = evoInstanceToken(tenant.slug, tenantId);
@@ -1499,7 +1499,7 @@ app.post('/api/cancel', async (req, res) => {
         const instanceToken = evoInstanceToken(slug, tenantId);
 
         // Template do banco ou padrão
-        const { data: tplData } = await supabase.from('tenants')
+        const { data: tplData } = await supabase.from('tenants_live')
           .select('wpp_template_waitlist')
           .eq('id', tenantId).maybeSingle();
         const TPL_WAITLIST = tplData?.wpp_template_waitlist ||
@@ -1553,7 +1553,7 @@ async function cleanupStaleInstances(): Promise<void> {
 
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const { data: stale } = await supabase
-    .from('tenants')
+    .from('tenants_live')
     .select('id, slug')
     .not('evo_disconnected_at', 'is', null)
     .lt('evo_disconnected_at', cutoff);
@@ -1569,7 +1569,7 @@ async function cleanupStaleInstances(): Promise<void> {
         await evoAdmin(`/instance/delete/${inst.id}`, { method: 'DELETE' });
         console.log(`[Cleanup] Instância "${tenant.slug}" removida (desconectada > 30 dias).`);
       }
-      await supabase.from('tenants').update({ evo_disconnected_at: null }).eq('id', tenant.id);
+      await supabase.from('tenants_live').update({ evo_disconnected_at: null }).eq('id', tenant.id);
     } catch (err: any) {
       console.error(`[Cleanup] Erro ao remover "${tenant.slug}":`, err.message);
     }
@@ -1671,7 +1671,7 @@ async function processAutoActions(): Promise<void> {
   try {
     // Busca tenants com modo automático configurado
     const { data: tenants } = await supabase
-      .from('tenants')
+      .from('tenants_live')
       .select('id, slug, name, agenda_mode, agenda_time_minutes, timezone')
       .in('agenda_mode', ['auto_complete', 'auto_cancel']);
     if (!tenants?.length) return;
@@ -1743,7 +1743,7 @@ async function processAutoActions(): Promise<void> {
             const { data: allWl } = await supabase.from('waitlist').select('*')
               .eq('tenant_id', tenant.id).order('created_at');
 
-            const { data: tplData } = await supabase.from('tenants')
+            const { data: tplData } = await supabase.from('tenants_live')
               .select('wpp_template_waitlist').eq('id', tenant.id).maybeSingle();
             const TPL = tplData?.wpp_template_waitlist ||
               TPL_WAITLIST_DEFAULT;
@@ -1900,7 +1900,7 @@ app.delete('/api/admin/marketing/campaigns/:id', verifySuperAdmin, async (req, r
 });
 
 async function getMarketingRecipients(filters: Record<string, any>): Promise<{ tenantId: string; email: string; name: string; slug: string }[]> {
-  let query = supabase.from('tenants').select('id, name, slug, status, plan, trial_ends_at, created_at');
+  let query = supabase.from('tenants_live').select('id, name, slug, status, plan, trial_ends_at, created_at');
 
   if (filters.status?.length) query = query.in('status', filters.status);
   if (filters.plan?.length)   query = query.in('plan', filters.plan);

@@ -227,7 +227,7 @@ export default function ClientAdminPanel({
     if (billingModal?.step !== 'payment') return;
     const interval = setInterval(async () => {
       const { data } = await supabase
-        .from('tenants').select('status').eq('id', activeTenant.id).maybeSingle();
+        .from('tenants_live').select('status').eq('id', activeTenant.id).maybeSingle();
       if (data?.status === 'active') {
         clearInterval(interval);
         setBillingModal(prev => prev ? { ...prev, step: 'success' } : null);
@@ -259,7 +259,7 @@ export default function ClientAdminPanel({
     if (!sanitized || sanitized === activeTenant.slug) { setSlugStatus('idle'); return; }
     setSlugStatus('checking');
     slugTimerRef.current = setTimeout(async () => {
-      const { data } = await supabase.from('tenants').select('id').eq('slug', sanitized).neq('id', activeTenant.id).maybeSingle();
+      const { data } = await supabase.from('tenants_live').select('id').eq('slug', sanitized).neq('id', activeTenant.id).maybeSingle();
       setSlugStatus(data ? 'taken' : 'available');
     }, 600);
   };

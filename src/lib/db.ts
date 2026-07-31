@@ -13,19 +13,19 @@ function tenantFilter<T extends { tenantId?: string; tenant_id?: string }>(items
 
 // ── TENANTS ────────────────────────────────────────────────────────────────────
 export async function getTenants(): Promise<Tenant[]> {
-  const { data, error } = await supabase.from('tenants').select('*').neq('slug', 'platform').order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('tenants_live').select('*').neq('slug', 'platform').order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []).map(mapTenant);
 }
 
 export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
-  const { data, error } = await supabase.from('tenants').select('*').eq('slug', slug).single();
+  const { data, error } = await supabase.from('tenants_live').select('*').eq('slug', slug).single();
   if (error) return null;
   return mapTenant(data);
 }
 
 export async function updateTenant(id: string, payload: Partial<Tenant>) {
-  const { error } = await supabase.from('tenants').update(dbTenant(payload)).eq('id', id);
+  const { error } = await supabase.from('tenants_live').update(dbTenant(payload)).eq('id', id);
   if (error) throw error;
 }
 

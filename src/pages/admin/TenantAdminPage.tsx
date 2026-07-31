@@ -70,7 +70,7 @@ function BlockedScreen({ tenant, signOut, onUnblocked }: { tenant: Tenant; signO
   // Polling: desbloqueia automaticamente quando status virar 'active'
   useEffect(() => {
     const interval = setInterval(async () => {
-      const { data } = await supabase.from('tenants').select('status').eq('id', tenant.id).maybeSingle();
+      const { data } = await supabase.from('tenants_live').select('status').eq('id', tenant.id).maybeSingle();
       if (data?.status === 'active') { clearInterval(interval); onUnblocked(); }
     }, 10000);
     return () => clearInterval(interval);
@@ -339,7 +339,7 @@ export default function TenantAdminPage() {
       .channel(`tenant-status-${tenantId}`)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'barber', table: 'tenants', filter: `id=eq.${tenantId}` },
+        { event: 'UPDATE', schema: 'barber', table: 'tenants_live', filter: `id=eq.${tenantId}` },
         (payload) => {
           const r = payload.new as Record<string, unknown>;
           setTenant(prev => prev ? {
