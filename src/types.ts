@@ -83,6 +83,7 @@ export interface Product {
   stock: number;
   minStock: number;
   category: string;
+  customFields: { label: string; value: string }[];
 }
 
 export interface Customer {

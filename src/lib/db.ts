@@ -314,8 +314,27 @@ export async function createProduct(p: Omit<Product, 'id'>): Promise<Product> {
   return mapProduct(data);
 }
 
+export async function updateProduct(id: string, p: Partial<Omit<Product, 'id' | 'tenantId'>>): Promise<void> {
+  const payload: any = {};
+  if (p.name         !== undefined) payload.name          = p.name;
+  if (p.price        !== undefined) payload.price         = p.price;
+  if (p.costPrice    !== undefined) payload.cost_price    = p.costPrice;
+  if (p.stock        !== undefined) payload.stock         = p.stock;
+  if (p.minStock     !== undefined) payload.min_stock     = p.minStock;
+  if (p.category     !== undefined) payload.category      = p.category;
+  if (p.customFields !== undefined) payload.custom_fields = p.customFields;
+  const { error } = await supabase.from('products').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
 export async function updateProductStock(id: string, stock: number) {
   const { error } = await supabase.from('products').update({ stock }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteProduct(id: string): Promise<void> {
+  // Soft-delete: marca is_active = false para preservar histórico de faturas
+  const { error } = await supabase.from('products').update({ is_active: false }).eq('id', id);
   if (error) throw error;
 }
 
@@ -409,7 +428,7 @@ function mapRecurringExpense(r: any): RecurringExpense {
   return { id: r.id, tenantId: r.tenant_id, description: r.description, amount: Number(r.amount), frequency: r.frequency, nextDueDate: r.next_due_date, active: r.active, createdAt: r.created_at };
 }
 function mapProduct(r: any): Product {
-  return { id: r.id, tenantId: r.tenant_id, name: r.name, price: Number(r.price), costPrice: Number(r.cost_price ?? 0), stock: r.stock, minStock: r.min_stock, category: r.category };
+  return { id: r.id, tenantId: r.tenant_id, name: r.name, price: Number(r.price), costPrice: Number(r.cost_price ?? 0), stock: r.stock, minStock: r.min_stock, category: r.category, customFields: r.custom_fields ?? [] };
 }
 function mapAuditLog(r: any): AuditLog {
   return { id: r.id, timestamp: r.created_at, ip: r.ip ?? '', userId: r.user_id ?? '', userName: r.user_name, tenantId: r.tenant_id, action: r.action, details: r.details };
@@ -460,7 +479,7 @@ function dbPayment(p: Omit<Payment, 'id'>): any {
   return { tenant_id: p.tenantId, appointment_id: p.appointmentId ?? null, amount: p.amount, method: p.method, status: p.status, description: p.description };
 }
 function dbProduct(p: Omit<Product, 'id'>): any {
-  return { tenant_id: p.tenantId, name: p.name, price: p.price, cost_price: p.costPrice, stock: p.stock, min_stock: p.minStock, category: p.category, is_active: true };
+  return { tenant_id: p.tenantId, name: p.name, price: p.price, cost_price: p.costPrice, stock: p.stock, min_stock: p.minStock, category: p.category, custom_fields: p.customFields ?? [], is_active: true };
 }
 
 // ── SUPPORT TICKETS ────────────────────────────────────────────────────────────

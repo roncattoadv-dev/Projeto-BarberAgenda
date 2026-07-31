@@ -195,7 +195,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     costPrice: 18.00,
     stock: 22,
     minStock: 5,
-    category: 'Cabelo'
+    category: 'Cabelo',
+    customFields: []
   },
   {
     id: 'prod-oleo',
@@ -205,7 +206,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     costPrice: 15.00,
     stock: 3, // ALERTA DE ESTOQUE BAIXO
     minStock: 6,
-    category: 'Barba'
+    category: 'Barba',
+    customFields: []
   },
   {
     id: 'prod-shampoo',
@@ -215,7 +217,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     costPrice: 21.00,
     stock: 14,
     minStock: 4,
-    category: 'Cabelo'
+    category: 'Cabelo',
+    customFields: []
   },
 
   // Studio Bella Donna
@@ -227,7 +230,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     costPrice: 32.00,
     stock: 10,
     minStock: 5,
-    category: 'Unhas'
+    category: 'Unhas',
+    customFields: []
   },
   {
     id: 'prod-mascara',
@@ -237,7 +241,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     costPrice: 140.00,
     stock: 2, // ALERTA DE ESTOQUE BAIXO
     minStock: 3,
-    category: 'Cabelo'
+    category: 'Cabelo',
+    customFields: []
   }
 ];
 

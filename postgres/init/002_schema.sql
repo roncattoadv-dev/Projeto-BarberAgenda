@@ -222,6 +222,7 @@ CREATE TABLE barber.payments (
     status text DEFAULT 'paid'::text NOT NULL
         CHECK (status = ANY (ARRAY['pending'::text, 'paid'::text, 'failed'::text, 'refunded'::text])),
     description text,
+    items jsonb DEFAULT '[]'::jsonb NOT NULL,
     paid_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -240,6 +241,7 @@ CREATE TABLE barber.products (
     stock integer DEFAULT 0 NOT NULL CHECK (stock >= 0),
     min_stock integer DEFAULT 0 NOT NULL,
     category text DEFAULT 'Geral'::text NOT NULL,
+    custom_fields jsonb DEFAULT '[]'::jsonb NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );

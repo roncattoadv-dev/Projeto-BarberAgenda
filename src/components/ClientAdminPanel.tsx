@@ -29,7 +29,7 @@ import FinanceiroTab   from './tabs/FinanceiroTab';
 import WhatsAppTab     from './tabs/WhatsAppTab';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Tab = 'agenda' | 'agendamentos' | 'financeiro' | 'clientes' | 'negocio' | 'automacoes' | 'configuracoes';
+type Tab = 'agenda' | 'agendamentos' | 'financeiro' | 'clientes' | 'produtos' | 'negocio' | 'automacoes' | 'configuracoes';
 type CfgTab = 'identidade' | 'horarios' | 'equipe' | 'catalogo' | 'pagina-cliente' | 'assinatura' | 'conta' | 'notificacoes' | 'agenda-config';
 
 interface Props {
@@ -48,6 +48,8 @@ interface Props {
   onDeleteProfessional: (id: string) => Promise<void>;
   onSetServiceProfessionals: (serviceId: string, profIds: string[]) => Promise<void>;
   onAddProduct: (p: Omit<Product, 'id'>) => void;
+  onUpdateProduct: (id: string, p: Partial<Omit<Product, 'id' | 'tenantId'>>) => void | Promise<void>;
+  onDeleteProduct: (id: string) => void | Promise<void>;
   onUpdateProductStock: (id: string, stock: number) => void;
   onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
@@ -81,6 +83,7 @@ const NAV: { id: Tab; label: string; Icon: React.ElementType }[] = [
   { id: 'agendamentos',  label: 'Agendamentos', Icon: List          },
   { id: 'financeiro',    label: 'Financeiro',   Icon: CreditCard    },
   { id: 'clientes',      label: 'Clientes',     Icon: Users         },
+  { id: 'produtos',      label: 'Produtos',     Icon: Package       },
   { id: 'negocio',       label: 'Meu Negócio',  Icon: Store         },
   { id: 'automacoes',    label: 'Automações',   Icon: MessageSquare },
   { id: 'configuracoes', label: 'Config.',      Icon: Settings      },
@@ -88,7 +91,7 @@ const NAV: { id: Tab; label: string; Icon: React.ElementType }[] = [
 
 const PAGE_TITLES: Record<Tab, string> = {
   agenda: 'Agenda', agendamentos: 'Agendamentos', financeiro: 'Financeiro',
-  clientes: 'Clientes', negocio: 'Meu Negócio', automacoes: 'Automações', configuracoes: 'Configurações',
+  clientes: 'Clientes', produtos: 'Produtos', negocio: 'Meu Negócio', automacoes: 'Automações', configuracoes: 'Configurações',
 };
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
@@ -97,7 +100,7 @@ const STATUS_DOT: Record<string, string> = { confirmed: '#22c55e', pending: '#f5
 export default function ClientAdminPanel({
   activeTenant, services, professionals, products, customers, appointments, payments,
   onAddService, onUpdateService, onDeleteService,
-  onAddProfessional, onUpdateProfessional, onDeleteProfessional, onSetServiceProfessionals, onAddProduct, onUpdateProductStock,
+  onAddProfessional, onUpdateProfessional, onDeleteProfessional, onSetServiceProfessionals, onAddProduct, onUpdateProduct, onDeleteProduct, onUpdateProductStock,
   onAddAppointment, onUpdateAppointmentStatus, onRescheduleAppointment, onDeleteAppointment, onAddPayment, onAddCustomer, onUpdateCustomer, onDeleteCustomer,
   onUpdateTenantDetails, onSwitchToBookingFlow, onDeleteAccount, onSignOut,
   openSubscriptionTab, onSubscriptionTabOpened,
@@ -339,6 +342,63 @@ export default function ClientAdminPanel({
       toast.error('Não foi possível salvar as notas.');
     } finally {
       setSavingNotes(false);
+    }
+  };
+
+  // ── Produtos state ────────────────────────────────────────────────────────
+  const [prodSearch,          setProdSearch]          = useState('');
+  const [prodName,            setProdName]            = useState('');
+  const [prodPrice,           setProdPrice]           = useState('');
+  const [prodCostPrice,       setProdCostPrice]       = useState('');
+  const [prodStock,           setProdStock]           = useState('');
+  const [prodMinStock,        setProdMinStock]        = useState('');
+  const [prodCategory,        setProdCategory]        = useState('');
+  const [prodCustomFields,    setProdCustomFields]    = useState<{ label: string; value: string }[]>([]);
+  const [editingProd,         setEditingProd]         = useState<Product | null>(null);
+  const [showNewProductModal, setShowNewProductModal] = useState(false);
+  const [deleteProductPending, setDeleteProductPending] = useState<{ id: string; name: string } | null>(null);
+  const [deletingProduct,     setDeletingProduct]     = useState(false);
+  const [savingProduct,       setSavingProduct]       = useState(false);
+
+  const startEditProd = (p: Product) => {
+    setEditingProd(p);
+    setProdName(p.name); setProdPrice(String(p.price)); setProdCostPrice(String(p.costPrice));
+    setProdStock(String(p.stock)); setProdMinStock(String(p.minStock)); setProdCategory(p.category);
+    setProdCustomFields(p.customFields?.length ? p.customFields.map(f => ({ ...f })) : []);
+    setShowNewProductModal(true);
+  };
+  const cancelEditProd = () => {
+    setEditingProd(null);
+    setProdName(''); setProdPrice(''); setProdCostPrice(''); setProdStock(''); setProdMinStock(''); setProdCategory('');
+    setProdCustomFields([]);
+    setShowNewProductModal(false);
+  };
+  const addCustomFieldRow    = () => setProdCustomFields(prev => [...prev, { label: '', value: '' }]);
+  const removeCustomFieldRow = (idx: number) => setProdCustomFields(prev => prev.filter((_, i) => i !== idx));
+  const updateCustomFieldRow = (idx: number, key: 'label' | 'value', v: string) =>
+    setProdCustomFields(prev => prev.map((f, i) => i === idx ? { ...f, [key]: v } : f));
+
+  const handleAddProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prodName.trim() || !prodPrice.trim()) { toast.error('Nome e preço obrigatórios.'); return; }
+    const cleanFields = prodCustomFields.filter(f => f.label.trim() !== '');
+    setSavingProduct(true);
+    try {
+      const payload = {
+        name: prodName.trim(), price: Number(prodPrice) || 0, costPrice: Number(prodCostPrice) || 0,
+        stock: Number(prodStock) || 0, minStock: Number(prodMinStock) || 0,
+        category: prodCategory.trim() || 'Geral', customFields: cleanFields,
+      };
+      if (editingProd) {
+        await onUpdateProduct(editingProd.id, payload);
+      } else {
+        onAddProduct({ tenantId: activeTenant.id, ...payload });
+      }
+      cancelEditProd();
+    } catch {
+      toast.error('Não foi possível salvar o produto.');
+    } finally {
+      setSavingProduct(false);
     }
   };
 
@@ -876,6 +936,7 @@ export default function ClientAdminPanel({
                   {activeTab === 'agenda' && <p style={{ fontSize: 13, color: '#6B7280', marginTop: 3 }}>{todayAppts.length} atendimentos hoje</p>}
                   {activeTab === 'agendamentos' && <p style={{ fontSize: 13, color: '#6B7280', marginTop: 3 }}>{myAppointments.filter(a => a.status !== 'cancelled').length} no total · {pendingCount} pendentes</p>}
                   {activeTab === 'clientes' && <p style={{ fontSize: 13, color: '#6B7280', marginTop: 3 }}>{myCustomers.length} clientes cadastrados</p>}
+                  {activeTab === 'produtos' && <p style={{ fontSize: 13, color: '#6B7280', marginTop: 3 }}>{myProducts.length} produtos cadastrados</p>}
                   {activeTab === 'automacoes' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: wppConnState === 'open' ? '#22C55E' : wppConnState === 'connecting' ? '#F59E0B' : '#EF4444', flexShrink: 0 }} />
@@ -1074,6 +1135,61 @@ export default function ClientAdminPanel({
                     })}
                     {myCustomers.filter(c => !custSearch || c.name.toLowerCase().includes(custSearch.toLowerCase()) || c.phone.includes(custSearch)).length === 0 && (
                       <p style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 13, padding: '32px 0', margin: 0 }}>Nenhum cliente encontrado.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ─────────── PRODUTOS ─────────── */}
+              {activeTab === 'produtos' && (
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                  {/* Header: busca + botão novo */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }} />
+                      <input placeholder="Buscar produto…" value={prodSearch} onChange={e => setProdSearch(e.target.value)} className="navy-input" style={{ paddingLeft: 34 }} />
+                    </div>
+                    <button
+                      onClick={() => { cancelEditProd(); setShowNewProductModal(true); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 9, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', flexShrink: 0 }}>
+                      <Plus size={13} /> Novo
+                    </button>
+                  </div>
+
+                  {/* Lista */}
+                  <div className="no-scrollbar" style={{ maxHeight: 560, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {myProducts.filter(p => !prodSearch || p.name.toLowerCase().includes(prodSearch.toLowerCase()) || p.category.toLowerCase().includes(prodSearch.toLowerCase())).map(p => {
+                      const lowStock = p.stock <= p.minStock;
+                      return (
+                        <motion.div key={p.id} whileHover={{ x: 2 }} transition={{ duration: 0.12 }}
+                          style={{ padding: '10px 14px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, transition: 'all 150ms' }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Package size={16} style={{ color: '#374151' }} />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, color: '#111827', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                            <div style={{ fontSize: 11, color: '#6B7280' }}>{p.category} · R$ {p.price.toFixed(2)}</div>
+                          </div>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 13, flexShrink: 0, color: lowStock ? '#DC2626' : '#059669' }} title={lowStock ? 'Estoque baixo' : undefined}>
+                            {lowStock && '⚠ '}{p.stock} un.
+                          </span>
+                          <button
+                            onClick={() => startEditProd(p)}
+                            title="Editar produto"
+                            style={{ width: 28, height: 28, borderRadius: 7, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            onClick={() => setDeleteProductPending({ id: p.id, name: p.name })}
+                            title="Apagar produto"
+                            style={{ width: 28, height: 28, borderRadius: 7, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Trash2 size={12} />
+                          </button>
+                        </motion.div>
+                      );
+                    })}
+                    {myProducts.filter(p => !prodSearch || p.name.toLowerCase().includes(prodSearch.toLowerCase()) || p.category.toLowerCase().includes(prodSearch.toLowerCase())).length === 0 && (
+                      <p style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 13, padding: '32px 0', margin: 0 }}>Nenhum produto encontrado.</p>
                     )}
                   </div>
                 </div>
@@ -3465,6 +3581,115 @@ export default function ClientAdminPanel({
           </div>
         );
       })()}
+
+      {/* ── Modal: Novo / Editar Produto ────────────────────────────────────── */}
+      {showNewProductModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={cancelEditProd}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}
+            className="no-scrollbar">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>{editingProd ? 'Editar Produto' : 'Novo Produto'}</p>
+              <button onClick={cancelEditProd} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
+            </div>
+            <form onSubmit={handleAddProduct} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input placeholder="Nome do produto" value={prodName} onChange={e => setProdName(e.target.value)} required className="navy-input" />
+              <input placeholder="Categoria (opcional)" value={prodCategory} onChange={e => setProdCategory(e.target.value)} className="navy-input" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <input placeholder="Preço de venda" type="number" step="0.01" min="0" value={prodPrice} onChange={e => setProdPrice(e.target.value)} required className="navy-input" />
+                <input placeholder="Preço de custo" type="number" step="0.01" min="0" value={prodCostPrice} onChange={e => setProdCostPrice(e.target.value)} className="navy-input" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <input placeholder="Estoque" type="number" min="0" value={prodStock} onChange={e => setProdStock(e.target.value)} className="navy-input" />
+                <input placeholder="Estoque mínimo" type="number" min="0" value={prodMinStock} onChange={e => setProdMinStock(e.target.value)} className="navy-input" />
+              </div>
+
+              {/* Campos personalizados */}
+              <div style={{ marginTop: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1px' }}>Campos personalizados</span>
+                  <button type="button" onClick={addCustomFieldRow}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', padding: 0 }}>
+                    <Plus size={12} /> Adicionar
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {prodCustomFields.map((f, idx) => (
+                    <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input placeholder="Ex: Cor" value={f.label} onChange={e => updateCustomFieldRow(idx, 'label', e.target.value)}
+                        className="navy-input" style={{ flex: 1 }} />
+                      <input placeholder="Ex: Azul" value={f.value} onChange={e => updateCustomFieldRow(idx, 'value', e.target.value)}
+                        className="navy-input" style={{ flex: 1 }} />
+                      <button type="button" onClick={() => removeCustomFieldRow(idx)} title="Remover campo"
+                        style={{ width: 28, height: 28, borderRadius: 7, background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  {prodCustomFields.length === 0 && (
+                    <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Nenhum campo adicional. Ex.: Cor, Tamanho, Voltagem…</p>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                {editingProd && (
+                  <button type="button" onClick={cancelEditProd} style={{ flex: 1, padding: 12, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
+                )}
+                <button type="submit" disabled={savingProduct} style={{ flex: 2, padding: 12, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: savingProduct ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif', opacity: savingProduct ? 0.7 : 1 }}>
+                  {savingProduct ? 'Salvando…' : editingProd ? 'Salvar' : 'Adicionar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: confirmar exclusão de produto ──────────────────────────────── */}
+      {deleteProductPending && (
+        <div
+          onClick={() => { if (!deletingProduct) setDeleteProductPending(null); }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 18, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 24px 64px rgba(0,0,0,0.15)' }}
+          >
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#FEE2E2', border: '1px solid #FCA5A5', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+              <X size={20} color="#DC2626" />
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: '#111827', margin: '0 0 8px', fontFamily: 'Outfit, sans-serif' }}>
+              Apagar produto?
+            </h3>
+            <p style={{ fontSize: 13, color: '#374151', margin: '0 0 24px', lineHeight: 1.6, fontFamily: 'Outfit, sans-serif' }}>
+              <strong style={{ color: '#111827' }}>{deleteProductPending.name}</strong> será removido da lista de produtos.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteProductPending(null)}
+                disabled={deletingProduct}
+                style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setDeletingProduct(true);
+                  await onDeleteProduct(deleteProductPending.id);
+                  setDeletingProduct(false);
+                  setDeleteProductPending(null);
+                  toast.success('Produto apagado.');
+                }}
+                disabled={deletingProduct}
+                style={{ flex: 1, padding: '11px', background: deletingProduct ? 'rgba(239,68,68,0.4)' : '#ef4444', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: deletingProduct ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif', transition: 'all 0.15s' }}
+              >
+                {deletingProduct ? 'Apagando…' : 'Sim, apagar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
