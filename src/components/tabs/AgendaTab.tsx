@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Bell, BellOff, RefreshCw, Clock, ChevronDown, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, X, MessageSquare, Bell, BellOff, RefreshCw, Clock, ChevronDown, Trash2, Receipt } from 'lucide-react';
 import { Appointment, Service, Professional, Customer } from '../../types';
 import { useToast } from '../../hooks/useToast';
 import DeleteConfirmDialog from '../DeleteConfirmDialog';
@@ -722,6 +722,15 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                                 </button>
                               </>
                             )}
+                            {appt.status === 'attended' && (
+                              <button
+                                onClick={() => onCompleteAppointment(appt)}
+                                title="Editar fatura"
+                                style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.45)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                              >
+                                <Receipt size={9} />
+                              </button>
+                            )}
                             {(appt.status === 'attended' || appt.status === 'cancelled') && (
                               <button
                                 onClick={() => setDeletingAppt({ id: appt.id, name: appt.customerName })}
@@ -921,6 +930,12 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                       ✗ Cancelar
                     </button>
                   </div>
+                )}
+                {apptPanel.status === 'attended' && (
+                  <button onClick={() => { onCompleteAppointment(apptPanel); closeAll(); }}
+                    style={{ padding: '9px 6px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#1d4ed8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                    <Receipt size={12} /> Editar fatura
+                  </button>
                 )}
                 {(apptPanel.status === 'attended' || apptPanel.status === 'cancelled') && (
                   <button

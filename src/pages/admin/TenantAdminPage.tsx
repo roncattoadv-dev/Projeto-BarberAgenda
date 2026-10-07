@@ -276,7 +276,7 @@ import {
   updateTenant, createService, updateService, deleteService,
   createProfessional, updateProfessional, deleteProfessional, setServiceProfessionals, createProduct, updateProduct, deleteProduct, updateCustomer, deleteCustomer,
   updateProductStock, createAppointment, updateAppointmentStatus, updateAppointmentPrice, deleteAppointment, rescheduleAppointment,
-  createPayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
+  createPayment, updatePayment, upsertCustomerByPhone, createCustomerDirect, logAudit, notifyAppointmentWhatsApp,
   syncProfessionalsHours, mapAppointment,
   getRecurringExpenses, createRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
   getWaitlistEntries, markWaitlistNotified,
@@ -582,6 +582,10 @@ export default function TenantAdminPage() {
           onAddPayment={async p => {
             const c = await createPayment(p);
             setPayments(prev => [c, ...prev]);
+          }}
+          onUpdatePayment={async (id, p) => {
+            const c = await updatePayment(id, p);
+            setPayments(prev => prev.map(x => x.id === id ? c : x));
           }}
           recurringExpenses={recurringExpenses}
           onAddRecurringExpense={async r => {

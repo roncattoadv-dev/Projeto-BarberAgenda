@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Clock, Search, MessageSquare, ChevronDown, Trash2 } from 'lucide-react';
+import { Check, X, Clock, Search, MessageSquare, ChevronDown, Trash2, Receipt } from 'lucide-react';
 import { Appointment, Service, Professional, Tenant } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import DeleteConfirmDialog from '../DeleteConfirmDialog';
@@ -560,6 +560,14 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                     </>
                   );
                 })()}
+
+                {/* Editar fatura — somente concluídos */}
+                {appt.status === 'attended' && (
+                  <button onClick={() => onCompleteAppointment(appt)} title="Editar lançamentos da fatura"
+                    style={{ height: 24, padding: '0 8px', borderRadius: 7, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1D4ED8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <Receipt size={10} /> Fatura
+                  </button>
+                )}
 
                 {/* Apagar — somente concluídos e cancelados */}
                 {(appt.status === 'attended' || appt.status === 'cancelled') && (

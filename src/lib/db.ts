@@ -239,6 +239,14 @@ export async function createPayment(p: Omit<Payment, 'id'>): Promise<Payment> {
   return mapPayment(data);
 }
 
+export async function updatePayment(id: string, p: Pick<Payment, 'amount' | 'method' | 'description' | 'items'>): Promise<Payment> {
+  const { data, error } = await supabase.from('payments')
+    .update({ amount: p.amount, method: p.method, description: p.description, items: p.items ?? [] })
+    .eq('id', id).select().single();
+  if (error) throw error;
+  return mapPayment(data);
+}
+
 // ── SLOT HISTORY ───────────────────────────────────────────────────────────────
 function mapSlotHistory(r: any): SlotHistory {
   return {
