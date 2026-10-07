@@ -1,13 +1,13 @@
 # ============================================================
 # BarberAgenda — CI/CD com GitHub Actions
-# Push para main → build → push registry → deploy no Swarm
+# Trigger manual → build → push registry → deploy no Swarm
 # ============================================================
 
 name: Deploy BarberAgenda
 
+# Disparo automático em push desativado: os secrets do registry não estão
+# configurados e o deploy real é feito por build local + compose.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:        # permite trigger manual no GitHub
 
 env:
