@@ -822,6 +822,44 @@ export default function ClientAdminPanel({
     }
     const isBusy = (date: string) => myAppointments.some(a => a.date === date && a.time === apptTime && a.professionalId === apptProfId && a.status !== 'cancelled');
     if (isBusy(apptDate)) { toast.error(`Conflito: profissional já ocupado em ${apptDate} às ${apptTime}.`); return false; }
+    // Repetições da série, resolvidas antes de gravar qualquer coisa:
+    // null = sem data disponível para aquela ocorrência (só acontece no mensal).
+    const repeats: { planned: string; date: string | null }[] = [];
+    if (apptRecurring) {
+      const prof = myProfessionals.find(p => p.id === apptProfId);
+      const workDays = prof?.businessDays?.length ? prof.businessDays : activeTenant.businessDays ?? [];
+      const blocked = new Set([...(activeTenant.blockedDates ?? []), ...(prof?.blockedDates ?? [])]);
+      const isDayOff = (d: string) => workDays.length > 0 && !workDays.includes(weekdayKey(d));
+      const used = new Set([apptDate]);
+      const isFree = (d: string) => !isDayOff(d) && !blocked.has(d) && !isBusy(d) && !used.has(d);
+      const dates = generateOccurrences(apptDate, {
+        freq: apptRecFreq, intervalDays: apptRecInterval,
+        endAfterCount: apptRecEndMode === 'forever' ? null : apptRecEndCount,
+      }).slice(1);
+      const unavailable: string[] = [];
+      for (const planned of dates) {
+        if (apptRecFreq === 'monthly') {
+          // Mensal: se o dia não tem atendimento, vai para o dia disponível mais próximo
+          const date = nearestAvailableDate(planned, d => d > apptDate && isFree(d));
+          if (date) used.add(date);
+          repeats.push({ planned, date });
+        } else if (isFree(planned)) {
+          repeats.push({ planned, date: planned });
+        } else if (apptRecFreq === 'daily' && isDayOff(planned)) {
+          // Diário = todo dia de atendimento; a folga semanal não entra na série
+        } else {
+          unavailable.push(planned);
+        }
+      }
+      // Demais frequências: qualquer data sem horário livre bloqueia a série inteira
+      if (unavailable.length) {
+        const fmt = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+        const shown = unavailable.slice(0, 6).map(fmt).join(', ');
+        const more = unavailable.length > 6 ? ` e mais ${unavailable.length - 6}` : '';
+        toast.error(`Recorrência não criada: sem horário disponível às ${apptTime} em ${shown}${more} (dia sem atendimento, data bloqueada ou horário ocupado). Ajuste a data, o horário ou a quantidade de recorrências.`);
+        return false;
+      }
+    }
     setApptSaving(true);
     try {
       let custId: string, custName: string, custPhone: string;
@@ -841,33 +879,16 @@ export default function ClientAdminPanel({
         return false;
       }
       let created = 1, skipped = 0, moved = 0;
-      if (apptRecurring) {
-        // Repetições: não marca em dias em que o profissional não atende, datas
-        // bloqueadas e horários já ocupados, e não avisa o cliente a cada uma.
-        const prof = myProfessionals.find(p => p.id === apptProfId);
-        const workDays = prof?.businessDays?.length ? prof.businessDays : activeTenant.businessDays ?? [];
-        const blocked = new Set([...(activeTenant.blockedDates ?? []), ...(prof?.blockedDates ?? [])]);
-        const dates = generateOccurrences(apptDate, {
-          freq: apptRecFreq, intervalDays: apptRecInterval,
-          endAfterCount: apptRecEndMode === 'forever' ? null : apptRecEndCount,
-        }).slice(1);
-        const used = new Set([apptDate]);
-        const isFree = (d: string) => !(workDays.length && !workDays.includes(weekdayKey(d))) && !blocked.has(d) && !isBusy(d) && !used.has(d);
-        for (const planned of dates) {
-          // Mensal: se o dia não tem atendimento, vai para o dia disponível mais próximo
-          const date = apptRecFreq === 'monthly'
-            ? nearestAvailableDate(planned, d => d > apptDate && isFree(d))
-            : isFree(planned) ? planned : null;
-          if (!date) { skipped++; continue; }
-          used.add(date);
-          try { await onAddAppointment({ ...base, date }, { silent: true }); created++; if (date !== planned) moved++; }
-          catch { skipped++; }
-        }
+      // O cliente só é avisado do primeiro agendamento, não de cada repetição
+      for (const { planned, date } of repeats) {
+        if (!date) { skipped++; continue; }
+        try { await onAddAppointment({ ...base, date }, { silent: true }); created++; if (date !== planned) moved++; }
+        catch { skipped++; }
       }
       setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setShowApptForm(false);
       setApptRecurring(false);
       if (!apptRecurring) toast.success('Agendamento criado!');
-      else toast.success(`${created} agendamento${created > 1 ? 's' : ''} criado${created > 1 ? 's' : ''}${moved ? ` · ${moved} movido${moved > 1 ? 's' : ''} para o dia disponível mais próximo` : ''}${skipped ? ` · ${skipped} data${skipped > 1 ? 's' : ''} pulada${skipped > 1 ? 's' : ''} (ocupada ou sem atendimento)` : ''}.`);
+      else toast.success(`${created} agendamento${created > 1 ? 's' : ''} criado${created > 1 ? 's' : ''}${moved ? ` · ${moved} movido${moved > 1 ? 's' : ''} para o dia disponível mais próximo` : ''}${skipped ? ` · ${skipped} data${skipped > 1 ? 's' : ''} não criada${skipped > 1 ? 's' : ''}` : ''}.`);
       return true;
     } finally { setApptSaving(false); }
   };
