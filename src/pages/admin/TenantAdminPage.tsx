@@ -316,7 +316,7 @@ export default function TenantAdminPage() {
       getProfessionals(tenantId),
       getProducts(tenantId),
       getCustomers(tenantId),
-      getAppointments(tenantId),
+      getAppointments(tenantId, 1000),
       getPayments(tenantId),
       getRecurringExpenses(tenantId),
       getSlotHistory(tenantId),
@@ -518,10 +518,11 @@ export default function TenantAdminPage() {
             await updateProductStock(id, stock);
             setProducts(p => p.map(x => x.id === id ? { ...x, stock } : x));
           }}
-          onAddAppointment={async a => {
+          onAddAppointment={async (a, opts) => {
             const c = await createAppointment(a);
             setAppointments(p => [c, ...p]);
-            notifyAppointmentWhatsApp(a.tenantId, c.id, '').catch(() => {});
+            // silent: repetições de uma série recorrente não disparam confirmação
+            if (!opts?.silent) notifyAppointmentWhatsApp(a.tenantId, c.id, '').catch(() => {});
           }}
           onUpdateAppointmentStatus={async (id, status) => {
             await updateAppointmentStatus(id, status);

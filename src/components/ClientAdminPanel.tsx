@@ -19,6 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { UseNotificationsReturn } from '../hooks/useNotifications';
 import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket, getWaitlistEntries, markWaitlistNotified } from '../lib/db';
 import { supabase } from '../lib/supabase';
+import { generateOccurrences, weekdayKey, RecurrenceFreq } from '../lib/recurrence';
 import { sendWhatsAppServer, buildWaitlistMsg, checkStatusServer } from '../services/whatsapp';
 import LogoCropModal from './LogoCropModal';
 import TourOverlay, { TourStep } from './TourOverlay';
@@ -51,7 +52,7 @@ interface Props {
   onUpdateProduct: (id: string, p: Partial<Omit<Product, 'id' | 'tenantId'>>) => void | Promise<void>;
   onDeleteProduct: (id: string) => void | Promise<void>;
   onUpdateProductStock: (id: string, stock: number) => void;
-  onAddAppointment: (a: Omit<Appointment, 'id'>) => void;
+  onAddAppointment: (a: Omit<Appointment, 'id'>, opts?: { silent?: boolean }) => void | Promise<void>;
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onUpdateAppointmentPrice: (id: string, price: number) => void | Promise<void>;
   onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
@@ -303,6 +304,12 @@ export default function ClientAdminPanel({
   const [apptTime,   setApptTime]   = useState('09:00');
   const [apptNotes,  setApptNotes]  = useState('');
   const [showApptForm, setShowApptForm] = useState(false);
+  const [apptRecurring,    setApptRecurring]    = useState(false);
+  const [apptRecFreq,      setApptRecFreq]      = useState<RecurrenceFreq>('weekly');
+  const [apptRecInterval,  setApptRecInterval]  = useState(15);
+  const [apptRecEndMode,   setApptRecEndMode]   = useState<'days' | 'forever'>('days');
+  const [apptRecEndDays,   setApptRecEndDays]   = useState(30);
+  const [apptSaving,       setApptSaving]       = useState(false);
   const [apptNewClient,      setApptNewClient]      = useState(false);
   const [apptNewClientName,  setApptNewClientName]  = useState('');
   const [apptNewClientPhone, setApptNewClientPhone] = useState('');
@@ -799,28 +806,113 @@ export default function ClientAdminPanel({
     }
   }, [myAppointments, myServices, myProfessionals, activeTenant, onUpdateAppointmentStatus]);
 
-  const handleManualAppointment = async (e: React.FormEvent) => {
+  // Retorna true quando gravou (os formulários só fecham nesse caso)
+  const handleManualAppointment = async (e: React.FormEvent): Promise<boolean> => {
     e.preventDefault();
-    if (!apptSrvId || !apptProfId) { toast.error('Selecione serviço e profissional.'); return; }
-    if (!apptNewClient && !apptCustId) { toast.error('Selecione um cliente ou crie um novo.'); return; }
-    if (apptNewClient && !apptNewClientName.trim()) { toast.error('Informe o nome do cliente.'); return; }
+    if (apptSaving) return false;
+    if (!apptSrvId || !apptProfId) { toast.error('Selecione serviço e profissional.'); return false; }
+    if (!apptNewClient && !apptCustId) { toast.error('Selecione um cliente ou crie um novo.'); return false; }
+    if (apptNewClient && !apptNewClientName.trim()) { toast.error('Informe o nome do cliente.'); return false; }
     const srv = myServices.find(s => s.id === apptSrvId);
-    if (!srv) return;
-    const conflict = myAppointments.some(a => a.date === apptDate && a.time === apptTime && a.professionalId === apptProfId && a.status !== 'cancelled');
-    if (conflict) { toast.error(`Conflito: profissional já ocupado em ${apptDate} às ${apptTime}.`); return; }
-    let custId: string, custName: string, custPhone: string;
-    if (apptNewClient) {
-      const created = await onAddCustomer({ tenantId: activeTenant.id, name: apptNewClientName.trim(), phone: apptNewClientPhone.trim(), email: '' });
-      custId = created.id; custName = created.name; custPhone = created.phone;
-    } else {
-      const cust = myCustomers.find(c => c.id === apptCustId);
-      if (!cust) return;
-      custId = cust.id; custName = cust.name; custPhone = cust.phone;
+    if (!srv) return false;
+    if (apptRecurring) {
+      if (!apptDate || !apptTime) { toast.error('Informe data e horário.'); return false; }
+      if (apptRecFreq === 'custom' && !(apptRecInterval >= 1)) { toast.error('Informe a cada quantos dias repetir.'); return false; }
+      if (apptRecEndMode === 'days' && !(apptRecEndDays >= 1)) { toast.error('Informe após quantos dias a recorrência termina.'); return false; }
     }
-    onAddAppointment({ tenantId: activeTenant.id, serviceId: apptSrvId, professionalId: apptProfId, customerId: custId, customerName: custName, customerPhone: custPhone, date: apptDate, time: apptTime, durationMinutes: srv.durationMinutes, price: srv.price, status: 'confirmed', notes: apptNotes });
-    setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setShowApptForm(false);
-    toast.success('Agendamento criado!');
+    const isBusy = (date: string) => myAppointments.some(a => a.date === date && a.time === apptTime && a.professionalId === apptProfId && a.status !== 'cancelled');
+    if (isBusy(apptDate)) { toast.error(`Conflito: profissional já ocupado em ${apptDate} às ${apptTime}.`); return false; }
+    setApptSaving(true);
+    try {
+      let custId: string, custName: string, custPhone: string;
+      if (apptNewClient) {
+        const created = await onAddCustomer({ tenantId: activeTenant.id, name: apptNewClientName.trim(), phone: apptNewClientPhone.trim(), email: '' });
+        custId = created.id; custName = created.name; custPhone = created.phone;
+      } else {
+        const cust = myCustomers.find(c => c.id === apptCustId);
+        if (!cust) return false;
+        custId = cust.id; custName = cust.name; custPhone = cust.phone;
+      }
+      const base = { tenantId: activeTenant.id, serviceId: apptSrvId, professionalId: apptProfId, customerId: custId, customerName: custName, customerPhone: custPhone, time: apptTime, durationMinutes: srv.durationMinutes, price: srv.price, status: 'confirmed' as const, notes: apptNotes };
+      try {
+        await onAddAppointment({ ...base, date: apptDate });
+      } catch {
+        toast.error('Erro ao criar agendamento.');
+        return false;
+      }
+      let created = 1, skipped = 0;
+      if (apptRecurring) {
+        // Repetições: pula dias em que o profissional não atende, datas
+        // bloqueadas e horários já ocupados, sem avisar o cliente a cada uma.
+        const prof = myProfessionals.find(p => p.id === apptProfId);
+        const workDays = prof?.businessDays?.length ? prof.businessDays : activeTenant.businessDays ?? [];
+        const blocked = new Set([...(activeTenant.blockedDates ?? []), ...(prof?.blockedDates ?? [])]);
+        const dates = generateOccurrences(apptDate, {
+          freq: apptRecFreq, intervalDays: apptRecInterval,
+          endAfterDays: apptRecEndMode === 'forever' ? null : apptRecEndDays,
+        }).slice(1);
+        for (const date of dates) {
+          if ((workDays.length && !workDays.includes(weekdayKey(date))) || blocked.has(date) || isBusy(date)) { skipped++; continue; }
+          try { await onAddAppointment({ ...base, date }, { silent: true }); created++; }
+          catch { skipped++; }
+        }
+      }
+      setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setShowApptForm(false);
+      setApptRecurring(false);
+      if (!apptRecurring) toast.success('Agendamento criado!');
+      else toast.success(`${created} agendamento${created > 1 ? 's' : ''} criado${created > 1 ? 's' : ''}${skipped ? ` · ${skipped} data${skipped > 1 ? 's' : ''} pulada${skipped > 1 ? 's' : ''} (ocupada ou sem atendimento)` : ''}.`);
+      return true;
+    } finally { setApptSaving(false); }
   };
+
+  // Bloco de recorrência compartilhado pelos dois formulários de Novo Agendamento
+  const recurrenceFields = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#111827', cursor: 'pointer' }}>
+        <input type="checkbox" checked={apptRecurring} onChange={e => setApptRecurring(e.target.checked)} />
+        Habilitar recorrência
+      </label>
+      {apptRecurring && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1.5px' }}>Repetir</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select value={apptRecFreq} onChange={e => setApptRecFreq(e.target.value as RecurrenceFreq)} className="navy-select" style={{ flex: 1, minWidth: 150 }}>
+              <option value="daily">Diariamente</option>
+              <option value="weekly">Semanalmente</option>
+              <option value="monthly">Mensalmente</option>
+              <option value="custom">A cada X dias</option>
+            </select>
+            {apptRecFreq === 'custom' && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#6B7280' }}>
+                a cada
+                <input type="number" min={1} max={365} value={apptRecInterval || ''} onChange={e => setApptRecInterval(parseInt(e.target.value, 10) || 0)} className="navy-input" style={{ width: 70 }} />
+                dias
+              </label>
+            )}
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginTop: 4 }}>Terminar</span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#111827', cursor: 'pointer' }}>
+            <input type="radio" name="appt-rec-end" checked={apptRecEndMode === 'days'} onChange={() => setApptRecEndMode('days')} />
+            Após
+            <input type="number" min={1} max={365} value={apptRecEndDays || ''} disabled={apptRecEndMode !== 'days'} onChange={e => setApptRecEndDays(parseInt(e.target.value, 10) || 0)} className="navy-input" style={{ width: 70 }} />
+            dias
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#111827', cursor: 'pointer' }}>
+            <input type="radio" name="appt-rec-end" checked={apptRecEndMode === 'forever'} onChange={() => setApptRecEndMode('forever')} />
+            Indeterminado
+          </label>
+          {apptDate && (() => {
+            const n = generateOccurrences(apptDate, { freq: apptRecFreq, intervalDays: apptRecInterval, endAfterDays: apptRecEndMode === 'forever' ? null : apptRecEndDays }).length;
+            return (
+              <span style={{ fontSize: 11, color: '#6B7280' }}>
+                Até {n} agendamento{n > 1 ? 's' : ''}{apptRecEndMode === 'forever' ? ' — indeterminado cria os próximos 6 meses (máx. 90); depois é só renovar' : ''}. O cliente recebe a confirmação só do primeiro.
+              </span>
+            );
+          })()}
+        </div>
+      )}
+    </div>
+  );
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1088,7 +1180,7 @@ export default function ClientAdminPanel({
                         )}
                       </motion.button>
                       <motion.button whileTap={{ scale: 0.97 }}
-                        onClick={() => { setApptCustId(''); setApptSrvId(''); setApptProfId(''); setApptDate(new Date().toISOString().split('T')[0]); setApptTime(''); setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setShowNewApptModal(true); }}
+                        onClick={() => { setApptCustId(''); setApptSrvId(''); setApptProfId(''); setApptDate(new Date().toISOString().split('T')[0]); setApptTime(''); setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setApptRecurring(false); setShowNewApptModal(true); }}
                         style={{ padding: '9px 18px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
                         <Plus size={13} /> Novo Agendamento
                       </motion.button>
@@ -1133,9 +1225,10 @@ export default function ClientAdminPanel({
                             <input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)} className="navy-input" />
                             <input type="time" value={apptTime} onChange={e => setApptTime(e.target.value)} className="navy-input" />
                           </div>
+                          <div style={{ marginBottom: 10 }}>{recurrenceFields}</div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <textarea placeholder="Notas (opcional)" value={apptNotes} onChange={e => setApptNotes(e.target.value)} className="navy-input" style={{ flex: 1, height: 52, resize: 'none' }} />
-                            <button type="submit" style={{ padding: '0 24px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Gravar</button>
+                            <button type="submit" disabled={apptSaving} style={{ padding: '0 24px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>{apptSaving ? 'Gravando…' : 'Gravar'}</button>
                           </div>
                         </form>
                       </motion.div>
@@ -3424,12 +3517,12 @@ export default function ClientAdminPanel({
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(3,29,60,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
           onClick={() => setShowNewApptModal(false)}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}>
+            style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', fontFamily: 'Outfit, sans-serif' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
               <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: 0 }}>Novo Agendamento</p>
               <button onClick={() => setShowNewApptModal(false)} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: 4, display: 'flex' }}><X size={16} /></button>
             </div>
-            <form onSubmit={async e => { await handleManualAppointment(e); setShowNewApptModal(false); }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <form onSubmit={async e => { if (await handleManualAppointment(e)) setShowNewApptModal(false); }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {/* Cliente */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
@@ -3462,10 +3555,11 @@ export default function ClientAdminPanel({
                 <input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)} required className="navy-input" />
                 <input type="time" value={apptTime} onChange={e => setApptTime(e.target.value)} required className="navy-input" />
               </div>
+              {recurrenceFields}
               <textarea placeholder="Notas (opcional)" value={apptNotes} onChange={e => setApptNotes(e.target.value)} className="navy-input" style={{ height: 60, resize: 'none' }} />
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button type="button" onClick={() => setShowNewApptModal(false)} style={{ flex: 1, padding: 12, background: '#F1F5F9', color: '#6B7280', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancelar</button>
-                <button type="submit" style={{ flex: 2, padding: 12, background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Gravar</button>
+                <button type="submit" disabled={apptSaving} style={{ flex: 2, padding: 12, background: apptSaving ? '#93C5FD' : '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 13, border: 'none', borderRadius: 10, cursor: apptSaving ? 'not-allowed' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>{apptSaving ? 'Gravando…' : 'Gravar'}</button>
               </div>
             </form>
           </div>
