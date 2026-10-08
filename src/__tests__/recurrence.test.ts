@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateOccurrences, weekdayKey, RECURRENCE_HORIZON_DAYS, RECURRENCE_MAX_OCCURRENCES } from '../lib/recurrence';
+import { generateOccurrences, nearestAvailableDate, weekdayKey, RECURRENCE_HORIZON_DAYS, RECURRENCE_MAX_OCCURRENCES } from '../lib/recurrence';
 
 // ── Recorrência de agendamentos ──────────────────────────────
 describe('generateOccurrences', () => {
@@ -35,5 +35,22 @@ describe('generateOccurrences', () => {
   });
   it('1 recorrência gera só a primeira data', () => {
     expect(generateOccurrences('2026-10-08', { freq: 'daily', endAfterCount: 1 })).toEqual(['2026-10-08']);
+  });
+});
+
+describe('nearestAvailableDate', () => {
+  const noWeekend = (d: string) => !['sab', 'dom'].includes(weekdayKey(d));
+  it('mantém a data quando disponível', () => {
+    expect(nearestAvailableDate('2026-10-08', noWeekend)).toBe('2026-10-08');
+  });
+  it('sábado vai para sexta, domingo vai para segunda', () => {
+    expect(nearestAvailableDate('2026-10-10', noWeekend)).toBe('2026-10-09');
+    expect(nearestAvailableDate('2026-10-11', noWeekend)).toBe('2026-10-12');
+  });
+  it('no empate prefere a data posterior', () => {
+    expect(nearestAvailableDate('2026-10-08', d => d !== '2026-10-08')).toBe('2026-10-09');
+  });
+  it('retorna null se nada estiver disponível na janela', () => {
+    expect(nearestAvailableDate('2026-10-08', () => false)).toBeNull();
   });
 });

@@ -68,3 +68,20 @@ export function generateOccurrences(startDate: string, rule: RecurrenceRule): st
   }
   return dates;
 }
+
+/**
+ * Data disponível mais próxima de `dateKey` (ela mesma, se disponível),
+ * procurando até `maxShiftDays` para cada lado; no empate prefere a posterior.
+ * Retorna null se não houver nenhuma na janela.
+ */
+export function nearestAvailableDate(dateKey: string, isAvailable: (d: string) => boolean, maxShiftDays = 7): string | null {
+  if (isAvailable(dateKey)) return dateKey;
+  const base = fromKey(dateKey).getTime();
+  for (let shift = 1; shift <= maxShiftDays; shift++) {
+    for (const sign of [1, -1]) {
+      const candidate = toKey(new Date(base + sign * shift * 86400000));
+      if (isAvailable(candidate)) return candidate;
+    }
+  }
+  return null;
+}

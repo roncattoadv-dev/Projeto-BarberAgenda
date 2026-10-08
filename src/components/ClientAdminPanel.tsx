@@ -19,7 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { UseNotificationsReturn } from '../hooks/useNotifications';
 import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket, getWaitlistEntries, markWaitlistNotified } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { generateOccurrences, weekdayKey, RecurrenceFreq, RECURRENCE_MAX_OCCURRENCES } from '../lib/recurrence';
+import { generateOccurrences, nearestAvailableDate, weekdayKey, RecurrenceFreq, RECURRENCE_MAX_OCCURRENCES } from '../lib/recurrence';
 import { sendWhatsAppServer, buildWaitlistMsg, checkStatusServer } from '../services/whatsapp';
 import LogoCropModal from './LogoCropModal';
 import TourOverlay, { TourStep } from './TourOverlay';
@@ -840,10 +840,10 @@ export default function ClientAdminPanel({
         toast.error('Erro ao criar agendamento.');
         return false;
       }
-      let created = 1, skipped = 0;
+      let created = 1, skipped = 0, moved = 0;
       if (apptRecurring) {
-        // Repetições: pula dias em que o profissional não atende, datas
-        // bloqueadas e horários já ocupados, sem avisar o cliente a cada uma.
+        // Repetições: não marca em dias em que o profissional não atende, datas
+        // bloqueadas e horários já ocupados, e não avisa o cliente a cada uma.
         const prof = myProfessionals.find(p => p.id === apptProfId);
         const workDays = prof?.businessDays?.length ? prof.businessDays : activeTenant.businessDays ?? [];
         const blocked = new Set([...(activeTenant.blockedDates ?? []), ...(prof?.blockedDates ?? [])]);
@@ -851,16 +851,23 @@ export default function ClientAdminPanel({
           freq: apptRecFreq, intervalDays: apptRecInterval,
           endAfterCount: apptRecEndMode === 'forever' ? null : apptRecEndCount,
         }).slice(1);
-        for (const date of dates) {
-          if ((workDays.length && !workDays.includes(weekdayKey(date))) || blocked.has(date) || isBusy(date)) { skipped++; continue; }
-          try { await onAddAppointment({ ...base, date }, { silent: true }); created++; }
+        const used = new Set([apptDate]);
+        const isFree = (d: string) => !(workDays.length && !workDays.includes(weekdayKey(d))) && !blocked.has(d) && !isBusy(d) && !used.has(d);
+        for (const planned of dates) {
+          // Mensal: se o dia não tem atendimento, vai para o dia disponível mais próximo
+          const date = apptRecFreq === 'monthly'
+            ? nearestAvailableDate(planned, d => d > apptDate && isFree(d))
+            : isFree(planned) ? planned : null;
+          if (!date) { skipped++; continue; }
+          used.add(date);
+          try { await onAddAppointment({ ...base, date }, { silent: true }); created++; if (date !== planned) moved++; }
           catch { skipped++; }
         }
       }
       setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setShowApptForm(false);
       setApptRecurring(false);
       if (!apptRecurring) toast.success('Agendamento criado!');
-      else toast.success(`${created} agendamento${created > 1 ? 's' : ''} criado${created > 1 ? 's' : ''}${skipped ? ` · ${skipped} data${skipped > 1 ? 's' : ''} pulada${skipped > 1 ? 's' : ''} (ocupada ou sem atendimento)` : ''}.`);
+      else toast.success(`${created} agendamento${created > 1 ? 's' : ''} criado${created > 1 ? 's' : ''}${moved ? ` · ${moved} movido${moved > 1 ? 's' : ''} para o dia disponível mais próximo` : ''}${skipped ? ` · ${skipped} data${skipped > 1 ? 's' : ''} pulada${skipped > 1 ? 's' : ''} (ocupada ou sem atendimento)` : ''}.`);
       return true;
     } finally { setApptSaving(false); }
   };
