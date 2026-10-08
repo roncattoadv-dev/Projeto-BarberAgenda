@@ -9,8 +9,8 @@ export interface RecurrenceRule {
   freq: RecurrenceFreq;
   /** Só para freq 'custom': repetir a cada N dias */
   intervalDays?: number;
-  /** Encerrar após N dias da primeira data; null = indeterminado */
-  endAfterDays: number | null;
+  /** Encerrar após N ocorrências (contando a primeira); null = indeterminado */
+  endAfterCount: number | null;
 }
 
 /** "Indeterminado" gera ocorrências até este horizonte a partir da primeira data */
@@ -42,16 +42,19 @@ export function generateOccurrences(startDate: string, rule: RecurrenceRule): st
   const start = fromKey(startDate);
   if (Number.isNaN(start.getTime())) return [];
 
-  const spanDays = rule.endAfterDays === null
-    ? RECURRENCE_HORIZON_DAYS
-    : Math.max(0, Math.floor(rule.endAfterDays));
-  const limit = start.getTime() + spanDays * 86400000;
+  // Indeterminado é limitado pelo horizonte; com contagem, só pelo teto
+  const limit = rule.endAfterCount === null
+    ? start.getTime() + RECURRENCE_HORIZON_DAYS * 86400000
+    : Infinity;
+  const maxCount = rule.endAfterCount === null
+    ? RECURRENCE_MAX_OCCURRENCES
+    : Math.min(RECURRENCE_MAX_OCCURRENCES, Math.max(1, Math.floor(rule.endAfterCount)));
   const stepDays = rule.freq === 'daily' ? 1
     : rule.freq === 'weekly' ? 7
     : Math.max(1, Math.floor(rule.intervalDays ?? 1));
 
   const dates: string[] = [];
-  for (let i = 0; dates.length < RECURRENCE_MAX_OCCURRENCES; i++) {
+  for (let i = 0; dates.length < maxCount; i++) {
     let d: Date;
     if (rule.freq === 'monthly') {
       const first = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));

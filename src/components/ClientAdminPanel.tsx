@@ -19,7 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { UseNotificationsReturn } from '../hooks/useNotifications';
 import { uploadTenantLogo, remindAppointmentWhatsApp, createSupportTicket, getWaitlistEntries, markWaitlistNotified } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { generateOccurrences, weekdayKey, RecurrenceFreq } from '../lib/recurrence';
+import { generateOccurrences, weekdayKey, RecurrenceFreq, RECURRENCE_MAX_OCCURRENCES } from '../lib/recurrence';
 import { sendWhatsAppServer, buildWaitlistMsg, checkStatusServer } from '../services/whatsapp';
 import LogoCropModal from './LogoCropModal';
 import TourOverlay, { TourStep } from './TourOverlay';
@@ -307,8 +307,8 @@ export default function ClientAdminPanel({
   const [apptRecurring,    setApptRecurring]    = useState(false);
   const [apptRecFreq,      setApptRecFreq]      = useState<RecurrenceFreq>('weekly');
   const [apptRecInterval,  setApptRecInterval]  = useState(15);
-  const [apptRecEndMode,   setApptRecEndMode]   = useState<'days' | 'forever'>('days');
-  const [apptRecEndDays,   setApptRecEndDays]   = useState(30);
+  const [apptRecEndMode,   setApptRecEndMode]   = useState<'count' | 'forever'>('count');
+  const [apptRecEndCount,  setApptRecEndCount]  = useState(10);
   const [apptSaving,       setApptSaving]       = useState(false);
   const [apptNewClient,      setApptNewClient]      = useState(false);
   const [apptNewClientName,  setApptNewClientName]  = useState('');
@@ -818,7 +818,7 @@ export default function ClientAdminPanel({
     if (apptRecurring) {
       if (!apptDate || !apptTime) { toast.error('Informe data e horário.'); return false; }
       if (apptRecFreq === 'custom' && !(apptRecInterval >= 1)) { toast.error('Informe a cada quantos dias repetir.'); return false; }
-      if (apptRecEndMode === 'days' && !(apptRecEndDays >= 1)) { toast.error('Informe após quantos dias a recorrência termina.'); return false; }
+      if (apptRecEndMode === 'count' && !(apptRecEndCount >= 1)) { toast.error('Informe após quantas recorrências terminar.'); return false; }
     }
     const isBusy = (date: string) => myAppointments.some(a => a.date === date && a.time === apptTime && a.professionalId === apptProfId && a.status !== 'cancelled');
     if (isBusy(apptDate)) { toast.error(`Conflito: profissional já ocupado em ${apptDate} às ${apptTime}.`); return false; }
@@ -849,7 +849,7 @@ export default function ClientAdminPanel({
         const blocked = new Set([...(activeTenant.blockedDates ?? []), ...(prof?.blockedDates ?? [])]);
         const dates = generateOccurrences(apptDate, {
           freq: apptRecFreq, intervalDays: apptRecInterval,
-          endAfterDays: apptRecEndMode === 'forever' ? null : apptRecEndDays,
+          endAfterCount: apptRecEndMode === 'forever' ? null : apptRecEndCount,
         }).slice(1);
         for (const date of dates) {
           if ((workDays.length && !workDays.includes(weekdayKey(date))) || blocked.has(date) || isBusy(date)) { skipped++; continue; }
@@ -892,17 +892,17 @@ export default function ClientAdminPanel({
           </div>
           <span style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '1.5px', marginTop: 4 }}>Terminar</span>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#111827', cursor: 'pointer' }}>
-            <input type="radio" name="appt-rec-end" checked={apptRecEndMode === 'days'} onChange={() => setApptRecEndMode('days')} />
+            <input type="radio" name="appt-rec-end" checked={apptRecEndMode === 'count'} onChange={() => setApptRecEndMode('count')} />
             Após
-            <input type="number" min={1} max={365} value={apptRecEndDays || ''} disabled={apptRecEndMode !== 'days'} onChange={e => setApptRecEndDays(parseInt(e.target.value, 10) || 0)} className="navy-input" style={{ width: 70 }} />
-            dias
+            <input type="number" min={1} max={RECURRENCE_MAX_OCCURRENCES} value={apptRecEndCount || ''} disabled={apptRecEndMode !== 'count'} onChange={e => setApptRecEndCount(parseInt(e.target.value, 10) || 0)} className="navy-input" style={{ width: 70 }} />
+            recorrências
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#111827', cursor: 'pointer' }}>
             <input type="radio" name="appt-rec-end" checked={apptRecEndMode === 'forever'} onChange={() => setApptRecEndMode('forever')} />
             Indeterminado
           </label>
           {apptDate && (() => {
-            const n = generateOccurrences(apptDate, { freq: apptRecFreq, intervalDays: apptRecInterval, endAfterDays: apptRecEndMode === 'forever' ? null : apptRecEndDays }).length;
+            const n = generateOccurrences(apptDate, { freq: apptRecFreq, intervalDays: apptRecInterval, endAfterCount: apptRecEndMode === 'forever' ? null : apptRecEndCount }).length;
             return (
               <span style={{ fontSize: 11, color: '#6B7280' }}>
                 Até {n} agendamento{n > 1 ? 's' : ''}{apptRecEndMode === 'forever' ? ' — indeterminado cria os próximos 6 meses (máx. 90); depois é só renovar' : ''}. O cliente recebe a confirmação só do primeiro.
