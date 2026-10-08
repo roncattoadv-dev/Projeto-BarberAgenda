@@ -310,6 +310,7 @@ export default function ClientAdminPanel({
   const [apptRecEndMode,   setApptRecEndMode]   = useState<'count' | 'forever'>('count');
   const [apptRecEndCount,  setApptRecEndCount]  = useState(10);
   const [apptSaving,       setApptSaving]       = useState(false);
+  const [apptRecError,     setApptRecError]     = useState('');
   const [apptNewClient,      setApptNewClient]      = useState(false);
   const [apptNewClientName,  setApptNewClientName]  = useState('');
   const [apptNewClientPhone, setApptNewClientPhone] = useState('');
@@ -810,6 +811,7 @@ export default function ClientAdminPanel({
   const handleManualAppointment = async (e: React.FormEvent): Promise<boolean> => {
     e.preventDefault();
     if (apptSaving) return false;
+    setApptRecError('');
     if (!apptSrvId || !apptProfId) { toast.error('Selecione serviço e profissional.'); return false; }
     if (!apptNewClient && !apptCustId) { toast.error('Selecione um cliente ou crie um novo.'); return false; }
     if (apptNewClient && !apptNewClientName.trim()) { toast.error('Informe o nome do cliente.'); return false; }
@@ -856,7 +858,9 @@ export default function ClientAdminPanel({
         const fmt = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
         const shown = unavailable.slice(0, 6).map(fmt).join(', ');
         const more = unavailable.length > 6 ? ` e mais ${unavailable.length - 6}` : '';
-        toast.error(`Recorrência não criada: sem horário disponível às ${apptTime} em ${shown}${more} (dia sem atendimento, data bloqueada ou horário ocupado). Ajuste a data, o horário ou a quantidade de recorrências.`);
+        // O toast some em segundos; o aviso com as datas fica fixo no formulário
+        setApptRecError(`Sem horário disponível às ${apptTime} em ${shown}${more} (dia sem atendimento, data bloqueada ou horário ocupado). Ajuste a data, o horário ou a quantidade de recorrências.`);
+        toast.error('Recorrência não criada: há datas sem horário disponível.');
         return false;
       }
     }
@@ -937,6 +941,11 @@ export default function ClientAdminPanel({
               </span>
             );
           })()}
+          {apptRecError && (
+            <div role="alert" style={{ fontSize: 12, fontWeight: 600, color: '#B91C1C', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 10px' }}>
+              {apptRecError}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1208,7 +1217,7 @@ export default function ClientAdminPanel({
                         )}
                       </motion.button>
                       <motion.button whileTap={{ scale: 0.97 }}
-                        onClick={() => { setApptCustId(''); setApptSrvId(''); setApptProfId(''); setApptDate(new Date().toISOString().split('T')[0]); setApptTime(''); setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setApptRecurring(false); setShowNewApptModal(true); }}
+                        onClick={() => { setApptCustId(''); setApptSrvId(''); setApptProfId(''); setApptDate(new Date().toISOString().split('T')[0]); setApptTime(''); setApptNotes(''); setApptNewClient(false); setApptNewClientName(''); setApptNewClientPhone(''); setApptRecurring(false); setApptRecError(''); setShowNewApptModal(true); }}
                         style={{ padding: '9px 18px', background: '#1D4ED8', color: '#FFFFFF', fontWeight: 700, fontSize: 12, border: 'none', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Outfit, sans-serif' }}>
                         <Plus size={13} /> Novo Agendamento
                       </motion.button>
