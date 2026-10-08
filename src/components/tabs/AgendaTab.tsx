@@ -18,6 +18,8 @@ interface Props {
   onRescheduleAppointment: (id: string, date: string, time: string) => Promise<void>;
   onDeleteAppointment: (id: string) => void;
   tenantId: string;
+  /** Total da fatura por id de agendamento (só concluídos têm) */
+  invoiceTotals?: Record<string, number>;
   onOpenWaitlist?: () => void;
   waitlistEnabled?: boolean;
   displayStart?: number;
@@ -197,7 +199,7 @@ function MultiSelect({ label, options, selected, onChange }: {
   );
 }
 
-export default function AgendaTab({ myAppointments, myServices, myProfessionals, myCustomers, onUpdateAppointmentStatus, onAddAppointment, onAddCustomer, onCompleteAppointment, onResendReminder, onRescheduleAppointment, onDeleteAppointment, tenantId, onOpenWaitlist, waitlistEnabled = true, displayStart, displayEnd }: Props) {
+export default function AgendaTab({ myAppointments, myServices, myProfessionals, myCustomers, onUpdateAppointmentStatus, onAddAppointment, onAddCustomer, onCompleteAppointment, onResendReminder, onRescheduleAppointment, onDeleteAppointment, tenantId, invoiceTotals = {}, onOpenWaitlist, waitlistEnabled = true, displayStart, displayEnd }: Props) {
   const firstHour = displayStart ?? 8;
   const lastHour  = displayEnd   ?? 20;
   const hours = Array.from({ length: Math.max(2, lastHour - firstHour + 1) }, (_, i) => `${String(i + firstHour).padStart(2, '0')}:00`);
@@ -217,6 +219,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
   const [deletingAppt, setDeletingAppt] = useState<{ id: string; name: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
+  const shownPrice = (a: Appointment) => a.status === 'attended' ? invoiceTotals[a.id] ?? a.price : a.price;
 
   // ── Novo agendamento via clique no slot ──────────────────────────────────────
   type NewSlot = { date: string; time: string; px: number; py: number };
@@ -625,7 +628,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
                               {` · ${appt.time.slice(0, 5)}`}
                               {srv  && ` · ${srv.name}`}
                               {prof && ` · ${prof.name}`}
-                              {appt.price > 0 && ` · R$${appt.price % 1 === 0 ? appt.price : appt.price.toFixed(2)}`}
+                              {shownPrice(appt) > 0 && ` · R$${shownPrice(appt) % 1 === 0 ? shownPrice(appt) : shownPrice(appt).toFixed(2)}`}
                             </span>
                           </div>
                         </div>
@@ -899,7 +902,7 @@ export default function AgendaTab({ myAppointments, myServices, myProfessionals,
               <p style={{ margin: '3px 0 0', fontSize: 11, color: '#6B7280' }}>
                 {DAYS_PT[new Date(apptPanel.date + 'T12:00:00').getDay()]}, {apptPanel.date.slice(8)}/{apptPanel.date.slice(5,7)} · {apptPanel.time.slice(0,5)}
                 {srv && ` · ${srv.durationMinutes}min`}
-                {apptPanel.price > 0 && ` · R$${apptPanel.price}`}
+                {shownPrice(apptPanel) > 0 && ` · R$${shownPrice(apptPanel)}`}
               </p>
               {srv  && <p style={{ margin: '2px 0 0', fontSize: 11, color: '#9CA3AF' }}>{srv.name}{prof ? ` · ${prof.name}` : ''}</p>}
             </div>

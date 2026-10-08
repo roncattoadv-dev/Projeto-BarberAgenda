@@ -18,6 +18,8 @@ interface Props {
   onUpdateAppointmentStatus: (id: string, status: Appointment['status']) => void;
   onCompleteAppointment: (appt: Appointment) => void;
   onDeleteAppointment: (id: string) => void;
+  /** Total da fatura por id de agendamento (só concluídos têm) */
+  invoiceTotals?: Record<string, number>;
 }
 
 type SendState = 'idle' | 'sending' | 'done' | 'error';
@@ -207,7 +209,7 @@ function loadFilters() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; }
 }
 
-export default function AgendamentosTab({ activeTenant, myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment, onDeleteAppointment, reminderMinutes = 60 }: Props & { reminderMinutes?: number }) {
+export default function AgendamentosTab({ activeTenant, myAppointments, myServices, myProfessionals, onUpdateAppointmentStatus, onCompleteAppointment, onDeleteAppointment, invoiceTotals = {}, reminderMinutes = 60 }: Props & { reminderMinutes?: number }) {
   const { session } = useAuth();
   const [search,       setSearch]       = useState('');
   const [profFilter,   setProfFilter]   = useState<string[]>(() => loadFilters().profFilter   ?? []);
@@ -453,7 +455,7 @@ export default function AgendamentosTab({ activeTenant, myAppointments, myServic
                   {sm.label}
                 </span>
                 <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#16A34A', flexShrink: 0 }}>
-                  R$ {appt.price.toFixed(2)}
+                  R$ {(appt.status === 'attended' ? invoiceTotals[appt.id] ?? appt.price : appt.price).toFixed(2)}
                 </span>
 
                 {/* WA pills + auto-action inline */}

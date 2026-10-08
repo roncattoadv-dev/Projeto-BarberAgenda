@@ -146,6 +146,9 @@ export default function ClientAdminPanel({
   const myCustomers     = customers.filter(c => c.tenantId === activeTenant.id);
   const myAppointments  = appointments.filter(a => a.tenantId === activeTenant.id);
   const myPayments      = payments.filter(p => p.tenantId === activeTenant.id);
+  // Total da fatura por agendamento — o que as listas mostram no lugar do preço do serviço depois de concluído
+  const invoiceTotals: Record<string, number> = {};
+  for (const p of myPayments) if (p.appointmentId) invoiceTotals[p.appointmentId] = p.amount;
 
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -1287,6 +1290,7 @@ export default function ClientAdminPanel({
                       onRescheduleAppointment={onRescheduleAppointment}
                       onDeleteAppointment={onDeleteAppointment}
                       tenantId={activeTenant.id}
+                      invoiceTotals={invoiceTotals}
                       onOpenWaitlist={() => setShowWaitlistModal(true)}
                       waitlistEnabled={bookingWaitlistEnabled}
                       displayStart={agendaDisplayStart}
@@ -1307,6 +1311,7 @@ export default function ClientAdminPanel({
                     onUpdateAppointmentStatus={handleCancelAndNotifyWaitlist}
                     onCompleteAppointment={handleCompleteAppointment}
                     onDeleteAppointment={onDeleteAppointment}
+                    invoiceTotals={invoiceTotals}
                     reminderMinutes={activeTenant.reminderMinutes ?? 60}
                   />
                 </div>
